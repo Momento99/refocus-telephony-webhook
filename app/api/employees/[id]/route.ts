@@ -2,12 +2,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-type Params = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
-export async function PUT(req: Request, { params }: Params) {
-  const id = params.id;
+export async function PUT(req: Request, { params }: Ctx) {
+  const { id } = await params;
+
   try {
     const body = await req.json();
+
     const updated = await prisma.employee.update({
       where: { id },
       data: {
@@ -19,14 +21,16 @@ export async function PUT(req: Request, { params }: Params) {
         branchId: body.branchId ?? undefined,
       },
     });
+
     return NextResponse.json(updated);
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Not found or invalid" }, { status: 400 });
   }
 }
 
-export async function DELETE(_req: Request, { params }: Params) {
-  const id = params.id;
+export async function DELETE(_req: Request, { params }: Ctx) {
+  const { id } = await params;
+
   try {
     await prisma.employee.delete({ where: { id } });
     return NextResponse.json({ ok: true });
