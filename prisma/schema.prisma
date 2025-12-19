@@ -1,0 +1,112 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Филиал (Кант, Сокулук, Кара-Балта, Беловодск...)
+model Branch {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  employees Employee[]
+  entries   PayrollEntry[]
+}
+
+/// Сотрудник (продавец/промоутер/мастер)
+model Employee {
+  id        String   @id @default(cuid())
+  fullName  String
+  role      Role
+  mbank     String?
+  passportFront String?
+  passportBack  String?
+
+  branchId  String
+  branch    Branch  @relation(fields: [branchId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries   PayrollEntry[]
+}
+
+/// Период расчета (неделя/месяц/custom). Заморозка по субботам 23:59.
+model PayrollPeriod {
+  id        String   @id @default(cuid())
+  kind      PeriodKind
+  dateFrom  DateTime
+  dateTo    DateTime
+  frozenAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  entries   PayrollEntry[]
+}
+
+/// Конкретная строка расчета за период (то, что ты видишь в таблице)
+model PayrollEntry {
+  id           String   @id @default(cuid())
+  periodId     String
+  period       PayrollPeriod @relation(fields: [periodId], references: [id])
+
+  branchId     String
+  branch       Branch  @relation(fields: [branchId], references: [id])
+
+  employeeId   String
+  employee     Employee @relation(fields: [employeeId], references: [id])
+
+  hours        Int       @default(0)
+  ratePerHour  Int?      // сом/час (для продавца/промоутера)
+  payoutFixed  Int?      // «выход»
+  bonus        Int?      // бонусы
+  piecework    Int?      // для мастера
+  status       EntryStatus @default(OPEN)
+
+  // слепок реквизитов на момент выплаты (чтобы история была честной)
+  mbankSnapshot String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  adjustments Adjustment[]
+}
+
+/// Лог корректировок
+model Adjustment {
+  id        String   @id @default(cuid())
+  entryId   String
+  entry     PayrollEntry @relation(fields: [entryId], references: [id])
+
+  field     String
+  before    String?
+  after     String?
+  reason    String?
+  by        String   // кто правил (например, id пользователя или текст)
+  at        DateTime @default(now())
+}
+
+enum Role {
+  SELLER
+  PROMOTER
+  MASTER
+}
+
+enum PeriodKind {
+  WEEK
+  MONTH
+  CUSTOM
+}
+
+enum EntryStatus {
+  OPEN
+  FROZEN
+  PAID
+  NEEDS_REVIEW
+}

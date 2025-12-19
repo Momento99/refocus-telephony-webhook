@@ -1,0 +1,37 @@
+# secrets
+.env*
+*.env
+
+# node / next
+node_modules/
+.next/
+out/
+dist/
+
+# electron / desktop builds
+desktop/dist/
+desktop/out/
+desktop/release/
+desktop/**/win-unpacked/
+
+# binaries / archives
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.zip
+*.7z
+
+# --- DO NOT PUSH BUILD ARTIFACTS ---
+desktop/dist/
+desktop/out/
+desktop/build/
+*.exe
+*.msi
+*.appx
+*.dmg
+*.zip
+
+# secrets
+.env
+.env.*

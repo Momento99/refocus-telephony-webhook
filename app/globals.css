@@ -1,0 +1,232 @@
+@import "tailwindcss";
+
+/* === Nunito for prices (UI) === */
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');
+
+/* Универсальный класс для цен */
+.font-nunito {
+  font-family: 'Nunito', ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+               Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+}
+/* Если нужно ровное выравнивание цифр по ширине — вешай этот класс вместо/вместе с .font-nunito */
+.font-nunito.tabular {
+  font-variant-numeric: tabular-nums; /* одинаковая ширина цифр */
+}
+
+/* === Kiona local font === */
+@font-face {
+  font-family: 'Kiona';
+  src: url('/fonts/Kiona.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-kiona {
+  font-family: 'Kiona', ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+               Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  letter-spacing: .05em;
+}
+
+/* === БАЗА === */
+html, body { height: 100%; }
+html { color-scheme: light; }
+
+/* Статичный (лёгкий) фон: градиенты. Никаких canvas/скриптов. */
+body {
+  /* цвет не задаём, его задаёт Tailwind-класс text-slate-50 на <body> в layout.tsx */
+  background:
+    radial-gradient(1400px 900px at 20% 10%, rgba(var(--bg-spot) / 0.28), transparent 68%),
+    radial-gradient(1200px 800px at 80% 28%, rgba(var(--bg-spot) / 0.18), transparent 72%),
+    linear-gradient(180deg, rgb(var(--bg-top)) 0%, rgb(var(--bg-mid)) 52%, rgb(var(--bg-bot)) 100%);
+  background-attachment: fixed, fixed, fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+
+
+
+
+/* === ЕДИНСТВЕННАЯ ТЕМА (светлая) === */
+:root {
+  --text-main: 17 24 39;         /* #111827 */
+  --text-muted: 100 116 139;     /* #64748B */
+
+  --panel-bg: 255 255 255 / 0.95;
+  --panel-border: 17 24 39 / 0.06;
+  --panel-blur: 10px;
+
+  --bg-top: 245 248 255;         /* #f5f8ff */
+  --bg-mid: 232 239 251;         /* #e8effb */
+  --bg-bot: 245 248 255;         /* #f5f8ff */
+  --bg-spot: 179 207 255;        /* голубой акцент */
+
+  --brand-grad: linear-gradient(90deg, #1A284E 0%, #2C4BA5 55%, #4F9DF6 100%);
+  --price-grad: linear-gradient(90deg, #2C4BA5 0%, #0BB783 55%, #00E3A1 100%);
+}
+
+/* === ПОВЕРХНОСТИ === */
+.theme-surface {
+  background: rgba(var(--panel-bg));
+  border: 1px solid rgba(var(--panel-border));
+  backdrop-filter: blur(var(--panel-blur));
+  -webkit-backdrop-filter: blur(var(--panel-blur));
+  color: rgb(var(--text-main));
+  border-radius: 16px;
+  box-shadow:
+    0 8px 20px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+input, select, textarea, button { color: rgb(var(--text-main)); }
+::placeholder { color: rgb(var(--text-muted)); opacity: 0.95; }
+:disabled, [aria-disabled="true"] { color: rgb(var(--text-muted)); }
+
+/* === Лёгкая виньетка + сетка (статично) === */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+  background:
+    radial-gradient(900px 650px at 3% 3%, rgba(255 255 255 / 0.10), transparent 60%),
+    radial-gradient(900px 650px at 97% 3%, rgba(255 255 255 / 0.06), transparent 60%),
+    radial-gradient(1100px 800px at 97% 97%, rgba(255 255 255 / 0.08), transparent 65%),
+    radial-gradient(1100px 800px at 3% 97%, rgba(255 255 255 / 0.05), transparent 65%);
+  z-index: 0;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image:
+    repeating-linear-gradient(0deg,  rgba(255 255 255 / 0.03) 0, rgba(255 255 255 / 0.03) 1px, transparent 1px, transparent 2px),
+    repeating-linear-gradient(90deg, rgba(0 0 0 / 0.02) 0, rgba(0 0 0 / 0.02) 1px, transparent 1px, transparent 2px);
+  z-index: 0;
+}
+
+/* === ЗОНЫ ИНТЕРФЕЙСА === */
+header, main, aside, .card, .panel, .prose, .sheet, .drawer { color: rgb(var(--text-main)); }
+
+/* === САЙДБАР (тёмный, белый текст) === */
+.sidebar { color: #fff; }
+.sidebar * { color: inherit; }
+.sidebar option { color: #000; }
+.sidebar input, .sidebar select, .sidebar textarea, .sidebar button, .sidebar a { color: #fff; }
+
+/* === Бренд-утилиты === */
+.brand-gradient { background: var(--brand-grad); color: #fff; }
+.brand-text-gradient {
+  background: var(--brand-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.price-text-gradient {
+  background: var(--price-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* POS MODE: /pos/customer */
+body.pos-mode {
+  padding: 0 !important;
+  overflow: hidden;
+  background-attachment: fixed;
+}
+body.pos-mode aside,
+body.pos-mode header,
+body.pos-mode nav { display: none !important; }
+body.pos-mode main,
+body.pos-mode .main-shell,
+body.pos-mode #__next,
+body.pos-mode .app-root {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100dvh !important;
+}
+body.pos-mode, body.pos-mode * { scrollbar-width: none; }
+body.pos-mode ::-webkit-scrollbar { width: 0; height: 0; }
+
+.card-gradient { background: linear-gradient(180deg, #ffffff 0%, #f5f8ff 45%, #eef4ff 100%); }
+
+/* Небольшая анимация плашек (если нужно отключить — можно убрать класс .brand-anim из разметки) */
+.brand-anim {
+  background: linear-gradient(90deg, #1A284E, #2C4BA5, #4F9DF6, #2C4BA5);
+  background-size: 300% 100%;
+  animation: brandFlow 8s ease-in-out infinite;
+}
+@keyframes brandFlow {
+  0% { background-position: 0% 50% }
+  50% { background-position: 100% 50% }
+  100% { background-position: 0% 50% }
+}
+body.pos-mode { cursor: default !important; }
+
+/* === Авто-зум для кассового ПК (чтобы "всё влезало") === */
+body.pos-autozoom { zoom: 1; }
+@media (max-height: 840px) {
+  body.pos-autozoom { zoom: .90; }
+}
+@media (max-height: 740px) {
+  body.pos-autozoom { zoom: .80; }
+}
+
+/* === Печать: профили для чека (58 мм) и ценника (70×12 мм) === */
+
+/* 58 мм чек: авто-высота под рулон */
+@page receipt { size: 58mm auto; margin: 0; }
+
+/* 70×12 мм ценник */
+@page label { size: 70mm 12mm; margin: 0; }
+
+/* Хелперы */
+.only-print { display: none; }
+
+@media print {
+  /* на печать всегда 100% */
+  html, body { zoom: 1 !important; }
+
+  /* белый фон и корректная заливка */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff !important; }
+  body::before, body::after { display: none !important; }
+
+  /* печатаем только область .print-area */
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
+  .print-area {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 999999 !important;
+    background: transparent !important;
+  }
+
+  /* ЧЕК 58 мм */
+  .receipt-page,
+  .print-area.receipt {
+    page: receipt;
+    width: 58mm !important;
+    min-height: 0 !important;
+  }
+
+  /* ЦЕННИК 70×12 мм (обратная совместимость с .label-page) */
+  .label-page,
+  .print-area.label {
+    page: label;
+    width: 70mm !important;
+    height: 12mm !important;
+    page-break-after: always !important;
+    display: grid !important;
+    place-items: center !important;
+  }
+
+  .no-print { display: none !important; }
+  .only-print { display: block !important; }
+}
