@@ -18,9 +18,12 @@ const EXT_TO_BRANCH: Record<string, string> = {
 };
 
 function b64HmacSha1(payload: string, secret: string) {
+  // Zadarma docs (PHP): base64_encode(hash_hmac('sha1', payload, secret))
+  // PHP hash_hmac без raw_output => возвращает HEX строку, её и base64-ят.
   const hex = crypto.createHmac('sha1', secret).update(payload).digest('hex');
   return Buffer.from(hex, 'utf8').toString('base64');
 }
+
 
 
 function safeEqual(a: string, b: string) {
@@ -45,23 +48,40 @@ function parseForm(bodyText: string) {
 }
 
 function normalizeCallStart(value: any): string | null {
-  const s = String(value ?? '').trim();
-  if (!s) return null;
+  const s0 = String(value ?? '').trim();
+  if (!s0) return null;
 
-  if (/^\d+$/.test(s)) {
-    const n = Number(s);
+  // unix timestamp (sec/ms)
+  if (/^\d+$/.test(s0)) {
+    const n = Number(s0);
     if (!Number.isFinite(n)) return null;
-    const ms = s.length >= 13 ? n : n * 1000;
+    const ms = s0.length >= 13 ? n : n * 1000;
     const d = new Date(ms);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toISOString();
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
   }
 
-  const d = new Date(s);
+  // Zadarma часто шлёт "YYYY-MM-DD HH:mm:ss" без таймзоны.
+  // По твоему кейсу это локальное время Бишкек. Принудительно считаем как +06:00.
+  if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}$/.test(s0)) {
+    const isoLike = s0.replace(' ', 'T') + '+06:00';
+    const d = new Date(isoLike);
+    return Number.isNaN(d.getTime()) ? s0 : d.toISOString();
+  }
+
+  // если вдруг пришло "YYYY-MM-DD HH:mm"
+  if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(s0)) {
+    const isoLike = s0.replace(' ', 'T') + ':00+06:00';
+    const d = new Date(isoLike);
+    return Number.isNaN(d.getTime()) ? s0 : d.toISOString();
+  }
+
+  // ISO / прочее
+  const d = new Date(s0);
   if (!Number.isNaN(d.getTime())) return d.toISOString();
 
-  return s;
+  return s0;
 }
+
 
 function clean(v: any): string | null {
   const s = String(v ?? '').trim();
@@ -134,7 +154,9 @@ export async function POST(req: Request) {
   const apiSecret = process.env.ZADARMA_API_SECRET || '';
   if (!apiSecret) return new Response('Missing ZADARMA_API_SECRET', { status: 500 });
 
-  const signatureHeader = req.headers.get('Signature') || req.headers.get('signature') || '';
+  const signatureHeader =
+  (req.headers.get('Signature') || req.headers.get('signature') || '').trim();
+
 
   const contentType = req.headers.get('content-type') || '';
   let data: Record<string, any> = {};
