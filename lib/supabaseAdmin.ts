@@ -8,27 +8,17 @@ declare global {
   var __supabaseAdmin__: SupabaseClient | undefined;
 }
 
-function resolveAdminEnv() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url) throw new Error("ENV SUPABASE_URL (или NEXT_PUBLIC_SUPABASE_URL) is missing");
-  if (!serviceKey) throw new Error("ENV SUPABASE_SERVICE_ROLE_KEY is missing");
-
-  return { url, serviceKey };
-}
-
 export function getSupabaseAdmin(): SupabaseClient {
   if (globalThis.__supabaseAdmin__) return globalThis.__supabaseAdmin__;
 
-  const { url, serviceKey } = resolveAdminEnv();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url) throw new Error("ENV NEXT_PUBLIC_SUPABASE_URL is missing");
+  if (!serviceKey) throw new Error("ENV SUPABASE_SERVICE_ROLE_KEY is missing");
 
   const client = createClient(url, serviceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
+    auth: { autoRefreshToken: false, persistSession: false },
   });
 
   globalThis.__supabaseAdmin__ = client;
@@ -36,17 +26,16 @@ export function getSupabaseAdmin(): SupabaseClient {
 }
 
 /**
- * Совместимость с импортами вида:
- *   import { supabaseAdmin } from "@/lib/supabaseAdmin";
- *   import supabaseAdmin from "@/lib/supabaseAdmin";
+ * Backward-compat:
+ * 1) import { supabaseAdmin } from "@/lib/supabaseAdmin"
+ * 2) import supabaseAdmin from "@/lib/supabaseAdmin"
  *
- * Делаем ленивый Proxy, чтобы не валиться на этапе импорта.
+ * Proxy делает ленивую инициализацию (env читается только при использовании).
  */
 export const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
-    const client = getSupabaseAdmin() as any;
-    return client[prop];
+    return (getSupabaseAdmin() as any)[prop];
   },
-}) as SupabaseClient;
+});
 
 export default supabaseAdmin;
