@@ -1,20 +1,17 @@
+// next.config.ts
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
-  // Чтобы build не валился на eslint (у тебя уже так сделано)
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // Next.js 16: ключ `eslint` в next.config.ts больше не поддерживается.
+  // Линт лучше отключать через Vercel setting или отдельным шагом в CI.
+  // Здесь убираем полностью.
 
-  // Временно: чтобы build не валился на type-check (пока мигрируешь на Next 15)
-  // Можно убрать позже, когда поправишь все route handlers/pages типы.
+  // Если хочешь, чтобы билд не падал из-за TS во время миграции:
   typescript: {
     ignoreBuildErrors: true,
   },
-
-  // НИКАКИХ basePath, assetPrefix, rewrites, redirects, distDir — оставляем пусто
 };
 
 export default nextConfig;
