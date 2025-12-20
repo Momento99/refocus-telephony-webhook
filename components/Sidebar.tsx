@@ -11,28 +11,32 @@ import {
   ChevronsRight,
   LogOut,
   LogIn,
-  Lock,
   Wallet,
   Boxes,
   FileText,
   Settings2,
-  Timer,              // 👈 посещаемость
-  PackageCheck,       // 👈 заказы
-  Users,              // 👈 для страницы клиентов
+  Timer, // 👈 посещаемость
+  PackageCheck, // 👈 заказы
+  Users, // 👈 для страницы клиентов
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
-import { canAccess, Role } from "@/lib/access";
+import { Role } from "@/lib/access";
 
 /* =============================
    Конфиг меню (бэк-офис)
 ============================= */
-type MenuItem = { label: string; href: string; icon: React.ElementType; external?: boolean };
+type MenuItem = {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  external?: boolean;
+};
 
 const MENU_MAIN: MenuItem[] = [
   { label: "Сверка выручки", href: "/finance/reconciliation", icon: ReceiptText },
   { label: "Заказы", href: "/orders", icon: PackageCheck },
-  { label: "Клиенты", href: "/customers", icon: Users },                 // 👈 НОВЫЙ ПУНКТ
+  { label: "Клиенты", href: "/customers", icon: Users }, // 👈 НОВЫЙ ПУНКТ
   { label: "Зарплаты", href: "/settings/payroll", icon: WalletCards },
   { label: "Посещаемость", href: "/settings/attendance", icon: Timer },
   { label: "Статистика", href: "/admin/stats", icon: LineChart },
@@ -52,6 +56,8 @@ const MENU_ALL: MenuItem[] = MENU_MAIN;
    Sidebar
 ============================= */
 export default function Sidebar({ role }: { role: Role }) {
+  void role; // роль больше не ограничивает доступ в меню (все пункты кликабельны)
+
   const pathname = usePathname();
   const router = useRouter();
 
@@ -76,10 +82,7 @@ export default function Sidebar({ role }: { role: Role }) {
   }, []);
   useEffect(() => {
     localStorage.setItem("refocus.sidebar.collapsed", collapsed ? "1" : "0");
-    document.documentElement.style.setProperty(
-      "--sidebar-width",
-      collapsed ? "5rem" : "18rem"
-    );
+    document.documentElement.style.setProperty("--sidebar-width", collapsed ? "5rem" : "18rem");
   }, [collapsed]);
 
   const items = useMemo(() => MENU_ALL, []);
@@ -140,10 +143,7 @@ export default function Sidebar({ role }: { role: Role }) {
 
               const isBarcodes = it.href === "/settings/barcodes/overview";
               const active =
-                pathname === it.href ||
-                (isBarcodes && pathname.startsWith("/settings/barcodes"));
-
-              const allowed = canAccess(role, it.href);
+                pathname === it.href || (isBarcodes && pathname.startsWith("/settings/barcodes"));
 
               const base =
                 "group relative flex items-center rounded-xl transition ring-1 focus:outline-none";
@@ -188,40 +188,16 @@ export default function Sidebar({ role }: { role: Role }) {
                 </>
               );
 
-              if (allowed) {
-                return (
-                  <Link
-                    key={it.href}
-                    href={it.href}
-                    aria-current={active ? "page" : undefined}
-                    title={collapsed ? it.label : undefined}
-                    className={[base, pad, active ? activeCls : normal].join(" ")}
-                  >
-                    {content}
-                  </Link>
-                );
-              }
-
               return (
-                <div
+                <Link
                   key={it.href}
-                  className={[
-                    base,
-                    pad,
-                    "bg-white/0 ring-white/5 opacity-60 cursor-not-allowed backdrop-blur-[2px]",
-                  ].join(" ")}
-                  title="Доступ ограничен"
+                  href={it.href}
+                  aria-current={active ? "page" : undefined}
+                  title={collapsed ? it.label : undefined}
+                  className={[base, pad, active ? activeCls : normal].join(" ")}
                 >
-                  {indicator}
-                  <div className={iconWrap}>
-                    <Lock size={18} strokeWidth={1.7} className="text-slate-300" />
-                  </div>
-                  {!collapsed && (
-                    <span className="truncate text-[14px] font-medium text-slate-300">
-                      {it.label}
-                    </span>
-                  )}
-                </div>
+                  {content}
+                </Link>
               );
             })}
           </>

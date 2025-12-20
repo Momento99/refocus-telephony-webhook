@@ -18,8 +18,10 @@ const EXT_TO_BRANCH: Record<string, string> = {
 };
 
 function b64HmacSha1(payload: string, secret: string) {
-  return crypto.createHmac('sha1', secret).update(payload).digest('base64');
+  const hex = crypto.createHmac('sha1', secret).update(payload).digest('hex');
+  return Buffer.from(hex, 'utf8').toString('base64');
 }
+
 
 function safeEqual(a: string, b: string) {
   const ab = Buffer.from(a || '');
