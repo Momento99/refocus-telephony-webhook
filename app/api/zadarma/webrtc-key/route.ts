@@ -5,48 +5,85 @@ import crypto from 'crypto';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type ZadarmaJson = Record<string, any>;
+function buildQuery(params: Record<string, string>) {
+  // Zadarma обычно ожидает детерминированный порядок параметров
+  const entries = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && String(v).length > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
 
-function buildSortedQuery(params: Record<string, string>) {
-  const keys = Object.keys(params).sort();
   const sp = new URLSearchParams();
-  for (const k of keys) sp.set(k, params[k]);
-  return sp.toString();
+  for (const [k, v] of entries) sp.set(k, v);
+  return sp.toString(); // важно: URLSearchParams кодирует пробелы как '+', как в PHP http_build_query
 }
 
-function hmacSha1Base64(secret: string, payload: string) {
-  return crypto.createHmac('sha1', secret).update(payload).digest('base64');
+// Вариант подписи как в примерах Zadarma:
+// signature = base64( hmac_sha1( method + paramsStr + md5(paramsStr) ) )
+// В PHP это выглядит как base64_encode(hash_hmac('sha1', ..., secret))
+function makeAuthHeader(apiKey: string, apiSecret: string, methodPath: string, paramsStr: string) {
+  const md5 = crypto.createHash('md5').update(paramsStr).digest('hex');
+  const payload = `${methodPath}${paramsStr}${md5}`;
+
+  // Важно: в PHP base64_encode применяется к строке, которую вернул hash_hmac (обычно hex-строка).
+  // Поэтому делаем digest('hex') и base64 от ASCII-строки hex.
+  const hmacHex = crypto.createHmac('sha1', apiSecret).update(payload).digest('hex');
+  const signature = Buffer.from(hmacHex, 'utf8').toString('base64');
+
+  return `${apiKey}:${signature}`;
 }
 
-function md5Hex(payload: string) {
-  return crypto.createHash('md5').update(payload).digest('hex');
-}
+async function callZadarmaGetKey(apiKey: string, apiSecret: string, sipLogin: string) {
+  // Попробуем оба варианта пути (с / на конце и без) — у некоторых методов это критично.
+  const paths = ['/v1/webrtc/get_key/', '/v1/webrtc/get_key'];
 
-function isAuthFail(r: Response, data: any) {
-  const msg =
-    String(data?.message ?? data?.error ?? data?.status ?? '').toLowerCase();
-  return r.status === 401 || msg.includes('auth') || msg.includes('unauthorized');
-}
+  const qs = buildQuery({
+    format: 'json',
+    sip: sipLogin, // SIP login внутреннего номера (например 542691-100)
+  });
 
-async function fetchJson(r: Response): Promise<ZadarmaJson> {
-  const text = await r.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
+  let last: any = null;
+
+  for (const methodPath of paths) {
+    const auth = makeAuthHeader(apiKey, apiSecret, methodPath, qs);
+    const url = `https://api.zadarma.com${methodPath}?${qs}`;
+
+    const r = await fetch(url, {
+      headers: {
+        Authorization: auth,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    });
+
+    const text = await r.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { raw_text: text };
+    }
+
+    if (r.ok) return { ok: true, status: r.status, data, tried: methodPath };
+
+    last = { ok: false, status: r.status, data, tried: methodPath };
+
+    // Если это НЕ 401, нет смысла пробовать другой path
+    if (r.status !== 401) break;
   }
+
+  return last ?? { ok: false, status: 0, data: null, tried: null };
 }
 
 export async function GET() {
   try {
-    const userKey = process.env.ZADARMA_API_KEY || '';
-    const secret = process.env.ZADARMA_API_SECRET || '';
+    const apiKey = process.env.ZADARMA_API_KEY || '';
+    const apiSecret = process.env.ZADARMA_API_SECRET || '';
+
     const sip =
-      process.env.ZADARMA_SIP ||
       process.env.NEXT_PUBLIC_ZADARMA_SIP ||
+      process.env.ZADARMA_SIP ||
       '';
 
-    if (!userKey || !secret) {
+    if (!apiKey || !apiSecret) {
       return NextResponse.json(
         { error: 'Missing env: ZADARMA_API_KEY / ZADARMA_API_SECRET' },
         { status: 500 }
@@ -60,88 +97,36 @@ export async function GET() {
       );
     }
 
-    // В Zadarma этот метод принимает sip + format
-    const params = {
-      format: 'json',
-      sip: sip,
-    };
+    const res = await callZadarmaGetKey(apiKey, apiSecret, sip);
 
-    const qs = buildSortedQuery(params);
-    const path = '/v1/webrtc/get_key/';
-    const url = `https://api.zadarma.com${path}?${qs}`;
-
-    // Пробуем несколько вариантов подписи (встречаются разные у Zadarma SDK/примеров)
-    const variants: Array<{ name: string; payload: string }> = [
-      { name: 'qs', payload: qs },
-      { name: 'path+qs', payload: `${path}?${qs}` },
-      { name: 'GET+path+qs', payload: `GET${path}?${qs}` },
-      { name: 'md5(qs)', payload: md5Hex(qs) },
-      { name: 'md5(path+qs)', payload: md5Hex(`${path}?${qs}`) },
-    ];
-
-    let last: { status: number; data: any; used: string } | null = null;
-
-    for (const v of variants) {
-      const signature = hmacSha1Base64(secret, v.payload);
-      const auth = `${userKey}:${signature}`;
-
-      const r = await fetch(url, {
-        headers: { Authorization: auth },
-        cache: 'no-store',
-      });
-
-      const data = await fetchJson(r);
-      last = { status: r.status, data, used: v.name };
-
-      // Успешный ответ
-      if (r.ok) {
-        const key = data?.key ?? data?.result?.key ?? data?.data?.key;
-        if (!key) {
-          return NextResponse.json(
-            { error: 'Zadarma response does not contain key', raw: data },
-            { status: 500 }
-          );
-        }
-
-        return NextResponse.json(
-          { key, sip },
-          {
-            status: 200,
-            headers: {
-              'cache-control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-            },
-          }
-        );
-      }
-
-      // Если это не “Auth failed”, то дальше перебирать подписи бессмысленно
-      if (!isAuthFail(r, data)) {
-        return NextResponse.json(
-          {
-            error: `Zadarma HTTP ${r.status}`,
-            hint: 'Non-auth error; check params/sip/account settings.',
-            raw: data,
-            tried: v.name,
-          },
-          { status: 500 }
-        );
-      }
-      // иначе продолжаем — пробуем следующую подпись
+    if (!res?.ok) {
+      return NextResponse.json(
+        {
+          error: 'Auth failed for Zadarma get_key',
+          last_status: res?.status,
+          last_tried: res?.tried,
+          last_raw: res?.data,
+        },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json(
-      {
-        error: 'Auth failed for all signature variants',
-        last_tried: last?.used,
-        last_status: last?.status,
-        last_raw: last?.data,
-      },
-      { status: 500 }
-    );
+    // В ответах Zadarma часто key лежит в data.key, иногда глубже
+    const key =
+      res?.data?.key ??
+      res?.data?.result?.key ??
+      res?.data?.data?.key ??
+      null;
+
+    if (!key) {
+      return NextResponse.json(
+        { error: 'Zadarma response does not contain key', raw: res?.data },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ key, sip });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || 'Unknown error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || 'Unknown error' }, { status: 500 });
   }
 }
