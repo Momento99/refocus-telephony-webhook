@@ -1,3 +1,4 @@
+// usePayrollData.ts
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -7,8 +8,15 @@ export type Role = "seller" | "promoter" | "master" | "owner";
 
 export type ApiCfg = {
   id: number;
+
+  // старое (до 2026-02)
   daily_turnover_target: number;
   daily_bonus_each: number;
+
+  // новое (с 2026-02) — появится после миграции БД
+  monthly_turnover_target?: number;
+  monthly_bonus_each?: number;
+
   social_fund_monthly: number;
   income_tax_monthly: number;
   updated_at: string;
@@ -38,7 +46,11 @@ function errText(e: any) {
   if (!e) return "Неизвестная ошибка";
   if (typeof e === "string") return e;
   if (e.message) return e.message;
-  try { return JSON.stringify(e); } catch { return String(e); }
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
 }
 
 function validMonth(m: string) {
@@ -47,76 +59,72 @@ function validMonth(m: string) {
 
 export function usePayrollData(month: string) {
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
-  const [data, setData]     = useState<ApiPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<ApiPayload | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number>(0);
 
-  const fetchOnce = useCallback(async (signal?: AbortSignal) => {
-    const m = String(month || "").trim();
+  const fetchOnce = useCallback(
+    async (signal?: AbortSignal) => {
+      const m = String(month || "").trim();
 
-    if (!validMonth(m)) {
-      setData(null);
-      setError("Неверный формат параметра month. Ожидается YYYY-MM.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const qs = new URLSearchParams({ month: m });
-      const res = await fetch(`/api/payroll/data?${qs.toString()}`, {
-        cache: "no-store",
-        credentials: "same-origin",
-        signal,
-        headers: { Accept: "application/json" },
-      });
-
-      if (signal?.aborted) return;
-
-      if (!res.ok) {
-        // попробуем вытащить серверное сообщение об ошибке
-        let msg = `HTTP ${res.status}`;
-        try {
-          const body = await res.json();
-          if (body?.error) msg = String(body.error);
-        } catch { /* игнор */ }
-        throw new Error(msg);
+      if (!validMonth(m)) {
+        setData(null);
+        setError("Неверный формат параметра month. Ожидается YYYY-MM.");
+        return;
       }
 
-      const json: ApiPayload = await res.json();
-      if (signal?.aborted) return;
+      setLoading(true);
+      setError(null);
 
-      setData(json);
-      setLastUpdated(Date.now());
-    } catch (e: any) {
-      if (signal?.aborted) return;
-      setError(errText(e));
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [month]);
+      try {
+        const qs = new URLSearchParams({ month: m });
+        const res = await fetch(`/api/payroll/data?${qs.toString()}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal,
+          headers: { Accept: "application/json" },
+        });
+
+        if (signal?.aborted) return;
+
+        if (!res.ok) {
+          let msg = `HTTP ${res.status}`;
+          try {
+            const body = await res.json();
+            if (body?.error) msg = String(body.error);
+          } catch {
+            /* ignore */
+          }
+          throw new Error(msg);
+        }
+
+        const json: ApiPayload = await res.json();
+        if (signal?.aborted) return;
+
+        setData(json);
+        setLastUpdated(Date.now());
+      } catch (e: any) {
+        if (signal?.aborted) return;
+        setError(errText(e));
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [month]
+  );
 
   useEffect(() => {
     const ac = new AbortController();
-    let alive = true;
-
-    (async () => {
-      await fetchOnce(ac.signal);
-      if (!alive) return;
-    })();
-
-    return () => {
-      alive = false;
-      ac.abort();
-    };
+    void fetchOnce(ac.signal);
+    return () => ac.abort();
   }, [fetchOnce]);
 
   // Ручное обновление
   const refresh = useCallback(async () => {
     const ac = new AbortController();
-    await fetchOnce(ac.signal);
-    return () => ac.abort();
+    const p = fetchOnce(ac.signal);
+    // если нужно прервать — можно вызвать abort() снаружи, но обычно не требуется
+    await p;
   }, [fetchOnce]);
 
   return { loading, error, data, refresh, lastUpdated };

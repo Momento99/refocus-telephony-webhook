@@ -1,201 +1,565 @@
+// app/settings/barcodes/overview/page.tsx
 'use client';
 
 import React, { useEffect, useState } from 'react';
 import getSupabase from '@/lib/supabaseClient';
 import Link from 'next/link';
+import { AlertTriangle, Barcode, CheckCircle2 } from 'lucide-react';
 
-/* ────────── корзины цен ────────── */
+/** Плановая ёмкость витрин по филиалам (стартовое значение; переопределяется через localStorage) */
+const BRANCH_CAPACITY: Record<string, number> = {
+  Сокулук: 140,
+  Беловодск: 168,
+  'Кара-Балта': 168,
+  Кант: 252,
+  Токмок: 168,
+};
 
-type BucketId = 1 | 2 | 3 | 4 | 5;
+/** Филиалы, где не используем автоматическую «допечатку по продажам» (как в branch page) */
+const BRANCHES_WITHOUT_AUTO_REPLENISH: string[] = ['Кант', 'Токмок'];
 
-const BUCKETS = [
-  { id: 1 as BucketId, name: 'Бюджет', min: 800, max: 1299 },
-  { id: 2 as BucketId, name: 'Нижний средний', min: 1300, max: 1799 },
-  { id: 3 as BucketId, name: 'Средний', min: 1800, max: 2499 },
-  { id: 4 as BucketId, name: 'Верхний средний', min: 2500, max: 3499 },
-  { id: 5 as BucketId, name: 'Премиум', min: 3500, max: 10000 },
+/* ────────── типы оправ и правила цен (как в branch page) ────────── */
+
+type FrameTypeCode = 'RP' | 'RM' | 'KD' | 'PA' | 'MA';
+type GenderCode = 'F' | 'M';
+type TypeKey = `${FrameTypeCode}_${GenderCode}`;
+
+function makeTypeKey(type: FrameTypeCode, gender: GenderCode): TypeKey {
+  return `${type}_${gender}`;
+}
+
+/** Жёсткие границы цен по каждому типу */
+const FRAME_TYPE_PRICE_RULES: Record<FrameTypeCode, { min: number; max: number }> = {
+  RP: { min: 800, max: 2200 },
+  RM: { min: 1000, max: 2400 },
+  KD: { min: 800, max: 3500 },
+  PA: { min: 1000, max: 3200 },
+  MA: { min: 1200, max: 10000 },
+};
+
+/** Границы цен с учётом типа И пола (одна точка правды) */
+function getTypePriceBounds(type: FrameTypeCode, gender: GenderCode): { min: number; max: number } {
+  const base = FRAME_TYPE_PRICE_RULES[type];
+  if (!base) return { min: 0, max: 0 };
+
+  let { min, max } = base;
+
+  if (type === 'RP') {
+    min = 800;
+    max = 2200;
+  }
+  if (type === 'RM') {
+    min = 1000;
+    max = 2400;
+  }
+  if (type === 'KD') {
+    min = 800;
+    max = 3500;
+  }
+  if (type === 'PA') {
+    if (gender === 'F') {
+      min = 1000;
+      max = 3000;
+    } else {
+      min = 1200;
+      max = 3200;
+    }
+  }
+  if (type === 'MA') {
+    if (gender === 'F') {
+      min = 1200;
+      max = 9000;
+    } else {
+      min = 1400;
+      max = 10000;
+    }
+  }
+
+  return { min, max };
+}
+
+const PRICE_ALPHA = 3.4;
+
+function generatePriceLadder(count: number, minPrice: number, maxPrice: number, alpha = PRICE_ALPHA): number[] {
+  if (count <= 0 || maxPrice <= minPrice) return [];
+  const prices: number[] = [];
+
+  for (let i = 1; i <= count; i++) {
+    const q = (i - 0.5) / count;
+    const raw = minPrice + (maxPrice - minPrice) * Math.pow(q, alpha);
+    let p = 10 * Math.round(raw / 10);
+
+    if (p < 3000 && p % 100 === 0) p += 10;
+    if (p >= 3000) p = 100 * Math.round(p / 100);
+
+    if (p < minPrice) p = minPrice;
+    if (p > maxPrice) p = maxPrice;
+
+    prices.push(p);
+  }
+
+  for (let i = 1; i < prices.length; i++) {
+    if (prices[i] <= prices[i - 1]) {
+      const prev = prices[i - 1];
+      const step = prev >= 3000 ? 100 : 10;
+      let next = prev + step;
+      if (next > maxPrice) next = maxPrice;
+      prices[i] = next;
+    }
+  }
+
+  return prices;
+}
+
+/* ────────── секции/доли (как в branch page) ────────── */
+
+const TYPE_SECTIONS = [
+  { id: 'RD_PL_F', title: 'Для чтения · Женские пластик', typeCode: 'RP' as FrameTypeCode, gender: 'F' as GenderCode },
+  { id: 'RD_MT_F', title: 'Для чтения · Женские металл', typeCode: 'RM' as FrameTypeCode, gender: 'F' as GenderCode },
+  { id: 'KD_F', title: 'Детские · Девочки', typeCode: 'KD' as FrameTypeCode, gender: 'F' as GenderCode },
+  { id: 'KD_M', title: 'Детские · Мальчики', typeCode: 'KD' as FrameTypeCode, gender: 'M' as GenderCode },
+  { id: 'PA_F', title: 'Взрослый пластик · Женские', typeCode: 'PA' as FrameTypeCode, gender: 'F' as GenderCode },
+  { id: 'PA_M', title: 'Взрослый пластик · Мужские', typeCode: 'PA' as FrameTypeCode, gender: 'M' as GenderCode },
+  { id: 'MA_F', title: 'Взрослый металл · Женские', typeCode: 'MA' as FrameTypeCode, gender: 'F' as GenderCode },
+  { id: 'MA_M', title: 'Взрослый металл · Мужские', typeCode: 'MA' as FrameTypeCode, gender: 'M' as GenderCode },
 ] as const;
 
-/** Текущие проценты по корзинам — потом можно вынести в БД */
-const PCT = { b1: 30, b2: 24, b3: 20, b4: 18, b5: 8 } as const;
+type TypeSection = (typeof TYPE_SECTIONS)[number];
+type TypeSectionId = TypeSection['id'];
 
-/** Плановая ёмкость витрин по филиалам (временно здесь, потом унесём в таблицу) */
-const BRANCH_CAPACITY: Record<string, number> = {
-  Сокулук: 120,
-  Беловодск: 100,
-  'Кара-Балта': 100,
-  Кант: 120,
+const TYPE_SLOT_SHARE: Record<TypeSectionId, number> = {
+  RD_PL_F: 14 / 168,
+  RD_MT_F: 14 / 168,
+  KD_F: 7 / 168,
+  KD_M: 7 / 168,
+  PA_F: 35 / 168,
+  PA_M: 28 / 168,
+  MA_F: 35 / 168,
+  MA_M: 28 / 168,
 };
+
+/* ────────── barcode inference (как в branch page) ────────── */
+
+const KNOWN_TYPES: FrameTypeCode[] = ['RP', 'RM', 'KD', 'PA', 'MA'];
+
+function inferFromBarcode(barcodeRaw: string): { typeCode: FrameTypeCode; gender: GenderCode } | null {
+  const barcode = String(barcodeRaw || '').trim().toUpperCase();
+  // BR(2) + TYPE(2) + G(1) + YY(2) + SERIAL(3..5)
+  const m = barcode.match(/^([A-Z]{2})([A-Z]{2})([FM])(\d{2})(\d{3,5})$/);
+  if (!m) return null;
+  const [, , t, g] = m;
+  if (!KNOWN_TYPES.includes(t as FrameTypeCode)) return null;
+  return { typeCode: t as FrameTypeCode, gender: g as GenderCode };
+}
+
+/* ────────── “точка правды” расчёта как в нижнем блоке ────────── */
+
+function sumMapCounts(map: Record<number, number> | undefined | null): number {
+  if (!map) return 0;
+  let s = 0;
+  for (const v of Object.values(map)) {
+    const n = Number(v);
+    if (Number.isFinite(n)) s += n;
+  }
+  return s;
+}
+
+function computeVisiblePricesForType(args: {
+  planSlots: number;
+  frameType: FrameTypeCode;
+  gender: GenderCode;
+  typeActivePrices: Record<number, number>;
+  typeSuggestPrices: number[];
+}) {
+  const { planSlots, frameType, gender, typeActivePrices, typeSuggestPrices } = args;
+
+  const rules = getTypePriceBounds(frameType, gender);
+  const activeSum = sumMapCounts(typeActivePrices);
+
+  const soldSuggestAll = (typeSuggestPrices || []).filter((p) => {
+    if (!Number.isFinite(p)) return false;
+    if (p < rules.min || p > rules.max) return false;
+    if ((typeActivePrices[p] || 0) > 0) return false;
+    return true;
+  });
+
+  const soldSuggestUniq = Array.from(new Set(soldSuggestAll)).sort((a, b) => a - b);
+
+  const remainingByPlan = planSlots > 0 ? Math.max(planSlots - activeSum, 0) : 0;
+  const slotsForFormula = planSlots > 0 ? Math.max(remainingByPlan - soldSuggestUniq.length, 0) : 0;
+
+  let formulaPrices: number[] = [];
+  if (planSlots > 0 && slotsForFormula > 0) {
+    const ladderAll = generatePriceLadder(planSlots, rules.min, rules.max, PRICE_ALPHA);
+
+    const used = new Set<number>();
+    Object.keys(typeActivePrices || {}).forEach((k) => {
+      const num = Number(k);
+      if (Number.isFinite(num)) used.add(num);
+    });
+    soldSuggestUniq.forEach((p) => used.add(p));
+
+    const free = ladderAll.filter((p) => !used.has(p));
+    formulaPrices = free.slice(0, slotsForFormula);
+  }
+
+  const visiblePrices = planSlots > 0 ? [...soldSuggestUniq, ...formulaPrices] : soldSuggestUniq;
+
+  return {
+    rules,
+    activeSum,
+    soldSuggestUniq,
+    visiblePrices,
+    remainingByPlan,
+  };
+}
+
+function calcTypePlans(totalSlots: number): Record<TypeSectionId, number> {
+  const res: Record<TypeSectionId, number> = {} as any;
+  TYPE_SECTIONS.forEach((sec) => {
+    const share = TYPE_SLOT_SHARE[sec.id] ?? 0;
+    res[sec.id] = Math.round((totalSlots || 0) * share);
+  });
+  return res;
+}
+
+function computeBranchTotals(args: {
+  plannedSlots: number;
+  typeActive: Record<string, Record<number, number>>;
+  typeSuggest: Record<string, number[]>;
+}) {
+  const { plannedSlots, typeActive, typeSuggest } = args;
+
+  const plans = calcTypePlans(plannedSlots);
+
+  let activeAll = 0;
+  let toPrintAll = 0;
+
+  for (const sec of TYPE_SECTIONS) {
+    const key = makeTypeKey(sec.typeCode, sec.gender);
+    const planSlots = plans[sec.id] ?? 0;
+
+    const activePrices = typeActive[key] || {};
+    const suggestPrices = typeSuggest[key] || [];
+
+    const calc = computeVisiblePricesForType({
+      planSlots,
+      frameType: sec.typeCode,
+      gender: sec.gender,
+      typeActivePrices: activePrices,
+      typeSuggestPrices: suggestPrices,
+    });
+
+    activeAll += calc.activeSum;
+    toPrintAll += calc.visiblePrices.length;
+  }
+
+  return { activeAll, toPrintAll };
+}
+
+/* ────────── базовые utils ────────── */
+
+type BranchRow = { id: number; name: string };
 
 type BranchStats = {
   id: number;
   name: string;
+
   plannedSlots: number;
-  printedTotal: number;
-  bucketCounts: Record<BucketId, number>;
+
+  /** "Сейчас на витрине" — сумма activeSum по всем видам (как нижний блок) */
+  filledNow: number;
+
+  /** "Не хватает" — сумма visiblePrices.length по всем видам (как нижний блок) */
+  missingNow: number;
+
+  /** чтобы пересчитать missingNow при изменении плана без перезагрузки */
+  typeActive: Record<string, Record<number, number>>;
+  typeSuggest: Record<string, number[]>;
 };
 
-type GlobalStats = {
-  totalBranches: number;
-  totalBarcodes: number;
-  bucketCounts: Record<BucketId, number>;
+type NetworkStats = {
+  branchesTotal: number;
+  plannedTotal: number;
+  filledTotal: number;
+  missingTotal: number;
+  lowBranches: number;
 };
 
-function emptyBuckets(): Record<BucketId, number> {
-  return { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
 }
 
-function bucketOfPrice(p: number): BucketId | null {
-  for (const b of BUCKETS) {
-    if (p >= b.min && p <= b.max) return b.id;
-  }
-  return null;
+function currentYear2(): number {
+  return new Date().getFullYear() % 100;
 }
 
-/* ────────── мелкие компоненты UI ────────── */
+/* ───────────── UI ───────────── */
 
-function ProgressBar({ value, max }: { value: number; max: number }) {
-  const pct = max > 0 ? Math.min(100, Math.round((value * 100) / max)) : 0;
+function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80">
+    <div
+      className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85
+                 ring-1 ring-sky-200/70 p-4
+                 shadow-[0_22px_70px_rgba(15,23,42,0.55)]
+                 backdrop-blur-xl text-slate-900
+                 transition-transform duration-200 hover:-translate-y-0.5"
+    >
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600">{label}</div>
+      <div className="mt-1 text-2xl font-semibold text-slate-900">{value}</div>
+      {hint ? <div className="mt-1 text-[11px] text-slate-600">{hint}</div> : null}
+    </div>
+  );
+}
+
+function ProgressBar({ percent }: { percent: number }) {
+  const p = clamp(percent, 0, 100);
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
       <div
-        className="h-1.5 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-500 transition-all"
-        style={{ width: `${pct}%` }}
+        className="h-2 rounded-full bg-gradient-to-r from-emerald-400 via-teal-400 to-sky-400 transition-all"
+        style={{ width: `${p}%` }}
       />
     </div>
   );
 }
 
-function Section(props: {
-  title: string;
-  aside?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const { title, aside, children } = props;
+function FillChip({ plannedSlots, filledNow, fillPct }: { plannedSlots: number; filledNow: number; fillPct: number }) {
+  if (!plannedSlots || plannedSlots <= 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        план не задан
+      </span>
+    );
+  }
+
+  if (filledNow > plannedSlots) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        переполнено
+      </span>
+    );
+  }
+
+  // Градация по заполненности
+  if (fillPct >= 100) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-200">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        норма
+      </span>
+    );
+  }
+
+  if (fillPct >= 95) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        желательно пополнить
+      </span>
+    );
+  }
+
+  if (fillPct >= 90) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-medium text-orange-900 ring-1 ring-orange-200">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        нужно пополнить
+      </span>
+    );
+  }
+
+  if (fillPct >= 85) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-900 ring-1 ring-rose-200">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        важно пополнить
+      </span>
+    );
+  }
+
   return (
-    <section
-      className="mb-5 rounded-3xl border border-sky-200 
-                 bg-gradient-to-br from-white via-slate-50 to-sky-50/85
-                 shadow-[0_18px_50px_rgba(15,23,42,0.45)] backdrop-blur-xl"
-    >
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-5 pt-4 pb-3">
-        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-        {aside && (
-          <div className="text-[11px] text-slate-600 flex items-center gap-1">
-            {aside}
-          </div>
-        )}
-      </div>
-      <div className="px-5 pb-4 pt-2">{children}</div>
-    </section>
+    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-900 ring-1 ring-red-200">
+      <AlertTriangle className="h-3.5 w-3.5" />
+      срочно пополнить
+    </span>
   );
 }
 
-function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div
-      className="rounded-2xl border border-sky-100 bg-white/90 px-4 py-3 
-                 shadow-sm text-slate-900"
-    >
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </div>
-      <div className="mt-1 text-xl font-semibold text-slate-900 flex items-baseline gap-1.5">
-        {value}
-      </div>
-    </div>
-  );
-}
+function BranchCard({ branch }: { branch: BranchStats }) {
+  const planned = branch.plannedSlots || 0;
+  const filled = branch.filledNow || 0;
+  const missing = branch.missingNow || 0;
 
-function formatPercent(num: number, denom: number): string {
-  if (!denom || denom <= 0) return '—';
-  const v = Math.round((num * 100) / denom);
-  return `${v}%`;
-}
-
-/* ────────── карточка филиала ────────── */
-
-function BranchCard({
-  branch,
-  hasPerBranchStats,
-}: {
-  branch: BranchStats;
-  hasPerBranchStats: boolean;
-}) {
-  const fillPct = branch.plannedSlots
-    ? Math.min(100, Math.round((branch.printedTotal * 100) / branch.plannedSlots))
-    : 0;
+  const percent = planned > 0 ? clamp(Math.round((filled * 100) / planned), 0, 100) : 0;
+  const freeByCount = planned > 0 ? planned - filled : 0;
 
   return (
     <div
-      className="flex flex-col rounded-3xl border border-sky-100 
-                 bg-gradient-to-br from-white via-slate-50 to-sky-50/80 
-                 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.35)] text-slate-900"
+      className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85
+                 ring-1 ring-sky-200/70 p-5
+                 shadow-[0_22px_70px_rgba(15,23,42,0.6)]
+                 backdrop-blur-xl text-slate-900
+                 transition-transform duration-200 hover:-translate-y-0.5"
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-900">{branch.name}</div>
-          <div className="text-[11px] text-slate-500">
-            План слотов:{' '}
-            <span className="font-medium text-slate-900">
-              {branch.plannedSlots || 'не задан'}
-            </span>
+          <div className="text-base font-semibold tracking-tight text-slate-900">{branch.name}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <FillChip plannedSlots={planned} filledNow={filled} fillPct={percent} />
+            {planned > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/85 px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">
+                {`к печати: ${missing}`}
+              </span>
+            ) : null}
           </div>
         </div>
-        {!hasPerBranchStats && (
-          <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-800 border border-amber-200">
-            пока без привязки штрихкодов
-          </span>
-        )}
       </div>
 
-      <ProgressBar value={branch.printedTotal} max={branch.plannedSlots || 1} />
-      <div className="mt-2 text-[11px] text-slate-600">
-        Ценников:{' '}
-        <span className="font-semibold text-slate-900">{branch.printedTotal}</span>{' '}
-        {branch.plannedSlots ? (
-          <>
-            • заполненность:{' '}
-            <span className="font-semibold text-slate-900">
-              {formatPercent(branch.printedTotal, branch.plannedSlots)} (
-              {fillPct}%)
-            </span>
-          </>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl bg-white/90 ring-1 ring-slate-200 p-3 shadow-[0_14px_40px_rgba(15,23,42,0.12)]">
+          <div className="text-[11px] uppercase tracking-wide text-slate-500">План слотов</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">{planned || '—'}</div>
+        </div>
+        <div className="rounded-2xl bg-white/90 ring-1 ring-slate-200 p-3 shadow-[0_14px_40px_rgba(15,23,42,0.12)]">
+          <div className="text-[11px] uppercase tracking-wide text-slate-500">Сейчас на витрине</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">{filled}</div>
+        </div>
+        <div className="rounded-2xl bg-white/90 ring-1 ring-slate-200 p-3 shadow-[0_14px_40px_rgba(15,23,42,0.12)]">
+          <div className="text-[11px] uppercase tracking-wide text-slate-500">К печати сейчас (по видам)</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">{planned > 0 ? missing : '—'}</div>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <ProgressBar percent={percent} />
+        <div className="mt-2 flex items-center justify-between text-[12px] text-slate-600">
+          <span>
+            Заполненность (по количеству):{' '}
+            <span className="font-semibold text-slate-900">{planned > 0 ? `${percent}%` : '—'}</span>
+          </span>
+          <span className="font-mono text-[12px] text-slate-700">{planned > 0 ? `${filled} / ${planned}` : `${filled} / —`}</span>
+        </div>
+
+        {planned > 0 ? (
+          <div className="mt-1 text-[11px] text-slate-600">
+            Свободно по количеству:{' '}
+            <span className={`font-semibold ${freeByCount < 0 ? 'text-amber-700' : 'text-slate-900'}`}>{freeByCount}</span>
+            {freeByCount < 0 ? ' (перебор по количеству)' : ''}
+          </div>
         ) : null}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {BUCKETS.map((b) => (
-          <span
-            key={b.id}
-            className="rounded-full border border-sky-100 bg-white px-2 py-1 text-[11px] text-slate-700 shadow-xs"
-          >
-            {b.name}: <span className="font-semibold">{branch.bucketCounts[b.id] ?? 0}</span>
-          </span>
-        ))}
       </div>
 
       <Link
         href={`/settings/barcodes/${branch.id}`}
-        className="mt-3 inline-flex items-center justify-center rounded-xl 
-                   border border-cyan-400 bg-white px-3 py-1.5 text-xs font-medium 
-                   text-slate-900 shadow-sm hover:bg-cyan-50 hover:border-cyan-500 
-                   transition"
+        className="mt-4 inline-flex w-full items-center justify-center rounded-xl
+                   bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400
+                   px-4 py-2.5 text-sm font-semibold text-slate-950
+                   shadow-[0_16px_45px_rgba(34,211,238,0.28)]
+                   hover:brightness-110 active:brightness-95
+                   focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
       >
-        Открыть страницу филиала
+        Открыть филиал
       </Link>
     </div>
   );
 }
 
-/* ────────── страница обзора ────────── */
+/* ───────────── Supabase: загрузить все штрихкоды за год (voided_at IS NULL) ───────────── */
+
+type YearRow = {
+  branch_id: number | null;
+  price: number | null;
+  sold_at: string | null;
+  type_code: FrameTypeCode | null;
+  gender: GenderCode | null;
+  barcode: string | null;
+};
+
+async function fetchRowsForYear(yearNum: number): Promise<YearRow[]> {
+  const sb = getSupabase();
+
+  const PAGE = 1000;
+  let from = 0;
+  let all: YearRow[] = [];
+
+  while (true) {
+    const { data, error } = await sb
+      .from('frame_barcodes')
+      .select('branch_id, price, sold_at, type_code, gender, barcode')
+      .eq('year', yearNum)
+      .is('voided_at', null)
+      .order('barcode', { ascending: true })
+      .range(from, from + PAGE - 1);
+
+    if (error) throw error;
+
+    const chunk = (data ?? []).map((r: any) => ({
+      branch_id: r.branch_id as number | null,
+      price: r.price == null ? null : Number(r.price),
+      sold_at: r.sold_at == null ? null : String(r.sold_at),
+      type_code: (r.type_code ?? null) as FrameTypeCode | null,
+      gender: (r.gender ?? null) as GenderCode | null,
+      barcode: r.barcode == null ? null : String(r.barcode),
+    })) as YearRow[];
+
+    all = all.concat(chunk);
+    if (chunk.length < PAGE) break;
+    from += PAGE;
+  }
+
+  return all;
+}
+
+/* ───────────── Page ───────────── */
 
 export default function BarcodesOverviewPage() {
   const [branches, setBranches] = useState<BranchStats[]>([]);
-  const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
+  const [network, setNetwork] = useState<NetworkStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [hasPerBranchStats, setHasPerBranchStats] = useState<boolean>(true);
+
+  // UI: откат штрихкода (вернуть на полку)
+  const [rbBarcode, setRbBarcode] = useState('');
+  const [rbForce, setRbForce] = useState(false);
+  const [rbBusy, setRbBusy] = useState(false);
+  const [rbOk, setRbOk] = useState<string | null>(null);
+  const [rbErr, setRbErr] = useState<string | null>(null);
+  const [rbJson, setRbJson] = useState<any>(null);
+
+  function getPlannedSlots(branchId: number, branchName: string): number {
+    let planned = BRANCH_CAPACITY[branchName] ?? 0;
+    try {
+      const saved = localStorage.getItem(`ui.branchSlots.${branchId}`);
+      if (saved != null) {
+        const n = Number(JSON.parse(saved));
+        if (Number.isFinite(n) && n > 0) planned = n;
+      }
+    } catch {}
+    return planned;
+  }
+
+  function normalizeBarcode(v: string) {
+    return v.trim().toUpperCase();
+  }
+
+  function recalcNetwork(nextBranches: BranchStats[]): NetworkStats {
+    const plannedTotal = nextBranches.reduce((s, b) => s + (b.plannedSlots || 0), 0);
+    const filledTotal = nextBranches.reduce((s, b) => s + (b.filledNow || 0), 0);
+    const missingTotal = nextBranches.reduce((s, b) => s + (b.missingNow || 0), 0);
+
+    const lowBranches = nextBranches.filter((b) => (b.plannedSlots || 0) > 0 && (b.missingNow || 0) > 0).length;
+
+    return {
+      branchesTotal: nextBranches.length,
+      plannedTotal,
+      filledTotal,
+      missingTotal,
+      lowBranches,
+    };
+  }
 
   async function loadData() {
     setLoading(true);
@@ -205,104 +569,113 @@ export default function BarcodesOverviewPage() {
       const sb = getSupabase();
 
       // 1) Филиалы
-      const { data: branchesData, error: branchesError } = await sb
-        .from('branches')
-        .select('id, name')
-        .order('id', { ascending: true });
-
+      const { data: branchesData, error: branchesError } = await sb.from('branches').select('id, name').order('id', { ascending: true });
       if (branchesError) throw branchesError;
 
-      const branchesList = (branchesData ?? []) as { id: number; name: string }[];
+      const list = (branchesData ?? []) as BranchRow[];
+      const yearNum = currentYear2();
 
-      // 2) Штрихкоды.
-      // Пытаемся взять branch_id + price. Если колонка branch_id ещё не создана — gracefully деградируем.
-      let hasBranch = true;
-      let barcodes: { branch_id: number | null; price: number }[] = [];
+      // 2) Все штрихкоды за год (voided_at NULL)
+      const rows = await fetchRowsForYear(yearNum);
 
-      const { data: bcWithBranch, error: bcErr } = await sb
-        .from('frame_barcodes')
-        .select('branch_id, price');
+      // 3) Группировка per-branch: totalMap + activeMap, затем suggestMap
+      const byBranch: Record<
+        number,
+        {
+          totalMap: Record<string, Record<number, number>>;
+          activeMap: Record<string, Record<number, number>>;
+          suggestMap: Record<string, number[]>;
+        }
+      > = {};
 
-      if (bcErr) {
-        // Колонки branch_id, возможно, нет — работаем только по сети.
-        hasBranch = false;
-        const { data: bcNoBranch, error: bcErr2 } = await sb
-          .from('frame_barcodes')
-          .select('price');
+      const ensure = (branchId: number) => {
+        if (!byBranch[branchId]) {
+          byBranch[branchId] = {
+            totalMap: {},
+            activeMap: {},
+            suggestMap: {},
+          };
+        }
+        return byBranch[branchId];
+      };
 
-        if (bcErr2) throw bcErr2;
+      for (const r of rows) {
+        const bid = r.branch_id;
+        if (!bid || !Number.isFinite(bid)) continue;
 
-        barcodes = (bcNoBranch ?? []).map((row: any) => ({
-          branch_id: null,
-          price: Number(row.price),
-        }));
-      } else {
-        barcodes = (bcWithBranch ?? []).map((row: any) => ({
-          branch_id: row.branch_id ?? null,
-          price: Number(row.price),
-        }));
-      }
+        const priceNum = r.price == null ? NaN : Number(r.price);
+        if (!Number.isFinite(priceNum) || priceNum <= 0) continue;
 
-      setHasPerBranchStats(hasBranch);
+        const inferred = inferFromBarcode(r.barcode || '');
+        const t = (inferred?.typeCode ?? r.type_code ?? null) as FrameTypeCode | null;
+        const g = (inferred?.gender ?? r.gender ?? null) as GenderCode | null;
+        if (!t || !g) continue;
 
-      // 3) Статистика
-      const globalBucketCounts = emptyBuckets();
-      const perBranchBuckets: Record<number, Record<BucketId, number>> = {};
-      const perBranchTotals: Record<number, number> = {};
-      let totalBarcodes = 0;
+        const key = makeTypeKey(t, g);
+        const slot = ensure(bid);
 
-      for (const row of barcodes) {
-        const price = row.price;
-        if (!Number.isFinite(price)) continue;
+        if (!slot.totalMap[key]) slot.totalMap[key] = {};
+        if (!slot.activeMap[key]) slot.activeMap[key] = {};
 
-        const bucket = bucketOfPrice(price);
-        if (!bucket) continue;
+        slot.totalMap[key][priceNum] = (slot.totalMap[key][priceNum] || 0) + 1;
 
-        totalBarcodes += 1;
-        globalBucketCounts[bucket] += 1;
-
-        const bid = row.branch_id;
-        if (bid) {
-          if (!perBranchBuckets[bid]) perBranchBuckets[bid] = emptyBuckets();
-          perBranchBuckets[bid][bucket] += 1;
-          perBranchTotals[bid] = (perBranchTotals[bid] ?? 0) + 1;
+        if (!r.sold_at) {
+          slot.activeMap[key][priceNum] = (slot.activeMap[key][priceNum] || 0) + 1;
         }
       }
 
-      const branchStats: BranchStats[] = branchesList.map((br) => {
-        // дефолт из константы
-        let plannedSlots = BRANCH_CAPACITY[br.name] ?? 0;
+      // suggestMap: цены, где продано > 0 и на полке 0
+      for (const bidStr of Object.keys(byBranch)) {
+        const bid = Number(bidStr);
+        const slot = byBranch[bid];
 
-        // если на странице филиала уже вручную ввели слоты,
-        // забираем их из localStorage
-        try {
-          const saved = localStorage.getItem(`ui.branchSlots.${br.id}`);
-          if (saved != null) {
-            const n = Number(JSON.parse(saved));
-            if (Number.isFinite(n) && n > 0) {
-              plannedSlots = n;
-            }
+        const suggest: Record<string, number[]> = {};
+        for (const key of Object.keys(slot.totalMap)) {
+          const totalPrices = slot.totalMap[key] || {};
+          const activePrices = slot.activeMap[key] || {};
+          const list: number[] = [];
+
+          for (const priceStr of Object.keys(totalPrices)) {
+            const p = Number(priceStr);
+            if (!Number.isFinite(p)) continue;
+
+            const totalC = totalPrices[p] || 0;
+            const activeC = activePrices[p] || 0;
+            const sold = Math.max(totalC - activeC, 0);
+
+            if (sold > 0 && activeC === 0) list.push(p);
           }
-        } catch {
-          // если localStorage недоступен — просто игнорируем
+
+          if (list.length) suggest[key] = Array.from(new Set(list)).sort((a, b) => a - b);
         }
+
+        slot.suggestMap = suggest;
+      }
+
+      // 4) Сборка stats: filledNow/missingNow = как нижний блок
+      const stats: BranchStats[] = list.map((br) => {
+        const plannedSlots = getPlannedSlots(br.id, br.name);
+        const disableAutoSuggest = BRANCHES_WITHOUT_AUTO_REPLENISH.includes(br.name);
+
+        const typeActive = (byBranch[br.id]?.activeMap ?? {}) as Record<string, Record<number, number>>;
+        const rawSuggest = (byBranch[br.id]?.suggestMap ?? {}) as Record<string, number[]>;
+        const typeSuggest = disableAutoSuggest ? {} : rawSuggest;
+
+        const totals = computeBranchTotals({ plannedSlots, typeActive, typeSuggest });
 
         return {
           id: br.id,
           name: br.name,
           plannedSlots,
-          printedTotal: perBranchTotals[br.id] ?? 0,
-          bucketCounts: perBranchBuckets[br.id] ?? emptyBuckets(),
+          filledNow: totals.activeAll,
+          missingNow: totals.toPrintAll,
+          typeActive,
+          typeSuggest,
         };
       });
 
-
-      setBranches(branchStats);
-      setGlobalStats({
-        totalBranches: branchStats.length,
-        totalBarcodes,
-        bucketCounts: globalBucketCounts,
-      });
+      setBranches(stats);
+      setNetwork(recalcNetwork(stats));
     } catch (err: any) {
       console.error(err);
       setErrorText(err?.message || 'Ошибка загрузки данных');
@@ -311,147 +684,194 @@ export default function BarcodesOverviewPage() {
     }
   }
 
+  async function rollbackBarcode() {
+    const bc = normalizeBarcode(rbBarcode);
+    setRbOk(null);
+    setRbErr(null);
+    setRbJson(null);
+
+    if (!bc) {
+      setRbErr('Введи штрихкод.');
+      return;
+    }
+
+    const confirmText = rbForce ? `Точно ОТКАТИТЬ ${bc} в режиме force=true?` : `Откатить тестовую продажу и вернуть ${bc} на полку?`;
+    if (!window.confirm(confirmText)) return;
+
+    setRbBusy(true);
+    try {
+      const sb = getSupabase();
+      const { data, error } = await sb.rpc('rollback_frame_barcode', {
+        p_barcode: bc,
+        p_force: rbForce,
+      });
+
+      if (error) throw error;
+
+      setRbJson(data ?? null);
+      setRbOk(`Готово: ${bc} возвращён на полку.`);
+      await loadData();
+    } catch (e: any) {
+      console.error(e);
+      setRbErr(e?.message || 'Ошибка отката');
+    } finally {
+      setRbBusy(false);
+    }
+  }
+
   useEffect(() => {
     void loadData();
   }, []);
 
   return (
-    <div className="mx-auto max-w-6xl p-6 text-sm text-slate-900">
-      {/* Шапка */}
-      <header
-        className="mb-4 rounded-3xl border border-sky-200 
-                   bg-gradient-to-br from-white via-slate-50 to-sky-50/85 
-                   px-6 py-4 shadow-[0_22px_60px_rgba(15,23,42,0.55)] 
-                   backdrop-blur-xl flex items-center justify-between gap-4"
-      >
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-transparent text-slate-50">
+      {/* ВАЖНО: убран прямоугольный фон-оверлей (inset-0 radial-gradient). Оставили только «точечные» свечения (не прямоугольник). */}
+      <div className="pointer-events-none fixed inset-0">
+        <div className="absolute -top-44 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-cyan-500/12 blur-[90px]" />
+        <div className="absolute -bottom-44 right-0 h-[520px] w-[520px] rounded-full bg-teal-500/10 blur-[100px]" />
+      </div>
+
+      <div className="relative mx-auto max-w-7xl px-5 pt-8 pb-10">
+        {/* Header (прозрачный, без подложки) */}
+        <div className="mb-6 flex items-start gap-3">
           <div
-            className="grid h-10 w-10 place-items-center rounded-2xl 
-                       bg-gradient-to-br from-cyan-400 via-sky-400 to-indigo-500 
-                       text-xs font-bold text-slate-900 shadow-[0_0_18px_rgba(56,189,248,0.75)]"
+            className="grid h-10 w-10 place-items-center rounded-2xl
+                       bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400
+                       shadow-[0_0_26px_rgba(34,211,238,0.55)]"
           >
-            RF
+            <Barcode className="h-5 w-5 text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]" />
           </div>
+
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-              Оправы и штрихкоды · обзор по филиалам
-            </h1>
-            <div className="text-[11px] font-medium text-slate-500">
-              Видно картину в целом, дальше проваливаемся в каждый филиал отдельно
+            <div className="text-3xl font-semibold tracking-tight text-slate-50 drop-shadow-[0_10px_30px_rgba(34,211,238,0.15)]">
+              Barcode Overview · филиалы
+            </div>
+            {loading ? <div className="mt-1 text-[11px] text-sky-200/80">Обновляю данные…</div> : null}
+          </div>
+        </div>
+
+        {/* Ошибка */}
+        {errorText ? (
+          <div
+            className="mb-6 rounded-3xl bg-gradient-to-r from-rose-50 via-rose-50 to-amber-50
+                       ring-1 ring-rose-200 px-5 py-4 text-slate-900
+                       shadow-[0_22px_70px_rgba(15,23,42,0.55)]
+                       backdrop-blur-xl"
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-rose-600" />
+              <div>
+                <div className="font-semibold">Ошибка загрузки данных</div>
+                <div className="mt-1 text-[12px] text-slate-700">{errorText}</div>
+              </div>
             </div>
           </div>
+        ) : null}
+
+        {/* Сводка */}
+        <div className="mb-6 grid gap-4 md:grid-cols-3">
+          <StatCard label="План слотов (сумма)" value={network?.plannedTotal ?? '—'} />
+          <StatCard label="Сейчас на витринах (сумма)" value={network?.filledTotal ?? '—'} />
+          <StatCard label="К печати сейчас (сумма)" value={network?.missingTotal ?? '—'} />
         </div>
-        <button
-          type="button"
-          onClick={loadData}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-xl 
-                     bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-500 
-                     px-3 py-2 text-xs font-medium text-slate-900
-                     shadow-[0_0_14px_rgba(56,189,248,0.55)]
-                     hover:brightness-110 focus:outline-none 
-                     focus:ring-2 focus:ring-cyan-400/60
-                     disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {loading ? 'Обновляю…' : 'Обновить данные'}
-        </button>
-      </header>
 
-      {errorText && (
-        <div
-          className="mb-4 flex items-start justify-between gap-3 rounded-2xl 
-                     border border-rose-300 bg-gradient-to-r from-rose-50 via-rose-50 to-amber-50 
-                     px-4 py-3 text-xs text-rose-800 shadow-sm"
-        >
-          <div>
-            <div className="font-semibold">Ошибка загрузки данных</div>
-            <div className="mt-0.5 text-[11px]">{errorText}</div>
+        {/* Филиалы */}
+        {branches.length === 0 && !loading ? (
+          <div
+            className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85
+                       ring-1 ring-sky-200/70 p-6 text-slate-700
+                       shadow-[0_22px_70px_rgba(15,23,42,0.45)]
+                       backdrop-blur-xl"
+          >
+            Ничего не найдено.
           </div>
-        </div>
-      )}
+        ) : null}
 
-      {/* Сводка по сети */}
-      <Section
-        title="Сводка по сети"
-        aside={
-          globalStats && (
-            <span>
-              Всего ценников:{' '}
-              <span className="font-semibold text-slate-900">
-                {globalStats.totalBarcodes}
-              </span>
-            </span>
-          )
-        }
-      >
-        {globalStats ? (
-          <div className="grid gap-4 md:grid-cols-3">
-            <StatCard label="Филиалов в системе" value={globalStats.totalBranches} />
-            <StatCard
-              label="Ценников в базе (вся сеть)"
-              value={globalStats.totalBarcodes}
-            />
-            <StatCard
-              label="Баланс корзин"
-              value={
-                <div className="mt-0.5 space-y-0.5 text-[11px]">
-                  <div className="text-slate-600">
-                    Бюджет / Нижний / Средний / Верхний / Премиум:
-                  </div>
-                  <div className="font-mono text-[11px]">
-                    {globalStats.bucketCounts[1]} / {globalStats.bucketCounts[2]} /{' '}
-                    {globalStats.bucketCounts[3]} / {globalStats.bucketCounts[4]} /{' '}
-                    {globalStats.bucketCounts[5]}
-                  </div>
-                </div>
-              }
-            />
-          </div>
-        ) : (
-          <div className="text-xs text-slate-500">Загружаю сводку по сети…</div>
-        )}
-      </Section>
-
-      {/* Филиалы */}
-      <Section
-        title="Филиалы"
-        aside={
-          !hasPerBranchStats ? (
-            <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-800 border border-amber-200">
-              Сейчас штрихкоды не привязаны к филиалам; считаем только общую картину
-            </span>
-          ) : (
-            <span className="text-[11px] text-slate-500">
-              План по корзинам: {PCT.b1}% / {PCT.b2}% / {PCT.b3}% / {PCT.b4}% /{' '}
-              {PCT.b5}%
-            </span>
-          )
-        }
-      >
-        {branches.length === 0 && !loading && (
-          <div className="text-xs text-slate-500">
-            Филиалы не найдены или нет прав на их чтение.
-          </div>
-        )}
-
-        {branches.length > 0 && (
+        {branches.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2">
             {branches.map((b) => (
-              <BranchCard
-                key={b.id}
-                branch={b}
-                hasPerBranchStats={hasPerBranchStats}
-              />
+              <BranchCard key={b.id} branch={b} />
             ))}
           </div>
-        )}
+        ) : null}
 
-        {loading && (
-          <div className="mt-4 text-xs text-slate-500">
-            Обновляю данные по филиалам…
+        {/* Откат штрихкода */}
+        <div
+          className="mt-8 rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85
+                     ring-1 ring-sky-200/70 p-5
+                     shadow-[0_22px_70px_rgba(15,23,42,0.6)]
+                     backdrop-blur-xl text-slate-900"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-base font-semibold tracking-tight">Откат тестовой продажи (вернуть штрихкод на полку)</div>
+              <div className="mt-1 text-[12px] text-slate-600">RPC: rollback_frame_barcode(p_barcode, p_force)</div>
+            </div>
+            <div className="text-[11px] text-slate-600">
+              По умолчанию откат блокируется, если заказ не NEW или есть оплаты. Для обхода — force=true.
+            </div>
           </div>
-        )}
-      </Section>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600">Штрихкод</label>
+              <input
+                value={rbBarcode}
+                onChange={(e) => setRbBarcode(e.target.value)}
+                placeholder="Напр. KBRPF250117"
+                className="mt-1 w-full rounded-2xl bg-white/90 px-3 py-2.5 text-sm text-slate-900
+                           ring-1 ring-sky-200/80 shadow-[0_14px_40px_rgba(15,23,42,0.14)]
+                           outline-none focus:ring-2 focus:ring-cyan-400/70"
+              />
+
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  id="rbForce"
+                  type="checkbox"
+                  checked={rbForce}
+                  onChange={(e) => setRbForce(e.target.checked)}
+                  className="h-4 w-4 accent-cyan-500"
+                />
+                <label htmlFor="rbForce" className="text-[12px] text-slate-700">
+                  force=true (опасно — только если понимаешь последствия)
+                </label>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={rollbackBarcode}
+              disabled={rbBusy}
+              className="inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold
+                         bg-gradient-to-r from-rose-300 via-amber-200 to-cyan-200 text-slate-950
+                         shadow-[0_16px_45px_rgba(15,23,42,0.18)]
+                         hover:brightness-105 active:brightness-95
+                         focus:outline-none focus:ring-2 focus:ring-cyan-300/70
+                         disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {rbBusy ? 'Откатываю…' : 'Вернуть на полку'}
+            </button>
+          </div>
+
+          {rbErr ? (
+            <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-[12px] text-rose-800 ring-1 ring-rose-200">
+              {rbErr}
+            </div>
+          ) : null}
+
+          {rbOk ? (
+            <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-[12px] text-emerald-800 ring-1 ring-emerald-200">
+              {rbOk}
+            </div>
+          ) : null}
+
+          {rbJson ? (
+            <pre className="mt-4 max-h-60 overflow-auto rounded-2xl bg-white/85 p-3 text-[11px] text-slate-800 ring-1 ring-slate-200 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+              {JSON.stringify(rbJson, null, 2)}
+            </pre>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

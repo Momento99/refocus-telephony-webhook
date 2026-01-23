@@ -19,6 +19,8 @@ import {
   Archive,
   Trash2,
   Pencil,
+  AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 
 /* ---------- Types ---------- */
@@ -66,6 +68,9 @@ type Row = {
   discount_percent: number;
   discount_amount: number;
   discount_ru: string | null;
+
+  // NEW: штрихкоды оправы (если есть)
+  frame_barcodes?: string[] | null;
 };
 
 type PaymentRow = {
@@ -135,7 +140,7 @@ function fmtDate(s?: string | null): string | null {
   return `${parts.day}.${parts.month}.${parts.year} ${parts.hour}:${parts.minute}`;
 }
 
-/* ---------- UI helpers ---------- */
+/* ---------- UI helpers (Refocus style) ---------- */
 function GlassCard({
   children,
   className = '',
@@ -143,21 +148,47 @@ function GlassCard({
   children: React.ReactNode;
   className?: string;
 }) {
-  // тот же стеклянный стиль, что на «Сверке»
+  // Полуглассморфизм: светлый градиент + ring + сильная тень + blur
   return (
     <div
-      className={`rounded-3xl border border-sky-100/80 bg-white/92 backdrop-blur-2xl shadow-[0_22px_80px_rgba(15,23,42,0.22)] ${className}`}
+      className={[
+        'rounded-3xl',
+        'ring-1 ring-sky-200/80',
+        'bg-gradient-to-br from-white/95 via-slate-50/90 to-sky-50/80',
+        'backdrop-blur-xl',
+        'shadow-[0_22px_70px_rgba(15,23,42,0.25)]',
+        'text-slate-900',
+        className,
+      ].join(' ')}
     >
       {children}
     </div>
   );
 }
 
-const baseBtn =
-  'px-3.5 py-2.5 rounded-2xl text-[14px] transition focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap inline-flex items-center gap-2';
-const blueGradBtn = `${baseBtn} text-slate-950 bg-gradient-to-r from-sky-500 via-cyan-500 to-indigo-500 hover:from-sky-400 hover:via-cyan-400 hover:to-indigo-400`;
-const outlineBtn = `${baseBtn} border border-sky-300/70 bg-white/90 text-sky-700 hover:bg-sky-50`;
-const softBtn = `${baseBtn} bg-white border border-slate-200 hover:bg-slate-50`;
+const btnBase =
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap select-none transition-all ' +
+  'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-[0.5px]';
+
+const SoftPrimary =
+  btnBase +
+  ' rounded-xl px-4 py-2.5 text-sm font-medium text-white ' +
+  'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 ' +
+  'shadow-[0_14px_34px_rgba(34,211,238,0.35)] ' +
+  'hover:from-teal-300 hover:via-cyan-300 hover:to-sky-300';
+
+const SoftGhost =
+  btnBase +
+  ' rounded-xl px-3.5 py-2.5 text-sm font-medium text-teal-700 ' +
+  'bg-white/85 ring-1 ring-teal-200 ' +
+  'shadow-[0_10px_26px_rgba(15,23,42,0.12)] hover:bg-white';
+
+const SoftNeutral =
+  btnBase +
+  ' rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-800 ' +
+  'bg-white/90 ring-1 ring-slate-200 ' +
+  'shadow-[0_10px_26px_rgba(15,23,42,0.10)] hover:bg-white';
 
 function GBtn({
   children,
@@ -172,7 +203,7 @@ function GBtn({
   variant?: 'solid' | 'outline' | 'soft';
   type?: 'button' | 'submit';
 }) {
-  const cls = variant === 'solid' ? blueGradBtn : variant === 'soft' ? softBtn : outlineBtn;
+  const cls = variant === 'solid' ? SoftPrimary : variant === 'soft' ? SoftNeutral : SoftGhost;
   return (
     <button type={type} onClick={onClick} disabled={disabled} className={cls}>
       {children}
@@ -184,30 +215,171 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full px-3.5 py-2.5 rounded-2xl border border-sky-100 bg-white/95 backdrop-blur text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-sky-300 ${
-        props.className || ''
-      }`}
+      className={[
+        'w-full',
+        'rounded-[14px]',
+        'bg-white/90',
+        'px-3.5 py-2.5',
+        'text-sm text-slate-900 placeholder:text-slate-400',
+        'ring-1 ring-sky-200/80',
+        'shadow-[0_14px_40px_rgba(15,23,42,0.14)]',
+        'outline-none',
+        'focus:ring-2 focus:ring-cyan-400/80',
+        props.className || '',
+      ].join(' ')}
     />
   );
 }
+
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className={`w-full px-3.5 py-2.5 rounded-2xl border border-sky-100 bg-white/95 backdrop-blur text-sm text-slate-900 outline-none focus:ring-2 focus:ring-sky-300 ${
-        props.className || ''
-      }`}
+      className={[
+        'w-full',
+        'rounded-[14px]',
+        'bg-white/90',
+        'px-3.5 py-2.5',
+        'text-sm text-slate-900',
+        'ring-1 ring-sky-200/80',
+        'shadow-[0_14px_40px_rgba(15,23,42,0.14)]',
+        'outline-none',
+        'focus:ring-2 focus:ring-cyan-400/80',
+        props.className || '',
+      ].join(' ')}
     />
   );
 }
 
 function StatusPill({ status, status_ru }: { status: string; status_ru?: string }) {
   const label = status_ru ?? STATUS_RU[status] ?? status;
-  let cls = 'bg-slate-50 text-slate-700 border-slate-200';
-  if (status === 'READY') cls = 'bg-amber-50 text-amber-700 border-amber-200';
-  if (status === 'DELIVERED') cls = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  if (status === 'NEW') cls = 'bg-indigo-50 text-indigo-700 border-indigo-200';
-  return <span className={`px-2.5 py-1 rounded-2xl text-xs border ${cls}`}>{label}</span>;
+
+  let ring = 'ring-slate-200';
+  let bg = 'bg-white/85';
+  let text = 'text-slate-700';
+  let Icon = Sparkles;
+
+  if (status === 'READY') {
+    ring = 'ring-amber-200';
+    bg = 'bg-amber-50/80';
+    text = 'text-amber-800';
+    Icon = AlertTriangle;
+  }
+  if (status === 'DELIVERED') {
+    ring = 'ring-emerald-200';
+    bg = 'bg-emerald-50/80';
+    text = 'text-emerald-800';
+    Icon = CheckCircle2;
+  }
+  if (status === 'NEW') {
+    ring = 'ring-sky-200';
+    bg = 'bg-sky-50/85';
+    text = 'text-sky-800';
+    Icon = Sparkles;
+  }
+
+  return (
+    <span
+      className={[
+        'inline-flex items-center gap-1.5',
+        'rounded-full px-2.5 py-1',
+        'text-[12px] font-semibold',
+        'ring-1',
+        ring,
+        bg,
+        text,
+      ].join(' ')}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </span>
+  );
+}
+
+function LegendChip({
+  kind,
+  label,
+}: {
+  kind: 'ok' | 'warn' | 'bad';
+  label: string;
+}) {
+  const cfg =
+    kind === 'ok'
+      ? {
+          ring: 'ring-emerald-200',
+          bg: 'bg-emerald-50/80',
+          text: 'text-emerald-800',
+          Icon: CheckCircle2,
+        }
+      : kind === 'warn'
+        ? {
+            ring: 'ring-amber-200',
+            bg: 'bg-amber-50/80',
+            text: 'text-amber-800',
+            Icon: AlertTriangle,
+          }
+        : {
+            ring: 'ring-rose-200',
+            bg: 'bg-rose-50/80',
+            text: 'text-rose-800',
+            Icon: AlertTriangle,
+          };
+
+  const Icon = cfg.Icon;
+
+  return (
+    <span
+      className={[
+        'inline-flex items-center gap-1.5',
+        'rounded-full px-2.5 py-1',
+        'text-[11px] font-semibold',
+        'ring-1',
+        cfg.ring,
+        cfg.bg,
+        cfg.text,
+      ].join(' ')}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </span>
+  );
+}
+
+function StatBox({
+  label,
+  value,
+  tone = 'money',
+}: {
+  label: string;
+  value: string;
+  tone?: 'money' | 'ok' | 'warn' | 'bad';
+}) {
+  const toneCfg =
+    tone === 'ok'
+      ? { bg: 'from-emerald-50 via-white to-emerald-50', ring: 'ring-emerald-200' }
+      : tone === 'warn'
+        ? { bg: 'from-amber-50 via-white to-amber-50', ring: 'ring-amber-200' }
+        : tone === 'bad'
+          ? { bg: 'from-rose-50 via-white to-rose-50', ring: 'ring-rose-200' }
+          : { bg: 'from-sky-50 via-white to-sky-50', ring: 'ring-sky-200' };
+
+  return (
+    <div
+      className={[
+        'rounded-2xl p-5',
+        'bg-gradient-to-br',
+        toneCfg.bg,
+        'ring-1',
+        toneCfg.ring,
+        'shadow-[0_16px_50px_rgba(15,23,42,0.16)]',
+        'backdrop-blur-xl',
+        'flex items-center justify-between gap-4',
+      ].join(' ')}
+    >
+      <div className="text-sm text-slate-700">{label}</div>
+      <div className="text-[22px] font-semibold text-slate-900 tabular-nums">{value}</div>
+    </div>
+  );
 }
 
 const Th = ({
@@ -229,7 +401,7 @@ const Th = ({
     {onClick ? (
       <button
         onClick={onClick}
-        className="inline-flex items-center gap-1 select-none text-[13px] font-semibold text-slate-700"
+        className="inline-flex items-center gap-1 select-none text-[12px] font-semibold text-slate-700 hover:text-slate-900"
       >
         {label}
         {active ? (
@@ -241,20 +413,26 @@ const Th = ({
         ) : null}
       </button>
     ) : (
-      <span className="text-[13px] font-semibold text-slate-700">{label}</span>
+      <span className="text-[12px] font-semibold text-slate-700">{label}</span>
     )}
   </th>
 );
 
-/* ---------- Кнопки-«пилюли» ---------- */
+/* ---------- Кнопки-«пилюли» (Refocus) ---------- */
 const pillBase =
-  'h-8 px-3 inline-flex items-center justify-center rounded-full text-[12px] font-semibold tracking-wide transition-all select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-300 disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_1px_4px_rgba(15,23,42,0.16)] hover:shadow-[0_8px_20px_rgba(15,23,42,0.22)] active:scale-[.99]';
+  'h-8 px-3 inline-flex items-center justify-center rounded-full text-[12px] font-semibold tracking-wide ' +
+  'transition-all select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ' +
+  'disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_10px_26px_rgba(15,23,42,0.14)] ' +
+  'hover:shadow-[0_18px_40px_rgba(15,23,42,0.18)] active:scale-[.99]';
 
-const payBtn = `${pillBase} text-slate-950 bg-[linear-gradient(90deg,#4F46E5_0%,#38BDF8_55%,#34D399_100%)]`;
+const payBtn =
+  pillBase +
+  ' text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 hover:from-teal-300 hover:via-cyan-300 hover:to-sky-300';
 
-// мягкие пилюли под общий стиль
-const softDeleteBtn = `${pillBase} bg-white/95 border border-amber-300 text-amber-700 hover:bg-amber-50`;
-const hardDeleteBtn = `${pillBase} bg-white/95 border border-rose-300 text-rose-600 hover:bg-rose-50`;
+const softDeleteBtn =
+  pillBase + ' bg-white/90 ring-1 ring-amber-200 text-amber-800 hover:bg-amber-50/70';
+const hardDeleteBtn =
+  pillBase + ' bg-white/90 ring-1 ring-rose-200 text-rose-700 hover:bg-rose-50/70';
 
 /* ---------- Normalize ---------- */
 function normalize(raw: RawRow): Row {
@@ -305,6 +483,8 @@ function normalize(raw: RawRow): Row {
     discount_percent: dperc,
     discount_amount: damt,
     discount_ru,
+
+    frame_barcodes: null,
   };
 }
 
@@ -320,44 +500,59 @@ function MobileCards({
 }) {
   if (!rows.length)
     return (
-      <div className="p-6 text-center text-slate-400">
-        Пусто. Измени фильтры или добавь заказ.
-      </div>
+      <GlassCard className="p-6 text-center">
+        <div className="text-slate-700 font-medium">Пусто</div>
+        <div className="mt-1 text-sm text-slate-500">Измени фильтры или добавь заказ.</div>
+      </GlassCard>
     );
+
   return (
     <div className="space-y-3">
       {rows.map((r) => (
         <div
           key={r.order_no}
-          className="rounded-3xl border border-sky-100/80 bg-white/92 backdrop-blur p-3 shadow-[0_18px_55px_rgba(15,23,42,0.25)]"
+          className={[
+            'rounded-2xl p-4',
+            'bg-gradient-to-br from-white/95 via-slate-50/90 to-sky-50/80',
+            'ring-1 ring-sky-200/80',
+            'shadow-[0_22px_70px_rgba(15,23,42,0.20)]',
+            'backdrop-blur-xl',
+          ].join(' ')}
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-3">
             <button onClick={() => onOpen(r.order_no)} className="text-left">
               <div className="font-semibold leading-tight text-slate-900">
                 {r.customer_name ?? '—'}
               </div>
-              <div className="text-xs text-slate-500 mt-0.5">
-                {r.created_at ?? '—'} • {r.branch_name ?? '—'}
+              <div className="text-[12px] text-slate-600/90 mt-0.5">
+                <span className="font-medium text-slate-900">{r.created_at ?? '—'}</span>
+                <span className="mx-1.5 text-slate-400">•</span>
+                {r.branch_name ?? '—'}
               </div>
             </button>
             <StatusPill status={r.status} status_ru={r.status_ru} />
           </div>
 
-          <div className="mt-2 grid grid-cols-3 gap-2 text-sm text-slate-900">
-            <div>
-              <div className="text-xs text-slate-500">Сумма</div>
-              <div className="font-medium">{fmtNum(r.total_amount)}</div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide">Сумма</div>
+              <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
+                {fmtNum(r.total_amount)}
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-slate-500">Оплачено</div>
-              <div className="font-medium">{fmtNum(r.paid_amount)}</div>
+            <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide">Оплачено</div>
+              <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
+                {fmtNum(r.paid_amount)}
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-slate-500">Долг</div>
+            <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide">Долг</div>
               <div
-                className={`font-medium ${
-                  r.debt_amount > 0 ? 'text-rose-600' : 'text-emerald-600'
-                }`}
+                className={[
+                  'mt-0.5 font-semibold tabular-nums',
+                  r.debt_amount > 0 ? 'text-rose-700' : 'text-emerald-700',
+                ].join(' ')}
               >
                 {fmtNum(r.debt_amount)}
               </div>
@@ -365,8 +560,9 @@ function MobileCards({
           </div>
 
           {r.discount_ru && (
-            <div className="mt-1">
-              <span className="inline-block px-2 py-0.5 rounded-lg border text-[11px] bg-amber-50 border-amber-200 text-amber-700">
+            <div className="mt-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ring-1 ring-amber-200 bg-amber-50/80 text-amber-800 text-[11px] font-semibold">
+                <AlertTriangle className="h-3.5 w-3.5" />
                 Скидка: {r.discount_ru}
               </span>
             </div>
@@ -374,14 +570,22 @@ function MobileCards({
 
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button onClick={() => onPay(r)} disabled={r.status === 'DELIVERED'} className={payBtn}>
-              <CreditCard className="h-4 w-4 mr-1" />
+              <CreditCard className="h-4 w-4" />
               Оплата
             </button>
             <a
               href={r.phone ? `tel:${r.phone.replace(/\D/g, '')}` : '#'}
-              className="h-8 rounded-full border border-sky-200 bg-white/95 flex items-center justify-center text-sm col-span-2 text-slate-800 hover:bg-sky-50"
+              className={[
+                'h-8 col-span-2',
+                'rounded-full',
+                'bg-white/85 ring-1 ring-sky-200/80',
+                'shadow-[0_12px_30px_rgba(15,23,42,0.10)]',
+                'flex items-center justify-center gap-2',
+                'text-sm font-medium text-slate-800',
+                'hover:bg-white',
+              ].join(' ')}
             >
-              <Phone className="h-4 w-4 mr-1" />
+              <Phone className="h-4 w-4" />
               Звонок
             </a>
           </div>
@@ -426,18 +630,16 @@ export default function OrdersPage() {
   useEffect(() => {
     sbRef.current = getSupabase();
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function load() {
     const sb = sbRef.current;
     if (!sb) return;
     setLoading(true);
-    const { data, error } = await sb
-      .from('orders_view')
-      .select('*')
-      .order('order_no', {
-        ascending: false,
-      });
+    const { data, error } = await sb.from('orders_view').select('*').order('order_no', {
+      ascending: false,
+    });
     setLoading(false);
     if (error) return toast.error(error.message);
     setRows(((data as RawRow[]) ?? []).map(normalize));
@@ -541,7 +743,6 @@ export default function OrdersPage() {
   }
 
   /* ---------- Actions ---------- */
-
   async function reloadAround(id: number) {
     await Promise.all([load(), loadOne(id), loadPayments(id)]);
   }
@@ -645,9 +846,10 @@ export default function OrdersPage() {
 
     let base = normalize(data as RawRow);
 
+    // Берём * чтобы не гадать по колонкам (нужны потенциальные barcode_id / meta и т.п.)
     const { data: items, error: itemsError } = await sb
       .from('order_items')
-      .select('item_type,lens_type,qty,price')
+      .select('*')
       .eq('order_id', id);
 
     if (itemsError) {
@@ -655,6 +857,27 @@ export default function OrdersPage() {
     } else if (items) {
       let frame = 0;
       let lenses = 0;
+
+      const directBarcodes = new Set<string>();
+      const barcodeIds = new Set<string>();
+
+      const tryAddBarcodeStr = (v: any) => {
+        if (typeof v === 'string') {
+          const s = v.trim();
+          if (s) directBarcodes.add(s);
+        }
+      };
+
+      const tryAddBarcodeId = (v: any) => {
+        if (v === null || v === undefined) return;
+        if (typeof v === 'string') {
+          const s = v.trim();
+          if (s) barcodeIds.add(s);
+          return;
+        }
+        // на всякий случай, если id не строка
+        if (typeof v === 'number') barcodeIds.add(String(v));
+      };
 
       (items as any[]).forEach((it) => {
         const itemType = (it.item_type ?? '').toString().toLowerCase();
@@ -672,12 +895,79 @@ export default function OrdersPage() {
         } else if (itemType.includes('frame') || itemType.includes('оправ')) {
           frame += amount;
         }
+
+        // Баркод имеет смысл искать только у "оправных" позиций
+        const isFrameLike =
+          !hasLensType &&
+          (itemType.includes('frame') ||
+            itemType.includes('оправ') ||
+            Object.keys(it || {}).some((k) => {
+              const lk = k.toLowerCase();
+              return lk.includes('frame') && lk.includes('barcode');
+            }));
+
+        if (!isFrameLike) return;
+
+        // 1) Если баркод хранится строкой прямо в order_items
+        for (const k of Object.keys(it || {})) {
+          const lk = k.toLowerCase();
+          const v = (it as any)[k];
+
+          // прямой баркод
+          if (
+            lk === 'barcode' ||
+            lk === 'frame_barcode' ||
+            lk === 'framebarcode' ||
+            lk.endsWith('_barcode')
+          ) {
+            tryAddBarcodeStr(v);
+          }
+
+          // id на frame_barcodes
+          if (
+            lk === 'barcode_id' ||
+            lk === 'frame_barcode_id' ||
+            (lk.includes('barcode') && lk.endsWith('_id'))
+          ) {
+            tryAddBarcodeId(v);
+          }
+
+          // json/meta варианты
+          if (lk === 'meta' && v && typeof v === 'object') {
+            const mv: any = v;
+            if (mv?.barcode) tryAddBarcodeStr(mv.barcode);
+            if (mv?.frame_barcode) tryAddBarcodeStr(mv.frame_barcode);
+            if (mv?.frameBarcode) tryAddBarcodeStr(mv.frameBarcode);
+            if (mv?.barcode_id) tryAddBarcodeId(mv.barcode_id);
+            if (mv?.frame_barcode_id) tryAddBarcodeId(mv.frame_barcode_id);
+          }
+        }
       });
+
+      let frameBarcodes = Array.from(directBarcodes).filter(Boolean);
+
+      // 2) Если есть только barcode_id — добираем из frame_barcodes
+      if (!frameBarcodes.length && barcodeIds.size) {
+        const ids = Array.from(barcodeIds);
+        const { data: fb, error: fbErr } = await sb
+          .from('frame_barcodes')
+          .select('id,barcode')
+          .in('id', ids);
+
+        if (fbErr) {
+          console.error(fbErr.message);
+        } else if (fb && Array.isArray(fb)) {
+          frameBarcodes = (fb as any[])
+            .map((x) => (x?.barcode ? String(x.barcode).trim() : ''))
+            .filter(Boolean);
+        }
+      }
 
       base = {
         ...base,
         frame_amount: frame,
         lenses_amount: lenses,
+        frame_barcodes: frameBarcodes.length ? frameBarcodes : null,
       };
     }
 
@@ -763,8 +1053,8 @@ export default function OrdersPage() {
     const left = Number.isFinite(leftFromRpc)
       ? leftFromRpc
       : fresh.data
-      ? normalize(fresh.data as RawRow).debt_amount
-      : debtNow - val;
+        ? normalize(fresh.data as RawRow).debt_amount
+        : debtNow - val;
 
     if (left <= 0) {
       const ord = fresh.data ? normalize(fresh.data as RawRow) : payOrder;
@@ -808,37 +1098,55 @@ export default function OrdersPage() {
     await reloadAround(editPayment.order_no);
   }
 
+  const debtTone: 'ok' | 'bad' = totals.debt > 0 ? 'bad' : 'ok';
+
   return (
     <div className="relative min-h-[100dvh] text-slate-900">
-      <div className="mx-auto max-w-7xl px-6 py-6 space-y-4">
-        {/* Заголовок + тулбар */}
-        <GlassCard className="px-6 py-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-400 to-violet-500 text-slate-950 shadow-[0_16px_40px_rgba(56,189,248,0.7)]">
+      <div className="mx-auto max-w-7xl px-5 pt-8 pb-10 space-y-4">
+        {/* Header */}
+        <GlassCard className="px-6 py-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_18px_46px_rgba(34,211,238,0.45)]">
                 <Building2 className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-[18px] font-semibold tracking-tight">Заказы</div>
-                <div className="text-[12px] text-slate-500">
-                  Интерфейс для оплат и админских чисток.
+                <div className="text-[30px] leading-[1.05] font-semibold tracking-tight text-slate-900 drop-shadow-[0_10px_30px_rgba(34,211,238,0.18)]">
+                  Заказы
+                </div>
+                <div className="mt-1 text-[13px] text-slate-600/90">
+                  Интерфейс для оплат и админских действий •{' '}
+                  <span className="font-medium text-slate-900">
+                    всего: {filtered.length}
+                  </span>
                 </div>
               </div>
             </div>
-            <div className="flex flex-col items-start gap-2 md:flex-row md:items-center md:gap-3 md:justify-end">
-              <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                <GBtn variant="outline" onClick={load}>
-                  <RefreshCw className="h-4 w-4" /> Обновить
-                </GBtn>
-              </div>
+
+            <div className="flex flex-wrap items-center gap-2 md:justify-end">
+              <GBtn variant="soft" onClick={load}>
+                <RefreshCw className="h-4 w-4" />
+                Обновить
+              </GBtn>
+              <GBtn
+                variant="outline"
+                onClick={() => {
+                  setQ('');
+                  setStatusFilter('ALL');
+                  setBranchFilter('ALL');
+                }}
+              >
+                <Filter className="h-4 w-4" />
+                Сбросить фильтры
+              </GBtn>
             </div>
           </div>
         </GlassCard>
 
-        {/* Фильтры */}
-        <GlassCard className="px-6 py-4">
+        {/* Filters + Legend */}
+        <GlassCard className="px-6 py-5">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-            <div className="md:col-span-5 relative">
+            <div className="md:col-span-5 relative sm:w-96">
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -847,6 +1155,7 @@ export default function OrdersPage() {
               />
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             </div>
+
             <div className="md:col-span-3">
               <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                 <option value="ALL">Все статусы</option>
@@ -857,6 +1166,7 @@ export default function OrdersPage() {
                 ))}
               </Select>
             </div>
+
             <div className="md:col-span-3">
               <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
                 <option value="ALL">Все филиалы</option>
@@ -867,6 +1177,7 @@ export default function OrdersPage() {
                 ))}
               </Select>
             </div>
+
             <div className="md:col-span-1 flex justify-end">
               <GBtn
                 variant="outline"
@@ -876,45 +1187,38 @@ export default function OrdersPage() {
                   setBranchFilter('ALL');
                 }}
               >
-                <Filter className="h-4 w-4" /> Сбросить
+                <Filter className="h-4 w-4" />
+                Сброс
               </GBtn>
             </div>
           </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="text-[12px] text-slate-600/90">Легенда:</div>
+            <LegendChip kind="ok" label="Выдано / ОК" />
+            <LegendChip kind="warn" label="Готово / внимание" />
+            <LegendChip kind="bad" label="Есть долг" />
+          </div>
         </GlassCard>
 
-        {/* Сводка */}
+        {/* Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <GlassCard className="px-6 h-24 flex items-center justify-between">
-            <div className="inline-flex items-center gap-2 text-[12px] text-slate-500">Итого</div>
-            <div className="text-2xl font-extrabold tabular-nums bg-gradient-to-r from-sky-500 to-indigo-500 bg-clip-text text-transparent">
-              {fmtNum(totals.total)}
-            </div>
-          </GlassCard>
-          <GlassCard className="px-6 h-24 flex items-center justify-between">
-            <div className="inline-flex items-center gap-2 text-[12px] text-slate-500">Оплачено</div>
-            <div className="text-2xl font-extrabold tabular-nums bg-gradient-to-r from-sky-500 to-indigo-500 bg-clip-text text-transparent">
-              {fmtNum(totals.paid)}
-            </div>
-          </GlassCard>
-          <GlassCard className="px-6 h-24 flex items-center justify-between">
-            <div className="inline-flex items-center gap-2 text-[12px] text-slate-500">Долг</div>
-            <div className="text-2xl font-extrabold tabular-nums bg-gradient-to-r from-sky-500 to-indigo-500 bg-clip-text text-transparent">
-              {fmtNum(totals.debt)}
-            </div>
-          </GlassCard>
+          <StatBox label="Итого" value={fmtNum(totals.total)} tone="money" />
+          <StatBox label="Оплачено" value={fmtNum(totals.paid)} tone="ok" />
+          <StatBox label="Долг" value={fmtNum(totals.debt)} tone={debtTone} />
         </div>
 
-        {/* Мобилка */}
+        {/* Mobile */}
         <div className="md:hidden">
           <MobileCards rows={filtered} onOpen={openDetails} onPay={openPayModal} />
         </div>
 
-        {/* Таблица */}
+        {/* Table */}
         <div className="hidden md:block">
           <GlassCard className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full table-fixed text-[13px] text-slate-900">
-                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                <thead className="bg-white/70 backdrop-blur border-b border-sky-100">
                   <tr className="text-left">
                     <Th
                       label="Создан"
@@ -926,14 +1230,14 @@ export default function OrdersPage() {
                     <Th label="Клиент" width="w-36" />
                     <Th label="Телефон" width="w-32" />
                     <Th label="Филиал" width="w-24" />
-                    <Th label="Статус" width="w-20" />
+                    <Th label="Статус" width="w-24" />
                     <Th
                       align="right"
                       label="Сумма"
                       onClick={() => toggleSort('total_amount')}
                       active={sortKey === 'total_amount'}
                       dir={sortDir}
-                      width="w-20"
+                      width="w-24"
                     />
                     <Th
                       align="right"
@@ -941,7 +1245,7 @@ export default function OrdersPage() {
                       onClick={() => toggleSort('paid_amount')}
                       active={sortKey === 'paid_amount'}
                       dir={sortDir}
-                      width="w-20"
+                      width="w-24"
                     />
                     <Th
                       align="right"
@@ -949,18 +1253,19 @@ export default function OrdersPage() {
                       onClick={() => toggleSort('debt_amount')}
                       active={sortKey === 'debt_amount'}
                       dir={sortDir}
-                      width="w-20"
+                      width="w-24"
                     />
-                    <Th align="right" label="Скидка" width="w-16" />
-                    <Th label="Действия" width="w-[210px]" align="right" />
+                    <Th align="right" label="Скидка" width="w-20" />
+                    <Th label="Действия" width="w-[220px]" align="right" />
                   </tr>
                 </thead>
-                <tbody className="align-middle">
+
+                <tbody className="align-middle bg-white/40">
                   {loading &&
                     Array.from({ length: 6 }).map((_, i) => (
-                      <tr key={`skel-${i}`} className="border-t border-slate-100">
-                        <td className="px-3.5 py-2" colSpan={11}>
-                          <div className="h-5 w-full bg-slate-100 rounded animate-pulse" />
+                      <tr key={`skel-${i}`} className="border-t border-sky-100/60">
+                        <td className="px-3.5 py-3" colSpan={11}>
+                          <div className="h-6 w-full bg-slate-100/80 rounded-xl animate-pulse" />
                         </td>
                       </tr>
                     ))}
@@ -969,25 +1274,25 @@ export default function OrdersPage() {
                     filtered.map((r) => (
                       <tr
                         key={r.order_no}
-                        className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                        className="border-t border-sky-100/60 hover:bg-white/70 transition-colors cursor-pointer"
                       >
                         <td
-                          className="px-3.5 py-2 w-32 whitespace-nowrap text-slate-700"
+                          className="px-3.5 py-3 w-32 whitespace-nowrap text-slate-700"
                           onClick={() => openDetails(r.order_no)}
                         >
                           {r.created_at ?? '—'}
                         </td>
                         <td
-                          className="px-3.5 py-2 w-36 max-w-[9rem] truncate text-slate-800"
+                          className="px-3.5 py-3 w-36 max-w-[9rem] truncate text-slate-900 font-medium"
                           onClick={() => openDetails(r.order_no)}
                           title={r.customer_name ?? ''}
                         >
                           {r.customer_name ?? '—'}
                         </td>
-                        <td className="px-3.5 py-2 w-32 truncate">
+                        <td className="px-3.5 py-3 w-32 truncate">
                           {r.phone ? (
                             <a
-                              className="text-sky-700 hover:underline inline-flex items-center gap-1"
+                              className="inline-flex items-center gap-1.5 text-teal-700 hover:underline font-medium"
                               href={`tel:${r.phone.replace(/\D/g, '')}`}
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -995,61 +1300,56 @@ export default function OrdersPage() {
                               {r.phone}
                             </a>
                           ) : (
-                            '—'
+                            <span className="text-slate-500">—</span>
                           )}
                         </td>
                         <td
-                          className="px-3.5 py-2 w-24 truncate text-slate-800"
+                          className="px-3.5 py-3 w-24 truncate text-slate-800"
                           title={r.branch_name ?? ''}
                           onClick={() => openDetails(r.order_no)}
                         >
                           {r.branch_name ?? '—'}
                         </td>
-                        <td className="px-3.5 py-2 w-20" onClick={() => openDetails(r.order_no)}>
+                        <td className="px-3.5 py-3 w-24" onClick={() => openDetails(r.order_no)}>
                           <StatusPill status={r.status} status_ru={r.status_ru} />
                         </td>
 
-                        <td className="px-3.5 py-2 w-20 text-right tabular-nums font-medium text-slate-800">
+                        <td className="px-3.5 py-3 w-24 text-right tabular-nums font-semibold text-slate-900">
                           {fmtNum(r.total_amount)}
                         </td>
-                        <td className="px-3.5 py-2 w-20 text-right tabular-nums font-medium text-slate-800">
+                        <td className="px-3.5 py-3 w-24 text-right tabular-nums font-semibold text-slate-900">
                           {fmtNum(r.paid_amount)}
                         </td>
                         <td
-                          className={`px-3.5 py-2 w-20 text-right tabular-nums ${
-                            r.debt_amount > 0 ? 'text-rose-600 font-semibold' : 'text-slate-600'
-                          }`}
+                          className={[
+                            'px-3.5 py-3 w-24 text-right tabular-nums font-semibold',
+                            r.debt_amount > 0 ? 'text-rose-700' : 'text-emerald-700',
+                          ].join(' ')}
                         >
                           {fmtNum(r.debt_amount)}
                         </td>
 
-                        <td className="px-3.5 py-2 w-16 text-right">
+                        <td className="px-3.5 py-3 w-20 text-right">
                           {r.discount_ru ? (
-                            <span className="inline-block px-2 py-0.5 rounded-lg border text-[12px] bg-amber-50 border-amber-200 text-amber-700">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full ring-1 ring-amber-200 bg-amber-50/80 text-amber-800 text-[12px] font-semibold">
                               {r.discount_ru}
                             </span>
                           ) : (
-                            '—'
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
 
-                        <td className="px-3.5 py-2 w-[210px]">
+                        <td className="px-3.5 py-3 w-[220px]">
                           <div
                             className="flex justify-end gap-1.5 flex-nowrap"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <button
-                              className={softDeleteBtn}
-                              onClick={() => softDeleteOrder(r.order_no)}
-                            >
-                              <Archive className="h-4 w-4 mr-1" />
+                            <button className={softDeleteBtn} onClick={() => softDeleteOrder(r.order_no)}>
+                              <Archive className="h-4 w-4" />
                               Скрыть
                             </button>
-                            <button
-                              className={hardDeleteBtn}
-                              onClick={() => hardDeleteOrder(r.order_no)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />
+                            <button className={hardDeleteBtn} onClick={() => hardDeleteOrder(r.order_no)}>
+                              <Trash2 className="h-4 w-4" />
                               Удалить
                             </button>
                           </div>
@@ -1059,8 +1359,13 @@ export default function OrdersPage() {
 
                   {!loading && !filtered.length && (
                     <tr>
-                      <td colSpan={11} className="px-3.5 py-10 text-center text-slate-500">
-                        Пусто. Измени фильтры или добавь заказ.
+                      <td colSpan={11} className="px-3.5 py-12 text-center">
+                        <div className="inline-block rounded-3xl bg-gradient-to-br from-white/95 via-slate-50/90 to-sky-50/80 ring-1 ring-sky-200/80 px-8 py-6 shadow-[0_22px_70px_rgba(15,23,42,0.16)]">
+                          <div className="text-slate-800 font-semibold">Ничего не найдено</div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            Измени фильтры или добавь заказ.
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -1133,148 +1438,232 @@ function DetailsDrawer({
   onEditPaymentMethod: (p: PaymentRow) => void;
 }) {
   if (!open) return null;
+
+  const orderCode =
+    detail &&
+    `ORD-${new Date().getFullYear().toString().slice(2)}-${String(detail.order_no).padStart(5, '0')}`;
+
+  const frameBarcodeText =
+    detail?.frame_barcodes && detail.frame_barcodes.length ? detail.frame_barcodes.join(', ') : null;
+
   return (
     <Portal>
       <div className="fixed inset-0 z-[70]">
-        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-        <div className="absolute right-0 top-0 h-full w-full sm:w-[460px] bg-white/90 backdrop-blur-md shadow-2xl border-l border-white/60 overflow-y-auto transition-transform duration-300 translate-x-0">
-          <div className="p-4 flex items-center justify-between border-b border-white/60 bg-gradient-to-r from-sky-600 to-indigo-600 text-white">
-            <div className="font-semibold">Детали заказа</div>
-            <button
-              className="bg-white/90 text-slate-800 px-3 py-2 rounded-lg hover:bg-white inline-flex items-center gap-2"
-              onClick={onClose}
-            >
-              <X className="h-4 w-4" /> Закрыть
-            </button>
-          </div>
-          <div className="p-4 space-y-3">
-            {!detail && <div className="text-slate-500">Загрузка…</div>}
-            {detail && (
-              <>
-                <GlassCard className="p-3 bg-white">
-                  <div className="text-xs text-slate-500">Номер</div>
-                  <div className="text-lg font-semibold text-slate-900">
-                    {`ORD-${new Date().getFullYear().toString().slice(2)}-${String(
-                      detail.order_no,
-                    ).padStart(5, '0')}`}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    Создан: {detail.created_at ?? '—'}
-                  </div>
-                </GlassCard>
+        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-                <div className="grid grid-cols-2 gap-3">
-                  <GlassCard className="p-3 bg-white">
-                    <div className="text-xs text-slate-500">Клиент</div>
-                    <div className="text-sm text-slate-800">{detail.customer_name ?? '—'}</div>
-                  </GlassCard>
-                  <GlassCard className="p-3 bg-white">
-                    <div className="text-xs text-slate-500">Телефон</div>
-                    <div className="text-sm text-slate-800">{detail.phone ?? '—'}</div>
-                  </GlassCard>
-                  <GlassCard className="p-3 bg-white">
-                    <div className="text-xs text-slate-500">Филиал</div>
-                    <div className="text-sm text-slate-800">{detail.branch_name ?? '—'}</div>
-                  </GlassCard>
-                  <GlassCard className="p-3 bg-white">
-                    <div className="text-xs text-slate-500">Статус</div>
-                    <div className="mt-1">
-                      <StatusPill status={detail.status} status_ru={detail.status_ru} />
+        <div className="absolute right-0 top-0 h-full w-full sm:w-[480px] overflow-y-auto">
+          <div className="h-full bg-gradient-to-b from-white/92 via-slate-50/90 to-sky-50/70 backdrop-blur-2xl ring-1 ring-sky-200/70 shadow-[0_30px_120px_rgba(0,0,0,0.35)]">
+            <div className="p-5 border-b border-sky-100/70 bg-white/70 backdrop-blur">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_18px_46px_rgba(34,211,238,0.40)]">
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-[18px] font-semibold text-slate-900">Детали заказа</div>
+                    <div className="text-[12px] text-slate-600/90">
+                      {orderCode ? (
+                        <>
+                          <span className="font-medium text-slate-900">{orderCode}</span>
+                          <span className="mx-1.5 text-slate-400">•</span>
+                          {detail?.created_at ?? '—'}
+                        </>
+                      ) : (
+                        'Загрузка…'
+                      )}
                     </div>
-                  </GlassCard>
+                  </div>
                 </div>
 
-                <GlassCard className="p-3 bg-white">
-                  <div className="grid grid-cols-3 gap-2 text-sm text-slate-800">
-                    <div>
-                      <div className="text-xs text-slate-500">Сумма</div>
-                      <div className="font-medium">{fmtNum(detail.total_amount)}</div>
+                <button onClick={onClose} className={SoftGhost}>
+                  <X className="h-4 w-4" />
+                  Закрыть
+                </button>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-3">
+              {!detail && <div className="text-slate-600">Загрузка…</div>}
+
+              {detail && (
+                <>
+                  <GlassCard className="p-4">
+                    <div className="text-[11px] text-slate-500 uppercase tracking-wide">Номер</div>
+                    <div className="mt-1 text-lg font-semibold text-slate-900">{orderCode}</div>
+                    <div className="mt-1 text-[12px] text-slate-600/90">
+                      Создан:{' '}
+                      <span className="font-medium text-slate-900">{detail.created_at ?? '—'}</span>
                     </div>
-                    <div>
-                      <div className="text-xs text-slate-500">Оплачено</div>
-                      <div className="font-medium">{fmtNum(detail.paid_amount)}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-slate-500">Долг</div>
-                      <div
-                        className={`font-medium ${
-                          detail.debt_amount > 0 ? 'text-red-600' : 'text-slate-800'
-                        }`}
-                      >
-                        {fmtNum(detail.debt_amount)}
+
+                    {/* NEW: barcode */}
+                    {frameBarcodeText && (
+                      <div className="mt-3 rounded-2xl bg-white/85 ring-1 ring-sky-200/70 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                        <div className="text-[11px] text-slate-500 uppercase tracking-wide">
+                          Штрихкод оправы
+                        </div>
+                        <div className="mt-0.5 font-semibold text-slate-900 tabular-nums font-mono">
+                          {frameBarcodeText}
+                        </div>
+                      </div>
+                    )}
+                  </GlassCard>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <GlassCard className="p-4">
+                      <div className="text-[11px] text-slate-500 uppercase tracking-wide">Клиент</div>
+                      <div className="mt-1 text-sm font-medium text-slate-900">
+                        {detail.customer_name ?? '—'}
+                      </div>
+                    </GlassCard>
+
+                    <GlassCard className="p-4">
+                      <div className="text-[11px] text-slate-500 uppercase tracking-wide">Телефон</div>
+                      <div className="mt-1 text-sm font-medium text-slate-900">{detail.phone ?? '—'}</div>
+                    </GlassCard>
+
+                    <GlassCard className="p-4">
+                      <div className="text-[11px] text-slate-500 uppercase tracking-wide">Филиал</div>
+                      <div className="mt-1 text-sm font-medium text-slate-900">
+                        {detail.branch_name ?? '—'}
+                      </div>
+                    </GlassCard>
+
+                    <GlassCard className="p-4">
+                      <div className="text-[11px] text-slate-500 uppercase tracking-wide">Статус</div>
+                      <div className="mt-2">
+                        <StatusPill status={detail.status} status_ru={detail.status_ru} />
+                      </div>
+                    </GlassCard>
+                  </div>
+
+                  <GlassCard className="p-4">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                        <div className="text-[11px] text-slate-500 uppercase tracking-wide">Сумма</div>
+                        <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
+                          {fmtNum(detail.total_amount)}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                        <div className="text-[11px] text-slate-500 uppercase tracking-wide">Оплачено</div>
+                        <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
+                          {fmtNum(detail.paid_amount)}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                        <div className="text-[11px] text-slate-500 uppercase tracking-wide">Долг</div>
+                        <div
+                          className={[
+                            'mt-0.5 font-semibold tabular-nums',
+                            detail.debt_amount > 0 ? 'text-rose-700' : 'text-emerald-700',
+                          ].join(' ')}
+                        >
+                          {fmtNum(detail.debt_amount)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="mt-2 text-sm text-slate-800">
-                    <div className="text-xs text-slate-500">Скидка</div>
-                    <div>{detail.discount_ru ?? '—'}</div>
-                  </div>
-                </GlassCard>
 
-                {/* Состав суммы: оправа / линзы */}
-                <GlassCard className="p-3 bg-white">
-                  <div className="text-xs text-slate-500 mb-2">Состав заказа</div>
-                  <div className="grid grid-cols-2 gap-2 text-sm text-slate-800">
-                    <div>
-                      <div className="text-xs text-slate-500">Оправа</div>
-                      <div className="font-medium">{fmtNum(detail.frame_amount)}</div>
+                    <div className="mt-3">
+                      <div className="text-[11px] text-slate-500 uppercase tracking-wide">Скидка</div>
+                      <div className="mt-1 text-sm font-medium text-slate-900">
+                        {detail.discount_ru ?? '—'}
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-slate-500">Линзы</div>
-                      <div className="font-medium">{fmtNum(detail.lenses_amount)}</div>
+                  </GlassCard>
+
+                  {/* Состав суммы: оправа / линзы */}
+                  <GlassCard className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold text-slate-800">Состав заказа</div>
+                      <div className="text-[11px] text-slate-500">оправа / линзы</div>
                     </div>
-                  </div>
-                </GlassCard>
-
-                <GlassCard className="p-3 bg-white space-y-2">
-                  <div className="text-sm font-medium text-slate-800">Действия</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button className={`${softDeleteBtn} w-[150px]`} onClick={onSoftDelete}>
-                      <Archive className="h-4 w-4 mr-1" /> Скрыть заказ
-                    </button>
-                    <button className={`${hardDeleteBtn} w-[180px]`} onClick={onHardDelete}>
-                      <Trash2 className="h-4 w-4 mr-1" /> Удалить навсегда
-                    </button>
-                  </div>
-                </GlassCard>
-
-                <GlassCard className="p-3 bg-white">
-                  <div className="text-sm font-medium mb-2 text-slate-800">История оплат</div>
-                  {paymentsLoading && <div className="text-sm text-slate-500">Загрузка…</div>}
-                  {!paymentsLoading && !payments?.length && (
-                    <div className="text-sm text-slate-500">Ещё нет оплат</div>
-                  )}
-                  {!paymentsLoading && !!payments?.length && (
-                    <div className="space-y-2">
-                      {payments.map((p) => (
-                        <div
-                          key={p.payment_id}
-                          className="flex items-center justify-between gap-2 text-sm"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded-lg border text-xs bg-white/70 text-slate-800 border-slate-200">
-                              {PAY_LABEL[toUiMethod(p.method)]}
-                            </span>
-
-                            <button
-                              className="px-2 py-0.5 rounded-lg border text-xs bg-white/70 text-slate-700 border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"
-                              onClick={() => onEditPaymentMethod(p)}
-                              title="Изменить метод оплаты"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              Изменить
-                            </button>
-
-                            <span className="text-slate-600">{p.created_at}</span>
-                          </div>
-                          <div className="font-medium text-slate-800">{fmtNum(p.amount)}</div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-2xl bg-white/85 ring-1 ring-sky-200/70 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                        <div className="text-[11px] text-slate-500 uppercase tracking-wide">Оправа</div>
+                        <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
+                          {fmtNum(detail.frame_amount)}
                         </div>
-                      ))}
+                      </div>
+                      <div className="rounded-2xl bg-white/85 ring-1 ring-sky-200/70 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                        <div className="text-[11px] text-slate-500 uppercase tracking-wide">Линзы</div>
+                        <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
+                          {fmtNum(detail.lenses_amount)}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </GlassCard>
-              </>
-            )}
+                  </GlassCard>
+
+                  <GlassCard className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold text-slate-800">Действия</div>
+                      <div className="text-[11px] text-slate-500">админ</div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button className={`${softDeleteBtn} w-full`} onClick={onSoftDelete}>
+                        <Archive className="h-4 w-4" />
+                        Скрыть заказ
+                      </button>
+                      <button className={`${hardDeleteBtn} w-full`} onClick={onHardDelete}>
+                        <Trash2 className="h-4 w-4" />
+                        Удалить навсегда
+                      </button>
+                    </div>
+                  </GlassCard>
+
+                  <GlassCard className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold text-slate-800">История оплат</div>
+                      <div className="text-[11px] text-slate-500">payments</div>
+                    </div>
+
+                    <div className="mt-3">
+                      {paymentsLoading && <div className="text-sm text-slate-600">Загрузка…</div>}
+                      {!paymentsLoading && !payments?.length && (
+                        <div className="text-sm text-slate-600">Ещё нет оплат</div>
+                      )}
+                      {!paymentsLoading && !!payments?.length && (
+                        <div className="space-y-2">
+                          {payments.map((p) => (
+                            <div
+                              key={p.payment_id}
+                              className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center                                gap-2">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <div className="text-sm font-semibold text-slate-900 tabular-nums">
+                                        {fmtNum(p.amount)} с
+                                      </div>
+                                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-slate-200 bg-white/80 text-slate-700">
+                                        {PAY_LABEL[toUiMethod(p.method)]}
+                                      </span>
+                                    </div>
+                                    <div className="mt-0.5 text-[11px] text-slate-600">
+                                      {p.created_at}
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    className={SoftGhost}
+                                    onClick={() => onEditPaymentMethod(p)}
+                                    title="Изменить метод оплаты"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                    Изменить
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </GlassCard>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1282,7 +1671,7 @@ function DetailsDrawer({
   );
 }
 
-/* ---------- Pay Modal ---------- */
+/* ---------- Pay modal ---------- */
 function PayModal({
   open,
   onClose,
@@ -1300,152 +1689,108 @@ function PayModal({
   sum: string;
   setSum: (v: string) => void;
   method: PayMethodUI;
-  setMethod: (v: PayMethodUI) => void;
+  setMethod: (m: PayMethodUI) => void;
   loading: boolean;
   onSubmit: () => void;
 }) {
   if (!open) return null;
 
-  const parseVal = (s: string) => {
-    const v = parseFloat(String(s).replace(',', '.'));
-    return Number.isFinite(v) ? v : 0;
-  };
+  const debtNow = order
+    ? Math.max(order.debt_amount ?? Math.max(order.total_amount - order.paid_amount, 0), 0)
+    : 0;
 
-  const add = (n: number) => {
-    const next = parseVal(sum) + n;
-    setSum(String(next));
-  };
+  const orderCode =
+    order &&
+    `ORD-${new Date().getFullYear().toString().slice(2)}-${String(order.order_no).padStart(5, '0')}`;
 
-  const fillDebt = () => {
-    const val = order ? Math.max(Number(order.debt_amount || 0), 0) : 0;
-    setSum(String(val));
-  };
-
-  const fillToFull = () => {
-    const val = order
-      ? Math.max(Number(order.total_amount || 0) - Number(order.paid_amount || 0), 0)
-      : 0;
-    setSum(String(val));
-  };
+  const methodBtn = (active: boolean) =>
+    [
+      pillBase,
+      active
+        ? 'text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400'
+        : 'bg-white/90 ring-1 ring-slate-200 text-slate-800 hover:bg-white',
+    ].join(' ');
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-[100]">
-        <div className="absolute inset-0 bg-black/35" onClick={onClose} />
-        <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2">
-          <div className="rounded-3xl overflow-hidden shadow-[0_24px_72px_rgba(2,6,23,0.25)] border border-white/60 bg-white/90 backdrop-blur-2xl">
-            <div className="px-4 py-3 bg-gradient-to-r from-sky-600 to-indigo-600 text-white">
-              <div className="text-[18px] font-semibold">Оплата</div>
-              <div className="text-sm opacity-90">
-                {order
-                  ? `Заказ ORD-${new Date().getFullYear().toString().slice(2)}-${String(
-                      order.order_no,
-                    ).padStart(5, '0')}`
-                  : '—'}
-              </div>
-            </div>
+      <div className="fixed inset-0 z-[90]">
+        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-            <div className="p-4">
-              <div className="grid grid-cols-3 gap-2 mb-3 text-sm">
-                <div className="p-2 rounded-2xl border border-white/60 bg-white/80 text-slate-800">
-                  Сумма: <b>{order ? fmtNum(order.total_amount) : '—'}</b>
-                </div>
-                <div className="p-2 rounded-2xl border border-white/60 bg-white/80 text-slate-800">
-                  Оплачено: <b>{order ? fmtNum(order.paid_amount) : '—'}</b>
-                </div>
-                <div className="p-2 rounded-2xl border border-white/60 bg-white/80 text-slate-800">
-                  Долг:{' '}
-                  <b className={order && order.debt_amount > 0 ? 'text-red-600' : ''}>
-                    {order ? fmtNum(order.debt_amount) : '—'}
-                  </b>
-                </div>
-              </div>
-
-              {order?.discount_ru && (
-                <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg inline-flex items-center gap-1">
-                  <CreditCard className="h-3.5 w-3.5" /> Скидка по заказу: {order.discount_ru}
-                </div>
-              )}
-
-              <div className="mb-3">
-                <Input
-                  inputMode="numeric"
-                  placeholder="Сумма, сом"
-                  value={sum}
-                  onChange={(e) => setSum(e.target.value.replace(',', '.'))}
-                />
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 hover:bg-slate-50"
-                    onClick={() => add(500)}
-                  >
-                    +500
-                  </button>
-                  <button
-                    className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 hover:bg-slate-50"
-                    onClick={() => add(1000)}
-                  >
-                    +1000
-                  </button>
-                  <button
-                    className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 hover:bg-slate-50"
-                    onClick={fillDebt}
-                  >
-                    Весь долг
-                  </button>
-                  <button
-                    className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 hover:bg-slate-50"
-                    onClick={fillToFull}
-                  >
-                    До полной
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm mb-1">Метод оплаты</label>
-                <select
-                  value={method}
-                  onChange={(e) => setMethod(e.target.value as PayMethodUI)}
-                  className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-300 bg-white/90 focus:ring-2 focus:ring-sky-200 text-sm text-slate-900"
-                >
-                  <option value="cash">Наличные</option>
-                  <option value="card">Карта</option>
-                  <option value="qr">QR-код</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-3 rounded-2xl border border-slate-300 bg-white/95 hover:bg-white text-[15px] inline-flex items-center gap-2"
-                  onClick={onClose}
-                  disabled={loading}
-                >
-                  <X className="h-4 w-4" /> Отмена
-                </button>
-                <button
-                  className="px-5 py-3 rounded-2xl text-[15px] font-semibold bg-gradient-to-r from-sky-600 to-indigo-600 text-white hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 inline-flex items-center gap-2"
-                  onClick={onSubmit}
-                  disabled={loading || !order}
-                >
-                  {loading ? (
-                    'Обработка…'
-                  ) : (
+        <div className="absolute inset-0 grid place-items-center p-4">
+          <GlassCard className="w-full max-w-md p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900">Оплата</div>
+                <div className="mt-1 text-[12px] text-slate-600/90">
+                  {orderCode ? (
                     <>
-                      <CheckCircle2 className="h-4 w-4" /> Подтвердить оплату
+                      <span className="font-medium text-slate-900">{orderCode}</span>
+                      <span className="mx-1.5 text-slate-400">•</span>
+                      долг: <span className="font-semibold text-rose-700">{fmtNum(debtNow)}</span>
                     </>
+                  ) : (
+                    '—'
                   )}
-                </button>
+                </div>
+              </div>
+
+              <button onClick={onClose} className={SoftGhost}>
+                <X className="h-4 w-4" />
+                Закрыть
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <div className="text-[11px] text-slate-500 uppercase tracking-wide">Сумма оплаты</div>
+                <Input
+                  value={sum}
+                  onChange={(e) => setSum(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={`до ${fmtNum(debtNow)}`}
+                  className="mt-2"
+                />
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Если введёшь больше долга — система возьмёт максимум по долгу.
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] text-slate-500 uppercase tracking-wide">Метод</div>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <button type="button" className={methodBtn(method === 'cash')} onClick={() => setMethod('cash')}>
+                    <CreditCard className="h-4 w-4 opacity-90" />
+                    Наличные
+                  </button>
+                  <button type="button" className={methodBtn(method === 'card')} onClick={() => setMethod('card')}>
+                    <CreditCard className="h-4 w-4 opacity-90" />
+                    Карта
+                  </button>
+                  <button type="button" className={methodBtn(method === 'qr')} onClick={() => setMethod('qr')}>
+                    <CreditCard className="h-4 w-4 opacity-90" />
+                    QR
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <GBtn variant="outline" onClick={onClose} disabled={loading}>
+                  Отмена
+                </GBtn>
+                <GBtn onClick={onSubmit} disabled={loading || !order}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  {loading ? 'Сохраняю…' : 'Подтвердить'}
+                </GBtn>
               </div>
             </div>
-          </div>
+          </GlassCard>
         </div>
       </div>
     </Portal>
   );
 }
 
-/* ---------- Edit Payment Method Modal ---------- */
+/* ---------- Edit payment method modal ---------- */
 function EditPaymentMethodModal({
   open,
   onClose,
@@ -1461,7 +1806,7 @@ function EditPaymentMethodModal({
   onClose: () => void;
   payment: PaymentRow | null;
   method: PayMethodUI;
-  setMethod: (v: PayMethodUI) => void;
+  setMethod: (m: PayMethodUI) => void;
   reason: string;
   setReason: (v: string) => void;
   loading: boolean;
@@ -1469,67 +1814,93 @@ function EditPaymentMethodModal({
 }) {
   if (!open) return null;
 
+  const methodBtn = (active: boolean) =>
+    [
+      pillBase,
+      active
+        ? 'text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400'
+        : 'bg-white/90 ring-1 ring-slate-200 text-slate-800 hover:bg-white',
+    ].join(' ');
+
   return (
     <Portal>
-      <div className="fixed inset-0 z-[110]">
-        <div className="absolute inset-0 bg-black/35" onClick={onClose} />
-        <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2">
-          <div className="rounded-3xl overflow-hidden shadow-[0_24px_72px_rgba(2,6,23,0.25)] border border-white/60 bg-white/90 backdrop-blur-2xl">
-            <div className="px-4 py-3 bg-gradient-to-r from-sky-600 to-indigo-600 text-white">
-              <div className="text-[18px] font-semibold">Изменить метод оплаты</div>
-              <div className="text-sm opacity-90">
-                {payment ? `Payment #${payment.payment_id} • Заказ #${payment.order_no}` : '—'}
+      <div className="fixed inset-0 z-[95]">
+        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+
+        <div className="absolute inset-0 grid place-items-center p-4">
+          <GlassCard className="w-full max-w-md p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-slate-900">Метод оплаты</div>
+                <div className="mt-1 text-[12px] text-slate-600/90">
+                  {payment ? (
+                    <>
+                      платеж #{payment.payment_id}
+                      <span className="mx-1.5 text-slate-400">•</span>
+                      {fmtNum(payment.amount)} с
+                    </>
+                  ) : (
+                    '—'
+                  )}
+                </div>
               </div>
+
+              <button onClick={onClose} className={SoftGhost}>
+                <X className="h-4 w-4" />
+                Закрыть
+              </button>
             </div>
 
-            <div className="p-4 space-y-3">
+            <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-sm mb-1">Новый метод</label>
-                <select
-                  value={method}
-                  onChange={(e) => setMethod(e.target.value as PayMethodUI)}
-                  className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-300 bg-white/90 focus:ring-2 focus:ring-sky-200 text-sm text-slate-900"
-                >
-                  <option value="cash">Наличные</option>
-                  <option value="card">Карта</option>
-                  <option value="qr">QR-код</option>
-                </select>
+                <div className="text-[11px] text-slate-500 uppercase tracking-wide">Новый метод</div>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <button type="button" className={methodBtn(method === 'cash')} onClick={() => setMethod('cash')}>
+                    Наличные
+                  </button>
+                  <button type="button" className={methodBtn(method === 'card')} onClick={() => setMethod('card')}>
+                    Карта
+                  </button>
+                  <button type="button" className={methodBtn(method === 'qr')} onClick={() => setMethod('qr')}>
+                    QR
+                  </button>
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm mb-1">Причина (опционально)</label>
-                <Input
+                <div className="text-[11px] text-slate-500 uppercase tracking-wide">Причина (обязательно для аудита)</div>
+                <textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Например: продавец ошибся при выборе метода"
+                  placeholder="Например: клиент оплатил картой, кассир ошибся и выбрал наличные"
+                  className={[
+                    'mt-2 w-full',
+                    'rounded-[14px] bg-white/90 px-3.5 py-2.5',
+                    'text-sm text-slate-900 placeholder:text-slate-400',
+                    'ring-1 ring-sky-200/80 shadow-[0_14px_40px_rgba(15,23,42,0.14)]',
+                    'outline-none focus:ring-2 focus:ring-cyan-400/80',
+                    'min-h-[92px] resize-none',
+                  ].join(' ')}
                 />
+                {!reason.trim() && (
+                  <div className="mt-1 text-[11px] text-amber-700 flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Лучше указать кратко причину, чтобы потом не было вопросов по аудиту.
+                  </div>
+                )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  className="px-4 py-3 rounded-2xl border border-slate-300 bg-white/95 hover:bg-white text-[15px] inline-flex items-center gap-2"
-                  onClick={onClose}
-                  disabled={loading}
-                >
-                  <X className="h-4 w-4" /> Отмена
-                </button>
-
-                <button
-                  className="px-5 py-3 rounded-2xl text-[15px] font-semibold bg-gradient-to-r from-sky-600 to-indigo-600 text-white hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 inline-flex items-center gap-2"
-                  onClick={onSubmit}
-                  disabled={loading || !payment}
-                >
-                  {loading ? (
-                    'Обработка…'
-                  ) : (
-                    <>
-                      <CheckCircle2 className="h-4 w-4" /> Сохранить
-                    </>
-                  )}
-                </button>
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <GBtn variant="outline" onClick={onClose} disabled={loading}>
+                  Отмена
+                </GBtn>
+                <GBtn onClick={onSubmit} disabled={loading || !payment}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  {loading ? 'Сохраняю…' : 'Сохранить'}
+                </GBtn>
               </div>
             </div>
-          </div>
+          </GlassCard>
         </div>
       </div>
     </Portal>

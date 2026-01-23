@@ -36,7 +36,9 @@
     "tsparticles": "^3.9.1",
     "tsparticles-engine": "^2.12.0",
     "tsparticles-slim": "^2.12.0",
-    "vanta": "^0.5.24"
+    "vanta": "^0.5.24",
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

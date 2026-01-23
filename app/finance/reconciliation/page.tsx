@@ -29,6 +29,7 @@ import {
 /* ====================== consts & helpers ====================== */
 
 const TOLERANCE = 50; // ±50 сом
+const DEFAULT_ACQUIRING_RATE_PCT = 1.95; // фикс по умолчанию, но редактируем на странице
 
 const MONTHS_RU = [
   'января',
@@ -71,6 +72,14 @@ const parseMoney = (input: string): number => {
   const v = Number(String(input).replace(/[^\d.,-]/g, '').replace(',', '.'));
   return Number.isFinite(v) ? Math.max(0, v) : 0;
 };
+
+const parsePercent = (input: string): number => {
+  if (!input) return 0;
+  const v = Number(String(input).replace(/[^\d.,-]/g, '').replace(',', '.'));
+  return Number.isFinite(v) ? Math.max(0, v) : 0;
+};
+
+const round2 = (n: number) => Math.round((n || 0) * 100) / 100;
 
 const DELAY_REFETCH_MS = 350;
 
@@ -140,6 +149,33 @@ async function fetchWeeklyExpenses(weekStartISO: string): Promise<ExpenseRow[]> 
   }));
 }
 
+/* ===== POS (онлайн) по филиалам ===== */
+
+type OnlinePosBranchRow = {
+  branch_id: number;
+  branch_name: string;
+  pos_amount: number;
+};
+
+async function fetchWeeklyOnlinePosByBranch(weekStartISO: string): Promise<OnlinePosBranchRow[]> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from('v_reconciliation_weekly_branch_income')
+    .select('branch_id, branch_name, week_start, non_cash_payments')
+    .eq('week_start', weekStartISO);
+
+  if (error) throw error;
+  if (!data) return [];
+
+  return (data as any[])
+    .filter((r) => r.branch_name !== 'Новый филиал')
+    .map((r) => ({
+      branch_id: Number(r.branch_id),
+      branch_name: String(r.branch_name || ''),
+      pos_amount: Number(r.non_cash_payments || 0),
+    }));
+}
+
 /* ====================== extra types (онлайн) ====================== */
 
 type OnlineSummary = {
@@ -175,8 +211,13 @@ export default function Page() {
   const [onlineRow, setOnlineRow] = useState<OnlineRecoRow | null>(null);
   const [onlineInput, setOnlineInput] = useState('');
   const [onlineCommissionInput, setOnlineCommissionInput] = useState('');
+  const [onlineCommissionRateInput, setOnlineCommissionRateInput] = useState(
+    String(DEFAULT_ACQUIRING_RATE_PCT),
+  );
   const [onlineComment, setOnlineComment] = useState('');
   const [onlineSaving, setOnlineSaving] = useState(false);
+
+  const [onlinePosRows, setOnlinePosRows] = useState<OnlinePosBranchRow[] | null>(null);
 
   const [lastFixedAt, setLastFixedAt] = useState<Record<number, string>>({});
 
@@ -198,25 +239,34 @@ export default function Page() {
         setLoading(true);
         setErr(null);
 
-        const [data, online, expenses] = await Promise.all([
+        const [data, online, expenses, posByBranch] = await Promise.all([
           fetchOverview(weekStartISO),
           fetchOnlineOverview(weekStartISO),
           fetchWeeklyExpenses(weekStartISO),
+          fetchWeeklyOnlinePosByBranch(weekStartISO),
         ]);
 
         const cleaned = (data || []).filter((r) => r.branch_name !== 'Новый филиал');
         setRows(cleaned);
 
         setOnlineRow(online);
-        setOnlineInput(
-          online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '',
-        );
-        setOnlineCommissionInput(
-          online.commission > 0 ? String(Math.round(online.commission)) : '',
-        );
+        setOnlineInput(online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '');
         setOnlineComment('');
 
+        // комиссия: ставка (по умолчанию 1.95%) + сумма (авто от POS)
+        const posTotal = Number(online.expected_amount || 0);
+        const savedComm = Number(online.commission || 0);
+
+        let ratePct = DEFAULT_ACQUIRING_RATE_PCT;
+        if (posTotal > 0 && savedComm > 0) ratePct = round2((savedComm / posTotal) * 100);
+        setOnlineCommissionRateInput(String(ratePct));
+
+        const computedComm = posTotal > 0 ? Math.round((posTotal * ratePct) / 100) : 0;
+        const initialComm = savedComm > 0 ? Math.round(savedComm) : computedComm;
+        setOnlineCommissionInput(initialComm > 0 ? String(initialComm) : '');
+
         setExpensesRows(expenses || []);
+        setOnlinePosRows(posByBranch || []);
 
         setLastUpdatedAt(new Date());
       } catch (e: any) {
@@ -277,16 +327,38 @@ export default function Page() {
 
   /* ===== сводка по ОНЛАЙН-оплатам (вся сеть) ===== */
   const onlineSummary: OnlineSummary = useMemo(() => {
-    if (!onlineRow) {
-      return { posTotal: 0, bankIncoming: 0, bankCommission: 0, bankNet: 0, delta: 0 };
-    }
-    const posTotal = onlineRow.expected_amount || 0;
-    const bankIncoming = onlineRow.manual_amount || 0;
-    const bankCommission = onlineRow.commission || 0;
+    if (!onlineRow) return { posTotal: 0, bankIncoming: 0, bankCommission: 0, bankNet: 0, delta: 0 };
+
+    const posTotal = Number(onlineRow.expected_amount || 0);
+
+    // показываем "живые" значения с формы (чтобы комиссия считалась сразу на странице)
+    const bankIncoming =
+      onlineInput.trim() !== '' ? parseMoney(onlineInput) : Number(onlineRow.manual_amount || 0);
+
+    const ratePct =
+      onlineCommissionRateInput.trim() !== ''
+        ? parsePercent(onlineCommissionRateInput)
+        : DEFAULT_ACQUIRING_RATE_PCT;
+
+    const bankCommission =
+      onlineCommissionInput.trim() !== ''
+        ? parseMoney(onlineCommissionInput)
+        : Math.round((posTotal * ratePct) / 100);
+
     const bankNet = Math.max(0, bankIncoming - bankCommission);
-    const delta = (onlineRow.diff ?? bankIncoming - posTotal) || 0;
+    const delta = bankIncoming - posTotal;
+
     return { posTotal, bankIncoming, bankCommission, bankNet, delta };
-  }, [onlineRow]);
+  }, [onlineRow, onlineInput, onlineCommissionInput, onlineCommissionRateInput]);
+
+  /* ===== POS (онлайн) по филиалам — подготовка списка ===== */
+  const onlinePosByBranch = useMemo(() => {
+    const list = (onlinePosRows || [])
+      .filter((r) => (r.pos_amount || 0) > 0)
+      .sort((a, b) => b.pos_amount - a.pos_amount);
+    const total = list.reduce((acc, r) => acc + (r.pos_amount || 0), 0);
+    return { list, total };
+  }, [onlinePosRows]);
 
   /* ---- мягкий merge ---- */
   function softMergeRows(prev: RecoRow[], fresh: RecoRow[]) {
@@ -295,12 +367,10 @@ export default function Page() {
     return prev.map((p) => {
       const f = byId.get(p.branch_id);
       if (!f) return p;
-      const manual =
-        p.manual_amount > 0 && f.manual_amount === 0 ? p.manual_amount : f.manual_amount;
+      const manual = p.manual_amount > 0 && f.manual_amount === 0 ? p.manual_amount : f.manual_amount;
       const expected = f.expected_amount;
       const diff = manual - expected;
-      const status =
-        Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
+      const status = Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
       return { ...f, manual_amount: manual, diff, status };
     });
   }
@@ -310,24 +380,32 @@ export default function Page() {
   async function manualRefresh() {
     setLoading(true);
     try {
-      const [fresh, online, expenses] = await Promise.all([
+      const [fresh, online, expenses, posByBranch] = await Promise.all([
         fetchOverview(weekStartISO),
         fetchOnlineOverview(weekStartISO),
         fetchWeeklyExpenses(weekStartISO),
+        fetchWeeklyOnlinePosByBranch(weekStartISO),
       ]);
 
       const cleaned = (fresh || []).filter((r) => r.branch_name !== 'Новый филиал');
       setRows((prev) => (prev ? softMergeRows(prev, cleaned) : cleaned));
 
       setOnlineRow(online);
-      setOnlineInput(
-        online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '',
-      );
-      setOnlineCommissionInput(
-        online.commission > 0 ? String(Math.round(online.commission)) : '',
-      );
+      setOnlineInput(online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '');
+
+      const posTotal = Number(online.expected_amount || 0);
+      const savedComm = Number(online.commission || 0);
+
+      let ratePct = DEFAULT_ACQUIRING_RATE_PCT;
+      if (posTotal > 0 && savedComm > 0) ratePct = round2((savedComm / posTotal) * 100);
+      setOnlineCommissionRateInput(String(ratePct));
+
+      const computedComm = posTotal > 0 ? Math.round((posTotal * ratePct) / 100) : 0;
+      const initialComm = savedComm > 0 ? Math.round(savedComm) : computedComm;
+      setOnlineCommissionInput(initialComm > 0 ? String(initialComm) : '');
 
       setExpensesRows(expenses || []);
+      setOnlinePosRows(posByBranch || []);
 
       setLastUpdatedAt(new Date());
     } finally {
@@ -345,8 +423,7 @@ export default function Page() {
           const manual = amount;
           const expected = r.expected_amount || 0;
           const diff = manual - expected;
-          const status =
-            Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
+          const status = Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
           return { ...r, manual_amount: manual, diff, status };
         });
       });
@@ -399,9 +476,49 @@ export default function Page() {
     }
   }
 
+  function handleOnlineCommissionRateChange(v: string) {
+    setOnlineCommissionRateInput(v);
+
+    const posTotal = Number(onlineRow?.expected_amount || 0);
+    if (posTotal <= 0) return;
+
+    if (v.trim() === '') {
+      setOnlineCommissionInput('');
+      return;
+    }
+
+    const rate = parsePercent(v);
+    const comm = Math.round((posTotal * rate) / 100);
+    setOnlineCommissionInput(comm > 0 ? String(comm) : '0');
+  }
+
+  function handleOnlineCommissionAmountChange(v: string) {
+    setOnlineCommissionInput(v);
+
+    const posTotal = Number(onlineRow?.expected_amount || 0);
+    if (posTotal <= 0) return;
+
+    // если очистили поле суммы — оставляем ставку как есть
+    if (v.trim() === '') return;
+
+    const comm = parseMoney(v);
+    const rate = (comm / posTotal) * 100;
+    if (Number.isFinite(rate)) setOnlineCommissionRateInput(String(round2(rate)));
+  }
+
   async function saveOnline() {
     const amount = parseMoney(onlineInput);
-    const comm = parseMoney(onlineCommissionInput);
+
+    const posTotal = Number(onlineRow?.expected_amount || 0);
+    const ratePct =
+      onlineCommissionRateInput.trim() !== ''
+        ? parsePercent(onlineCommissionRateInput)
+        : DEFAULT_ACQUIRING_RATE_PCT;
+
+    const comm =
+      onlineCommissionInput.trim() !== ''
+        ? parseMoney(onlineCommissionInput)
+        : Math.round((posTotal * ratePct) / 100);
 
     try {
       setOnlineSaving(true);
@@ -417,12 +534,21 @@ export default function Page() {
       const online = await fetchOnlineOverview(weekStartISO);
 
       setOnlineRow(online);
-      setOnlineInput(
-        online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '',
-      );
-      setOnlineCommissionInput(
-        online.commission > 0 ? String(Math.round(online.commission)) : '',
-      );
+      setOnlineInput(online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '');
+
+      const refreshedPosTotal = Number(online.expected_amount || 0);
+      const refreshedSavedComm = Number(online.commission || 0);
+
+      let refreshedRatePct = DEFAULT_ACQUIRING_RATE_PCT;
+      if (refreshedPosTotal > 0 && refreshedSavedComm > 0) {
+        refreshedRatePct = round2((refreshedSavedComm / refreshedPosTotal) * 100);
+      }
+      setOnlineCommissionRateInput(String(refreshedRatePct));
+
+      const computedComm = refreshedPosTotal > 0 ? Math.round((refreshedPosTotal * refreshedRatePct) / 100) : 0;
+      const initialComm = refreshedSavedComm > 0 ? Math.round(refreshedSavedComm) : computedComm;
+      setOnlineCommissionInput(initialComm > 0 ? String(initialComm) : '');
+
       setOnlineComment('');
       setLastUpdatedAt(new Date());
     } catch (e: any) {
@@ -433,6 +559,11 @@ export default function Page() {
   }
 
   /* ====================== render ====================== */
+
+  const currentRatePct =
+    onlineCommissionRateInput.trim() !== ''
+      ? parsePercent(onlineCommissionRateInput)
+      : DEFAULT_ACQUIRING_RATE_PCT;
 
   return (
     <div className="min-h-screen text-slate-50">
@@ -448,8 +579,7 @@ export default function Page() {
                 Сверка недельной выручки
               </h1>
               <div className="text-sm text-sky-200/90 mt-1">
-                Неделя:{' '}
-                <span className="font-medium text-sky-50">{weekLabel}</span>
+                Неделя: <span className="font-medium text-sky-50">{weekLabel}</span>
               </div>
             </div>
           </div>
@@ -458,9 +588,7 @@ export default function Page() {
             <SoftGhostBtn onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, -1))}>
               <ArrowLeft className="h-4 w-4" /> Пред.
             </SoftGhostBtn>
-            <SoftPrimaryBtn
-              onClick={() => setWeekStartDate(new Date(getWeekStartMonday(new Date())))}
-            >
+            <SoftPrimaryBtn onClick={() => setWeekStartDate(new Date(getWeekStartMonday(new Date())))}>
               Текущая
             </SoftPrimaryBtn>
             <SoftGhostBtn onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, +1))}>
@@ -492,9 +620,7 @@ export default function Page() {
 
         {/* сводка по НАЛИЧНЫМ — уровень 2 */}
         <div className="mt-6 rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 backdrop-blur-xl ring-1 ring-sky-200/90 shadow-[0_22px_70px_rgba(15,23,42,0.6)] text-slate-900">
-          <div className="mb-3 text-sm font-semibold text-slate-800">
-            Наличные по филиалам
-          </div>
+          <div className="mb-3 text-sm font-semibold text-slate-800">Наличные по филиалам</div>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
             <StatBox
               title="Должно (наличные)"
@@ -521,13 +647,10 @@ export default function Page() {
                   style={{ width: `${cashSummary.percent}%` }}
                 />
               </div>
-              <div className="mt-1 text-right text-[11px] text-slate-500">
-                {cashSummary.percent.toFixed(0)}%
-              </div>
+              <div className="mt-1 text-right text-[11px] text-slate-500">{cashSummary.percent.toFixed(0)}%</div>
               <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
                 <Building2 className="h-3.5 w-3.5" />
-                Обновлено:{' '}
-                {lastUpdatedAt ? lastUpdatedAt.toLocaleString('ru-RU') : '—'}
+                Обновлено: {lastUpdatedAt ? lastUpdatedAt.toLocaleString('ru-RU') : '—'}
               </div>
             </div>
           </div>
@@ -542,9 +665,7 @@ export default function Page() {
               </span>
               Расходы по филиалам (наличные)
             </div>
-            <div className="text-[11px] text-slate-500">
-              Все расходы, которые уже вычтены из кэша в расчёте «Должно».
-            </div>
+            <div className="text-[11px] text-slate-500">Все расходы, которые уже вычтены из кэша в расчёте «Должно».</div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
@@ -566,12 +687,8 @@ export default function Page() {
                       key={item.branch_id}
                       className="rounded-xl ring-1 ring-rose-200 bg-gradient-to-r from-rose-50 via-white to-amber-50 px-3 py-2 flex items-center justify-between text-sm"
                     >
-                      <div className="font-medium text-slate-900">
-                        {item.branch_name}
-                      </div>
-                      <div className="font-semibold text-rose-700">
-                        {fmtKGS(item.cash_expenses)}
-                      </div>
+                      <div className="font-medium text-slate-900">{item.branch_name}</div>
+                      <div className="font-semibold text-rose-700">{fmtKGS(item.cash_expenses)}</div>
                     </div>
                   ))}
                 </div>
@@ -589,10 +706,9 @@ export default function Page() {
               </span>
               Онлайн-оплаты (вся сеть)
             </div>
-            <div className="text-[11px] text-slate-500">
-              Сводка по онлайн-платежам за выбранную неделю.
-            </div>
+            <div className="text-[11px] text-slate-500">Сводка по онлайн-платежам за выбранную неделю.</div>
           </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
             <StatBox
               title="По POS (онлайн)"
@@ -607,6 +723,7 @@ export default function Page() {
             <StatBox
               title="Комиссия банка"
               value={fmtKGS(onlineSummary.bankCommission)}
+              subtitle={`Ставка: ${round2(currentRatePct).toString()}% (по умолчанию ${DEFAULT_ACQUIRING_RATE_PCT}%)`}
               tone={onlineSummary.bankCommission > 0 ? 'warn' : undefined}
             />
             <StatBox
@@ -620,6 +737,32 @@ export default function Page() {
                   : 'warn'
               }
             />
+          </div>
+
+          {/* POS (онлайн) по филиалам */}
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Оплата по POS терминалам (онлайн) по филиалам</div>
+              <div className="text-[11px] text-slate-500">Итого: {fmtKGS(onlinePosByBranch.total)}</div>
+            </div>
+
+            {onlinePosByBranch.list.length === 0 ? (
+              <div className="rounded-xl bg-white/80 ring-1 ring-slate-200 px-3 py-2 text-xs text-slate-500">
+                Нет POS-онлайна по филиалам за эту неделю.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {onlinePosByBranch.list.map((item) => (
+                  <div
+                    key={item.branch_id}
+                    className="rounded-xl ring-1 ring-sky-200 bg-gradient-to-r from-sky-50 via-white to-sky-50 px-3 py-2 flex items-center justify-between text-sm"
+                  >
+                    <div className="font-medium text-slate-900">{item.branch_name}</div>
+                    <div className="font-semibold text-slate-900">{fmtKGS(item.pos_amount)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -666,9 +809,11 @@ export default function Page() {
               row={onlineRow}
               inputAmount={onlineInput}
               inputCommission={onlineCommissionInput}
+              inputCommissionRate={onlineCommissionRateInput}
               comment={onlineComment}
               onChangeAmount={setOnlineInput}
-              onChangeCommission={setOnlineCommissionInput}
+              onChangeCommission={handleOnlineCommissionAmountChange}
+              onChangeCommissionRate={handleOnlineCommissionRateChange}
               onChangeComment={setOnlineComment}
               onSave={saveOnline}
               saving={onlineSaving}
@@ -682,8 +827,7 @@ export default function Page() {
             <div className="mb-3 flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-amber-400" />
               <div className="text-sm text-slate-100">
-                Переплаты (наличные) • всего {cashSummary.overList.length} • сумма{' '}
-                {fmtKGS(cashSummary.overpayTotal)}
+                Переплаты (наличные) • всего {cashSummary.overList.length} • сумма {fmtKGS(cashSummary.overpayTotal)}
               </div>
             </div>
             <div className="rounded-2xl ring-1 ring-amber-200 bg-amber-50/95 p-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 backdrop-blur-xl shadow-[0_18px_55px_rgba(15,23,42,0.55)]">
@@ -693,9 +837,7 @@ export default function Page() {
                   className="rounded-xl ring-1 ring-amber-300 bg-gradient-to-r from-amber-50 via-white to-amber-100 px-3 py-2 flex items-center justify-between text-sm"
                 >
                   <div className="font-medium text-slate-900">{item.name}</div>
-                  <div className="font-semibold text-amber-700">
-                    {fmtKGS(item.delta)}
-                  </div>
+                  <div className="font-semibold text-amber-700">{fmtKGS(item.delta)}</div>
                 </div>
               ))}
             </div>
@@ -713,37 +855,21 @@ export default function Page() {
         >
           <div className="flex items-center gap-2 mb-4">
             <Clock className="h-5 w-5 text-teal-400" />
-            <div className="font-semibold text-slate-900">
-              История фиксаций: {histOpen.branchName}
-            </div>
+            <div className="font-semibold text-slate-900">История фиксаций: {histOpen.branchName}</div>
           </div>
-          {histLoading && (
-            <div className="text-sm text-slate-500">Загрузка…</div>
-          )}
-          {!histLoading && (!history || history.length === 0) && (
-            <div className="text-sm text-slate-500">Пусто.</div>
-          )}
+          {histLoading && <div className="text-sm text-slate-500">Загрузка…</div>}
+          {!histLoading && (!history || history.length === 0) && <div className="text-sm text-slate-500">Пусто.</div>}
           {!histLoading && history && history.length > 0 && (
             <div className="space-y-3">
               {history.map((h, i) => (
-                <div
-                  key={i}
-                  className="rounded-xl ring-1 ring-slate-200 bg-slate-50 px-4 py-3"
-                >
+                <div key={i} className="rounded-xl ring-1 ring-slate-200 bg-slate-50 px-4 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm text-slate-900">
-                      <b>{fmtKGS(h.manual_snapshot)}</b> зафиксировано • Δ{' '}
-                      {fmtKGS(h.diff_snapshot)}
+                      <b>{fmtKGS(h.manual_snapshot)}</b> зафиксировано • Δ {fmtKGS(h.diff_snapshot)}
                     </div>
-                    <div className="text-xs text-slate-500">
-                      {new Date(h.fixed_at).toLocaleString('ru-RU')}
-                    </div>
+                    <div className="text-xs text-slate-500">{new Date(h.fixed_at).toLocaleString('ru-RU')}</div>
                   </div>
-                  {h.comment && (
-                    <div className="text-xs text-slate-600 mt-1">
-                      Комментарий: {h.comment}
-                    </div>
-                  )}
+                  {h.comment && <div className="text-xs text-slate-600 mt-1">Комментарий: {h.comment}</div>}
                 </div>
               ))}
             </div>
@@ -807,15 +933,9 @@ function LegendChip({ color, label }: { color: 'emerald' | 'red' | 'yellow'; lab
     yellow: 'bg-amber-50 text-amber-700 ring-amber-200',
   } as const;
   const icon =
-    color === 'emerald' ? (
-      <CheckCircle2 className="h-3.5 w-3.5" />
-    ) : (
-      <AlertTriangle className="h-3.5 w-3.5" />
-    );
+    color === 'emerald' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />;
   return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 ring-1 ${map[color]}`}
-    >
+    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 ring-1 ${map[color]}`}>
       {icon}
       {label}
     </span>
@@ -857,9 +977,7 @@ function StatBox({
     >
       <div className="text-sm text-slate-700">{title}</div>
       <div className="text-[22px] font-semibold mt-1 text-slate-900">{value}</div>
-      {subtitle && (
-        <div className="text-xs text-slate-500 mt-1">{subtitle}</div>
-      )}
+      {subtitle && <div className="text-xs text-slate-500 mt-1">{subtitle}</div>}
     </div>
   );
 }
@@ -879,9 +997,7 @@ function BranchCard({
   onFix: (branchId: number, comment?: string) => Promise<void>;
   onHistory: (branchId: number, branchName: string) => void;
 }) {
-  const [input, setInput] = useState(
-    row.manual_amount > 0 ? String(Math.round(row.manual_amount)) : '',
-  );
+  const [input, setInput] = useState(row.manual_amount > 0 ? String(Math.round(row.manual_amount)) : '');
   const [comment, setComment] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [fixing, setFixing] = useState(false);
@@ -922,6 +1038,7 @@ function BranchCard({
       setSaving(false);
     }
   }
+
   async function handleFix() {
     try {
       setFixing(true);
@@ -943,9 +1060,7 @@ function BranchCard({
               {new Date(lastFixedAt).toLocaleString('ru-RU')}
             </span>
           )}
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ring-1 ${theme.chip}`}
-          >
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ring-1 ${theme.chip}`}>
             {theme.icon}
             {theme.label}
           </span>
@@ -960,11 +1075,7 @@ function BranchCard({
           k="Δ"
           v={fmtKGS(row.diff)}
           className={
-            row.status === 'shortage'
-              ? 'text-red-600'
-              : row.status === 'overpay'
-              ? 'text-amber-600'
-              : 'text-slate-900'
+            row.status === 'shortage' ? 'text-red-600' : row.status === 'overpay' ? 'text-amber-600' : 'text-slate-900'
           }
         />
       </div>
@@ -977,9 +1088,7 @@ function BranchCard({
             style={{ width: `${percent}%` }}
           />
         </div>
-        <div className="mt-1 text-right text-[11px] text-slate-500">
-          {percent.toFixed(0)}%
-        </div>
+        <div className="mt-1 text-right text-[11px] text-slate-500">{percent.toFixed(0)}%</div>
       </div>
 
       {/* Inputs */}
@@ -1007,11 +1116,7 @@ function BranchCard({
 
       {/* Actions */}
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <SoftPrimaryBtn
-          onClick={handleFix}
-          disabled={!canFix || fixing}
-          title={canFix ? '' : 'Доступ только владельцу'}
-        >
+        <SoftPrimaryBtn onClick={handleFix} disabled={!canFix || fixing} title={canFix ? '' : 'Доступ только владельцу'}>
           {fixing ? 'Фиксирую…' : 'Зафиксировать'}
         </SoftPrimaryBtn>
         <SoftGhostBtn onClick={() => onHistory(row.branch_id, row.branch_name)}>
@@ -1035,9 +1140,11 @@ function OnlineCard({
   row,
   inputAmount,
   inputCommission,
+  inputCommissionRate,
   comment,
   onChangeAmount,
   onChangeCommission,
+  onChangeCommissionRate,
   onChangeComment,
   onSave,
   saving,
@@ -1045,9 +1152,11 @@ function OnlineCard({
   row: OnlineRecoRow;
   inputAmount: string;
   inputCommission: string;
+  inputCommissionRate: string;
   comment: string;
   onChangeAmount: (v: string) => void;
   onChangeCommission: (v: string) => void;
+  onChangeCommissionRate: (v: string) => void;
   onChangeComment: (v: string) => void;
   onSave: () => Promise<void> | void;
   saving: boolean;
@@ -1059,41 +1168,28 @@ function OnlineCard({
 
   const theme =
     {
-      match: {
-        chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-        label: 'Совпадает',
-      },
-      shortage: {
-        chip: 'bg-red-50 text-red-700 ring-red-200',
-        label: 'Недостача',
-      },
-      overpay: {
-        chip: 'bg-amber-50 text-amber-700 ring-amber-200',
-        label: 'Переплата',
-      },
-    }[row.status] || {
-      chip: 'bg-slate-100 text-slate-700 ring-slate-200',
-      label: '—',
-    };
+      match: { chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200', label: 'Совпадает' },
+      shortage: { chip: 'bg-red-50 text-red-700 ring-red-200', label: 'Недостача' },
+      overpay: { chip: 'bg-amber-50 text-amber-700 ring-amber-200', label: 'Переплата' },
+    }[row.status] || { chip: 'bg-slate-100 text-slate-700 ring-slate-200', label: '—' };
+
+  const ratePct =
+    inputCommissionRate.trim() !== '' ? parsePercent(inputCommissionRate) : DEFAULT_ACQUIRING_RATE_PCT;
 
   const expectedCommissionHint =
-    row.expected_amount > 0 ? fmtKGS(row.expected_amount * 0.0195) : fmtKGS(0);
+    row.expected_amount > 0 ? fmtKGS((row.expected_amount * ratePct) / 100) : fmtKGS(0);
 
   return (
     <div className="rounded-2xl p-5 ring-1 ring-sky-200 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 shadow-[0_22px_65px_rgба(15,23,42,0.55)] backdrop-blur-xl text-slate-900">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-sm font-semibold text-slate-900">
-            Онлайн-оплаты (все филиалы)
-          </div>
+          <div className="text-sm font-semibold text-slate-900">Онлайн-оплаты (все филиалы)</div>
           <div className="mt-1 text-[11px] text-slate-500">
             Неделя: {row.week_start} — {row.week_end}
           </div>
         </div>
-        <span
-          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ring-1 ${theme.chip}`}
-        >
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ring-1 ${theme.chip}`}>
           {theme.label}
         </span>
       </div>
@@ -1107,11 +1203,7 @@ function OnlineCard({
           k="Δ (грязная)"
           v={fmtKGS(row.diff)}
           className={
-            row.status === 'shortage'
-              ? 'text-red-600'
-              : row.status === 'overpay'
-              ? 'text-amber-600'
-              : 'text-slate-900'
+            row.status === 'shortage' ? 'text-red-600' : row.status === 'overpay' ? 'text-amber-600' : 'text-slate-900'
           }
         />
       </div>
@@ -1124,18 +1216,14 @@ function OnlineCard({
             style={{ width: `${percent}%` }}
           />
         </div>
-        <div className="mt-1 text-right text-[11px] text-slate-500">
-          {percent.toFixed(0)}%
-        </div>
+        <div className="mt-1 text-right text-[11px] text-slate-500">{percent.toFixed(0)}%</div>
       </div>
 
       {/* Inputs */}
       <div className="mt-4 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <div className="text-[11px] text-slate-500 mb-1">
-              Факт по банку, сом
-            </div>
+            <div className="text-[11px] text-slate-500 mb-1">Факт по банку, сом</div>
             <input
               value={inputAmount}
               onChange={(e) => onChangeAmount(e.target.value)}
@@ -1144,19 +1232,37 @@ function OnlineCard({
               className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
             />
           </div>
+
           <div>
-            <div className="text-[11px] text-slate-500 mb-1">
-              Комиссия банка за неделю, сом
+            <div className="text-[11px] text-slate-500 mb-1">Комиссия эквайринга</div>
+
+            {/* ставка + сумма */}
+            <div className="flex items-end gap-2">
+              <div className="w-[110px]">
+                <div className="text-[10px] text-slate-500 mb-1">Ставка, %</div>
+                <input
+                  value={inputCommissionRate}
+                  onChange={(e) => onChangeCommissionRate(e.target.value)}
+                  placeholder={String(DEFAULT_ACQUIRING_RATE_PCT)}
+                  inputMode="decimal"
+                  className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
+                />
+              </div>
+
+              <div className="flex-1">
+                <div className="text-[10px] text-slate-500 mb-1">Сумма, сом</div>
+                <input
+                  value={inputCommission}
+                  onChange={(e) => onChangeCommission(e.target.value)}
+                  placeholder="Авто от ставки"
+                  inputMode="numeric"
+                  className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
+                />
+              </div>
             </div>
-            <input
-              value={inputCommission}
-              onChange={(e) => onChangeCommission(e.target.value)}
-              placeholder="Комиссия эквайринга"
-              inputMode="numeric"
-              className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
-            />
+
             <div className="mt-1 text-[11px] text-slate-500">
-              Подсказка: 1,95% от POS-онлайна ≈ {expectedCommissionHint}
+              По умолчанию: {DEFAULT_ACQUIRING_RATE_PCT}% • сейчас: {round2(ratePct)}% • расчёт ≈ {expectedCommissionHint}
             </div>
           </div>
         </div>
@@ -1212,10 +1318,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="absolute left-1/2 top-1/2 w-[min(92vw,640px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white/95 p-5 ring-1 ring-sky-200 shadow-[0_30px_120px_rgba(0,0,0,0.65)]">
         <div className="absolute right-3 top-3">
-          <button
-            onClick={onClose}
-            className="rounded-full px-2 py-1 text-slate-500 hover:bg-slate-100"
-          >
+          <button onClick={onClose} className="rounded-full px-2 py-1 text-slate-500 hover:bg-slate-100">
             ✕
           </button>
         </div>
