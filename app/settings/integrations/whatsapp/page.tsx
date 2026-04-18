@@ -119,13 +119,21 @@ export default function WhatsAppIntegrationPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-5">
-      <header>
-        <h1 className="text-2xl font-semibold">WhatsApp Business (Cloud API)</h1>
-        <p className="text-slate-600 text-sm mt-1">
-          Подключение сервисных сообщений Refocus через Meta Cloud API.
-        </p>
-      </header>
+    <div className="min-h-screen bg-transparent text-slate-900">
+      <div className="max-w-3xl mx-auto space-y-5">
+        <header>
+          <h1 className="text-[20px] font-bold text-white tracking-tight flex items-center gap-2">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 ring-1 ring-white/20">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
+                <path d="M20.52 3.48A11.83 11.83 0 0 0 12.02 0C5.42 0 .04 5.38.04 11.98c0 2.11.55 4.17 1.6 5.99L0 24l6.17-1.62a11.95 11.95 0 0 0 5.85 1.49h.01c6.6 0 11.98-5.38 11.99-11.98 0-3.2-1.25-6.21-3.5-8.41zM12.02 21.85h-.01a9.86 9.86 0 0 1-5.03-1.38l-.36-.21-3.66.96.98-3.57-.23-.37a9.87 9.87 0 0 1-1.52-5.3c0-5.47 4.45-9.92 9.93-9.92 2.65 0 5.14 1.03 7.02 2.91a9.86 9.86 0 0 1 2.9 7.02c-.01 5.48-4.46 9.86-9.92 9.86z" />
+              </svg>
+            </span>
+            WhatsApp Business (Cloud API)
+          </h1>
+          <p className="text-[12px] text-slate-400 mt-0.5">
+            Подключение сервисных сообщений Refocus через Meta Cloud API
+          </p>
+        </header>
 
       <section className="rounded-2xl border border-slate-200/60 bg-white/90 shadow-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
@@ -268,6 +276,7 @@ export default function WhatsAppIntegrationPage() {
           Verify Token для подтверждения вебхука — тот, что задан выше в форме.
         </p>
       </section>
+      </div>
     </div>
   );
 }

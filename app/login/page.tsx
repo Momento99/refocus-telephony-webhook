@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getSupabaseBrowser } from '@/lib/supabaseBrowser'; // путь поправь, если нет алиаса '@'
+import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { getSupabaseBrowser } from '@/lib/supabaseBrowser';
 
 function ruError(msg: string) {
   const m = msg.toLowerCase();
   if (m.includes('invalid login credentials')) return 'Неверный email или пароль';
-  if (m.includes('email not confirmed')) return 'Email не подтвержден';
+  if (m.includes('email not confirmed')) return 'Email не подтверждён';
   if (m.includes('rate limit')) return 'Слишком много попыток. Попробуйте позже';
   return 'Не удалось войти. ' + msg;
 }
@@ -32,10 +33,12 @@ export default function LoginPage() {
         const { data, error } = await sb.auth.getUser();
         if (!ignore && !error && data.user) router.replace(redirectTo);
       } catch {
-        /* молча, клиент всё равно работает */
+        /* silent */
       }
     })();
-    return () => { ignore = true; };
+    return () => {
+      ignore = true;
+    };
   }, [sb, router, redirectTo]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -52,31 +55,69 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-0px)] flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md">
-        <div className="theme-surface relative overflow-hidden p-6 sm:p-8 shadow-xl">
+    <div className="relative min-h-screen flex items-center justify-center px-4 py-10 overflow-hidden">
+      {/* Фон: мягкие цветные пятна */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div
+          className="absolute -top-40 -left-40 h-[420px] w-[420px] rounded-full opacity-40"
+          style={{
+            background:
+              'radial-gradient(closest-side, rgba(34,211,238,0.35), transparent 70%)',
+            filter: 'blur(20px)',
+          }}
+        />
+        <div
+          className="absolute -bottom-40 -right-40 h-[460px] w-[460px] rounded-full opacity-40"
+          style={{
+            background:
+              'radial-gradient(closest-side, rgba(20,184,166,0.28), transparent 70%)',
+            filter: 'blur(20px)',
+          }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[540px] w-[540px] rounded-full opacity-20"
+          style={{
+            background:
+              'radial-gradient(closest-side, rgba(79,143,240,0.22), transparent 70%)',
+            filter: 'blur(28px)',
+          }}
+        />
+      </div>
+
+      <div className="relative w-full max-w-md">
+        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-900/60 backdrop-blur-xl p-8 shadow-[0_40px_80px_rgba(0,0,0,0.45)]">
+          {/* тонкая верхняя градиентная полоска */}
           <div
             aria-hidden
-            className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full"
-            style={{
-              background: 'radial-gradient(120px 120px at 50% 50%, rgba(99,102,241,0.18), transparent 70%)',
-              filter: 'blur(6px)',
-            }}
+            className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-teal-400/70 via-cyan-400/70 to-sky-400/70"
           />
 
-          <div className="mb-6 text-center">
-            <h1 className="font-kiona text-3xl sm:text-4xl font-normal leading-tight">
+          {/* Лого + текст */}
+          <div className="mb-8 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 shadow-lg ring-1 ring-white/20">
+              <svg viewBox="0 0 24 24" className="h-6 w-6 text-white" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </div>
+            <h1 className="font-kiona text-3xl sm:text-4xl font-normal leading-none tracking-[0.2em] text-white">
               REFOCUS
             </h1>
-            <p className="mt-1 text-sm text-[color:rgb(var(--text-muted))]">
-              Введите email и пароль для доступа
+            <p className="mt-2 text-sm text-slate-400">
+              Вход в CRM — введите email и пароль
             </p>
           </div>
 
           <form className="space-y-4" onSubmit={onSubmit}>
             <label className="block">
-              <span className="mb-1 block text-sm font-medium">Email</span>
+              <span className="mb-1.5 block text-xs font-medium text-slate-300 uppercase tracking-wide">
+                Email
+              </span>
               <div className="relative">
+                <Mail
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                />
                 <input
                   type="email"
                   inputMode="email"
@@ -85,21 +126,22 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full rounded-lg border border-[rgba(var(--panel-border))] bg-white/80 px-3 py-2.5 pr-10 outline-none transition
-                             focus:border-transparent focus:ring-2 focus:ring-[#6366f1]/40"
+                  autoFocus
+                  className="w-full rounded-xl border border-white/10 bg-white/5 pl-10 pr-3 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition
+                             focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                 />
-                <svg
-                  className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 opacity-60"
-                  viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                  <path strokeWidth="2" d="M4 8l8 5 8-5" />
-                  <rect x="2" y="6" width="20" height="12" rx="2" ry="2" strokeWidth="2" />
-                </svg>
               </div>
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-sm font-medium">Пароль</span>
+              <span className="mb-1.5 block text-xs font-medium text-slate-300 uppercase tracking-wide">
+                Пароль
+              </span>
               <div className="relative">
+                <Lock
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
@@ -107,39 +149,60 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full rounded-lg border border-[rgba(var(--panel-border))] bg-white/80 px-3 py-2.5 pr-16 outline-none transition
-                             focus:border-transparent focus:ring-2 focus:ring-[#14b8a6]/40"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 pl-10 pr-11 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition
+                             focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(v => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-sm
-                             text-[color:rgb(var(--text-muted))] hover:text-[color:rgb(var(--text-main))] focus:outline-none"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:text-slate-200 focus:outline-none"
                   aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
                 >
-                  {showPassword ? 'Скрыть' : 'Показать'}
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
             </label>
 
             {err && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
                 {err}
               </div>
             )}
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-lg px-4 py-2.5 text-white font-medium shadow-md transition
-                           focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg, #22c55e 0%, #0ea5e9 50%, #6366f1 100%)' }}
-              >
-                {loading ? 'Входим…' : 'Войти'}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={loading || !email || !password}
+              className="group relative w-full overflow-hidden rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(34,211,238,0.25)] transition
+                         focus:outline-none focus:ring-2 focus:ring-cyan-400/40 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background:
+                  'linear-gradient(135deg, #14b8a6 0%, #22d3ee 50%, #4f8ff0 100%)',
+              }}
+            >
+              <span className="relative inline-flex items-center justify-center gap-2">
+                {loading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Входим…
+                  </>
+                ) : (
+                  'Войти'
+                )}
+              </span>
+              <span
+                aria-hidden
+                className="absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(255,255,255,0.12), transparent 60%)',
+                }}
+              />
+            </button>
           </form>
+
+          <div className="mt-6 text-center text-[11px] text-slate-500">
+            Refocus · сеть оптик · панель управления
+          </div>
         </div>
       </div>
     </div>
