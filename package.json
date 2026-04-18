@@ -8,13 +8,16 @@
     "start": "next start",
     "lint": "next lint",
     "prisma:seed": "node prisma/seed.js",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "index-books": "tsx scripts/index-books.ts"
   },
   "dependencies": {
+    "@fontsource/onest": "^5.2.11",
     "@prisma/client": "^6.16.2",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.58.0",
+    "@xyflow/react": "^12.10.2",
     "bwip-js": "^4.7.0",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.18",
@@ -29,8 +32,10 @@
     "react-hot-toast": "^2.6.0",
     "react-icons": "^5.5.0",
     "react-imask": "^7.6.1",
+    "react-markdown": "^10.1.0",
     "react-tsparticles": "^2.12.2",
     "recharts": "^3.2.0",
+    "remark-gfm": "^4.0.1",
     "swr": "^2.3.6",
     "three": "^0.180.0",
     "tsparticles": "^3.9.1",
@@ -43,17 +48,25 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4.1.11",
+    "@types/adm-zip": "^0.5.8",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "adm-zip": "^0.5.17",
     "autoprefixer": "^10.4.21",
+    "dotenv": "^17.4.2",
+    "epub2": "^3.0.2",
     "eslint": "^9",
     "eslint-config-next": "^16.1.0",
     "init": "^0.1.2",
     "npx": "^10.2.2",
+    "pdf-parse": "^2.4.5",
     "postcss": "^8.5.6",
     "prisma": "^6.16.2",
     "tailwindcss": "^4.1.11",
-    "typescript": "^5"
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "unpdf": "^1.6.0"
   }
 }

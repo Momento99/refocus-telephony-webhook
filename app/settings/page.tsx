@@ -16,13 +16,6 @@ const ArrowRightIcon = (props: any) => (
   </svg>
 );
 
-const StoreIcon = (props: any) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-    <path strokeWidth="2" d="M3 10h18" />
-    <path strokeWidth="2" d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4" />
-    <path strokeWidth="2" d="M6 10v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-8" />
-  </svg>
-);
 
 const UsersIcon = (props: any) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
@@ -40,13 +33,6 @@ const CpuIcon = (props: any) => (
   </svg>
 );
 
-const PrinterIcon = (props: any) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-    <path strokeWidth="2" d="M6 9V3h12v6" />
-    <rect x="6" y="13" width="12" height="8" rx="1.5" strokeWidth="2" />
-    <path strokeWidth="2" d="M6 9h12a3 3 0 0 1 3 3v1H3v-1a3 3 0 0 1 3-3z" />
-  </svg>
-);
 
 const ShieldIcon = (props: any) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
@@ -64,22 +50,6 @@ const PayrollIcon = (props: any) => (
   </svg>
 );
 
-const WarningIcon = (props: any) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-    <path strokeWidth="2" d="M12 2l9 20H3L12 2z" strokeLinejoin="round" />
-    <line x1="12" y1="8" x2="12" y2="13" strokeWidth="2" strokeLinecap="round" />
-    <circle cx="12" cy="17" r="1" fill="currentColor" />
-  </svg>
-);
-
-const PinIcon = (props: any) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-    <rect x="3" y="5" width="18" height="14" rx="3" strokeWidth="2" />
-    <circle cx="8" cy="12" r="1.5" fill="currentColor" />
-    <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-    <circle cx="16" cy="12" r="1.5" fill="currentColor" />
-  </svg>
-);
 
 /* ========= Плитка ========= */
 
@@ -178,7 +148,7 @@ export default function SettingsHome() {
             Настройки
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Выбери модуль, который нужно настроить: филиалы, люди, интеграции,
+            Выбери модуль, который нужно настроить: пользователи, интеграции,
             безопасность и правила кассы.
           </p>
         </header>
@@ -186,14 +156,6 @@ export default function SettingsHome() {
         {/* Сетка модулей */}
         <section>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <SettingsTile
-              title="Филиалы"
-              desc="Адреса, контакты, способы оплаты и график работы по каждому филиалу."
-              href="/settings/branch"
-              icon={<StoreIcon className="h-6 w-6" />}
-              accent="bg-gradient-to-br from-sky-500 to-cyan-400"
-            />
-
             <SettingsTile
               title="Пользователи и роли"
               desc="Владелец, менеджеры, продавцы. Права доступа и видимость разделов."
@@ -211,14 +173,6 @@ export default function SettingsHome() {
             />
 
             <SettingsTile
-              title="Печать чеков"
-              desc="Шапка чека, реквизиты, комментарии и шаблоны под каждый филиал."
-              href="/settings/printing"
-              icon={<PrinterIcon className="h-6 w-6" />}
-              accent="bg-gradient-to-br from-pink-500 to-rose-500"
-            />
-
-            <SettingsTile
               title="Безопасность"
               desc="Пароли, сессии, выход на всех устройствах, журнал входов и действий."
               href="/settings/security"
@@ -226,21 +180,6 @@ export default function SettingsHome() {
               accent="bg-gradient-to-br from-amber-400 to-orange-500"
             />
 
-            <SettingsTile
-              title="Штрафы посещаемости"
-              desc="Правила для опозданий, ранних уходов и AFK. Основа расчёта зарплат."
-              href="/settings/attendance/penalties"
-              icon={<WarningIcon className="h-6 w-6" />}
-              accent="bg-gradient-to-br from-orange-400 to-red-500"
-            />
-
-            <SettingsTile
-              title="PINы филиалов (касса)"
-              desc="PIN-коды для входа на кассу. Один PIN на филиал, управление у владельца."
-              href="/settings/attendance/pins"
-              icon={<PinIcon className="h-6 w-6" />}
-              accent="bg-gradient-to-br from-indigo-500 to-sky-500"
-            />
           </div>
         </section>
       </div>

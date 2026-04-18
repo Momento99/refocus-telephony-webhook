@@ -30,10 +30,10 @@ export async function middleware(req: NextRequest) {
     }
   );
 
-  // "Трогаем" auth, чтобы Supabase мог обновлять куки при необходимости.
-  // Даже если user = null — просто пропускаем дальше.
+  // Читаем сессию из cookies (без сетевого запроса) — достаточно для обновления токенов.
+  // getSession() работает локально, getUser() делает запрос к Supabase (~500-1000мс).
   try {
-    await supabase.auth.getUser();
+    await supabase.auth.getSession();
   } catch {
     // ничего не делаем — доступ не ограничиваем
   }

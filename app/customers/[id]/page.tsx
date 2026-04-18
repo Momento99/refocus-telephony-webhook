@@ -390,7 +390,7 @@ export default function CustomerPage() {
                   {summary?.full_name || 'Клиент'}
                 </div>
                 <div className="mt-1 text-[11px] tracking-[0.22em] uppercase text-slate-400">
-                  Карточка клиента Refocus
+                  Карточка клиента <span className="font-kiona">Refocus</span>
                 </div>
                 <div className="mt-1 text-sm text-slate-600">
                   {summary?.phone ? (

@@ -18,7 +18,7 @@ const BRANCH_CAPACITY: Record<string, number> = {
 /** Филиалы, где не используем автоматическую «допечатку по продажам» (как в branch page) */
 const BRANCHES_WITHOUT_AUTO_REPLENISH: string[] = ['Кант', 'Токмок'];
 
-/* ────────── типы оправ и правила цен (как в branch page) ────────── */
+/* ────────── типы оправ (для barcode inference) ────────── */
 
 type FrameTypeCode = 'RP' | 'RM' | 'KD' | 'PA' | 'MA';
 type GenderCode = 'F' | 'M';
@@ -27,116 +27,6 @@ type TypeKey = `${FrameTypeCode}_${GenderCode}`;
 function makeTypeKey(type: FrameTypeCode, gender: GenderCode): TypeKey {
   return `${type}_${gender}`;
 }
-
-/** Жёсткие границы цен по каждому типу */
-const FRAME_TYPE_PRICE_RULES: Record<FrameTypeCode, { min: number; max: number }> = {
-  RP: { min: 800, max: 2200 },
-  RM: { min: 1000, max: 2400 },
-  KD: { min: 800, max: 3500 },
-  PA: { min: 1000, max: 3200 },
-  MA: { min: 1200, max: 10000 },
-};
-
-/** Границы цен с учётом типа И пола (одна точка правды) */
-function getTypePriceBounds(type: FrameTypeCode, gender: GenderCode): { min: number; max: number } {
-  const base = FRAME_TYPE_PRICE_RULES[type];
-  if (!base) return { min: 0, max: 0 };
-
-  let { min, max } = base;
-
-  if (type === 'RP') {
-    min = 800;
-    max = 2200;
-  }
-  if (type === 'RM') {
-    min = 1000;
-    max = 2400;
-  }
-  if (type === 'KD') {
-    min = 800;
-    max = 3500;
-  }
-  if (type === 'PA') {
-    if (gender === 'F') {
-      min = 1000;
-      max = 3000;
-    } else {
-      min = 1200;
-      max = 3200;
-    }
-  }
-  if (type === 'MA') {
-    if (gender === 'F') {
-      min = 1200;
-      max = 9000;
-    } else {
-      min = 1400;
-      max = 10000;
-    }
-  }
-
-  return { min, max };
-}
-
-const PRICE_ALPHA = 3.4;
-
-function generatePriceLadder(count: number, minPrice: number, maxPrice: number, alpha = PRICE_ALPHA): number[] {
-  if (count <= 0 || maxPrice <= minPrice) return [];
-  const prices: number[] = [];
-
-  for (let i = 1; i <= count; i++) {
-    const q = (i - 0.5) / count;
-    const raw = minPrice + (maxPrice - minPrice) * Math.pow(q, alpha);
-    let p = 10 * Math.round(raw / 10);
-
-    if (p < 3000 && p % 100 === 0) p += 10;
-    if (p >= 3000) p = 100 * Math.round(p / 100);
-
-    if (p < minPrice) p = minPrice;
-    if (p > maxPrice) p = maxPrice;
-
-    prices.push(p);
-  }
-
-  for (let i = 1; i < prices.length; i++) {
-    if (prices[i] <= prices[i - 1]) {
-      const prev = prices[i - 1];
-      const step = prev >= 3000 ? 100 : 10;
-      let next = prev + step;
-      if (next > maxPrice) next = maxPrice;
-      prices[i] = next;
-    }
-  }
-
-  return prices;
-}
-
-/* ────────── секции/доли (как в branch page) ────────── */
-
-const TYPE_SECTIONS = [
-  { id: 'RD_PL_F', title: 'Для чтения · Женские пластик', typeCode: 'RP' as FrameTypeCode, gender: 'F' as GenderCode },
-  { id: 'RD_MT_F', title: 'Для чтения · Женские металл', typeCode: 'RM' as FrameTypeCode, gender: 'F' as GenderCode },
-  { id: 'KD_F', title: 'Детские · Девочки', typeCode: 'KD' as FrameTypeCode, gender: 'F' as GenderCode },
-  { id: 'KD_M', title: 'Детские · Мальчики', typeCode: 'KD' as FrameTypeCode, gender: 'M' as GenderCode },
-  { id: 'PA_F', title: 'Взрослый пластик · Женские', typeCode: 'PA' as FrameTypeCode, gender: 'F' as GenderCode },
-  { id: 'PA_M', title: 'Взрослый пластик · Мужские', typeCode: 'PA' as FrameTypeCode, gender: 'M' as GenderCode },
-  { id: 'MA_F', title: 'Взрослый металл · Женские', typeCode: 'MA' as FrameTypeCode, gender: 'F' as GenderCode },
-  { id: 'MA_M', title: 'Взрослый металл · Мужские', typeCode: 'MA' as FrameTypeCode, gender: 'M' as GenderCode },
-] as const;
-
-type TypeSection = (typeof TYPE_SECTIONS)[number];
-type TypeSectionId = TypeSection['id'];
-
-const TYPE_SLOT_SHARE: Record<TypeSectionId, number> = {
-  RD_PL_F: 14 / 168,
-  RD_MT_F: 14 / 168,
-  KD_F: 7 / 168,
-  KD_M: 7 / 168,
-  PA_F: 35 / 168,
-  PA_M: 28 / 168,
-  MA_F: 35 / 168,
-  MA_M: 28 / 168,
-};
 
 /* ────────── barcode inference (как в branch page) ────────── */
 
@@ -152,110 +42,6 @@ function inferFromBarcode(barcodeRaw: string): { typeCode: FrameTypeCode; gender
   return { typeCode: t as FrameTypeCode, gender: g as GenderCode };
 }
 
-/* ────────── “точка правды” расчёта как в нижнем блоке ────────── */
-
-function sumMapCounts(map: Record<number, number> | undefined | null): number {
-  if (!map) return 0;
-  let s = 0;
-  for (const v of Object.values(map)) {
-    const n = Number(v);
-    if (Number.isFinite(n)) s += n;
-  }
-  return s;
-}
-
-function computeVisiblePricesForType(args: {
-  planSlots: number;
-  frameType: FrameTypeCode;
-  gender: GenderCode;
-  typeActivePrices: Record<number, number>;
-  typeSuggestPrices: number[];
-}) {
-  const { planSlots, frameType, gender, typeActivePrices, typeSuggestPrices } = args;
-
-  const rules = getTypePriceBounds(frameType, gender);
-  const activeSum = sumMapCounts(typeActivePrices);
-
-  const soldSuggestAll = (typeSuggestPrices || []).filter((p) => {
-    if (!Number.isFinite(p)) return false;
-    if (p < rules.min || p > rules.max) return false;
-    if ((typeActivePrices[p] || 0) > 0) return false;
-    return true;
-  });
-
-  const soldSuggestUniq = Array.from(new Set(soldSuggestAll)).sort((a, b) => a - b);
-
-  const remainingByPlan = planSlots > 0 ? Math.max(planSlots - activeSum, 0) : 0;
-  const slotsForFormula = planSlots > 0 ? Math.max(remainingByPlan - soldSuggestUniq.length, 0) : 0;
-
-  let formulaPrices: number[] = [];
-  if (planSlots > 0 && slotsForFormula > 0) {
-    const ladderAll = generatePriceLadder(planSlots, rules.min, rules.max, PRICE_ALPHA);
-
-    const used = new Set<number>();
-    Object.keys(typeActivePrices || {}).forEach((k) => {
-      const num = Number(k);
-      if (Number.isFinite(num)) used.add(num);
-    });
-    soldSuggestUniq.forEach((p) => used.add(p));
-
-    const free = ladderAll.filter((p) => !used.has(p));
-    formulaPrices = free.slice(0, slotsForFormula);
-  }
-
-  const visiblePrices = planSlots > 0 ? [...soldSuggestUniq, ...formulaPrices] : soldSuggestUniq;
-
-  return {
-    rules,
-    activeSum,
-    soldSuggestUniq,
-    visiblePrices,
-    remainingByPlan,
-  };
-}
-
-function calcTypePlans(totalSlots: number): Record<TypeSectionId, number> {
-  const res: Record<TypeSectionId, number> = {} as any;
-  TYPE_SECTIONS.forEach((sec) => {
-    const share = TYPE_SLOT_SHARE[sec.id] ?? 0;
-    res[sec.id] = Math.round((totalSlots || 0) * share);
-  });
-  return res;
-}
-
-function computeBranchTotals(args: {
-  plannedSlots: number;
-  typeActive: Record<string, Record<number, number>>;
-  typeSuggest: Record<string, number[]>;
-}) {
-  const { plannedSlots, typeActive, typeSuggest } = args;
-
-  const plans = calcTypePlans(plannedSlots);
-
-  let activeAll = 0;
-  let toPrintAll = 0;
-
-  for (const sec of TYPE_SECTIONS) {
-    const key = makeTypeKey(sec.typeCode, sec.gender);
-    const planSlots = plans[sec.id] ?? 0;
-
-    const activePrices = typeActive[key] || {};
-    const suggestPrices = typeSuggest[key] || [];
-
-    const calc = computeVisiblePricesForType({
-      planSlots,
-      frameType: sec.typeCode,
-      gender: sec.gender,
-      typeActivePrices: activePrices,
-      typeSuggestPrices: suggestPrices,
-    });
-
-    activeAll += calc.activeSum;
-    toPrintAll += calc.visiblePrices.length;
-  }
-
-  return { activeAll, toPrintAll };
-}
 
 /* ────────── базовые utils ────────── */
 
@@ -290,24 +76,15 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-function currentYear2(): number {
-  return new Date().getFullYear() % 100;
-}
 
 /* ───────────── UI ───────────── */
 
 function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
-    <div
-      className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85
-                 ring-1 ring-sky-200/70 p-4
-                 shadow-[0_22px_70px_rgba(15,23,42,0.55)]
-                 backdrop-blur-xl text-slate-900
-                 transition-transform duration-200 hover:-translate-y-0.5"
-    >
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-slate-900">{value}</div>
-      {hint ? <div className="mt-1 text-[11px] text-slate-600">{hint}</div> : null}
+    <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
+      {hint ? <div className="mt-1 text-[11px] text-slate-500">{hint}</div> : null}
     </div>
   );
 }
@@ -315,9 +92,9 @@ function StatCard({ label, value, hint }: { label: string; value: React.ReactNod
 function ProgressBar({ percent }: { percent: number }) {
   const p = clamp(percent, 0, 100);
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
       <div
-        className="h-2 rounded-full bg-gradient-to-r from-emerald-400 via-teal-400 to-sky-400 transition-all"
+        className="h-1.5 rounded-full bg-cyan-500 transition-all"
         style={{ width: `${p}%` }}
       />
     </div>
@@ -327,63 +104,40 @@ function ProgressBar({ percent }: { percent: number }) {
 function FillChip({ plannedSlots, filledNow, fillPct }: { plannedSlots: number; filledNow: number; fillPct: number }) {
   if (!plannedSlots || plannedSlots <= 0) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
-        <AlertTriangle className="h-3.5 w-3.5" />
-        план не задан
+      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+        нет плана
       </span>
     );
   }
 
   if (filledNow > plannedSlots) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">
-        <AlertTriangle className="h-3.5 w-3.5" />
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">
         переполнено
       </span>
     );
   }
 
-  // Градация по заполненности
   if (fillPct >= 100) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-200">
-        <CheckCircle2 className="h-3.5 w-3.5" />
+      <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-medium text-cyan-700 ring-1 ring-cyan-200">
+        <CheckCircle2 className="h-3 w-3" />
         норма
-      </span>
-    );
-  }
-
-  if (fillPct >= 95) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">
-        <AlertTriangle className="h-3.5 w-3.5" />
-        желательно пополнить
       </span>
     );
   }
 
   if (fillPct >= 90) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-medium text-orange-900 ring-1 ring-orange-200">
-        <AlertTriangle className="h-3.5 w-3.5" />
-        нужно пополнить
-      </span>
-    );
-  }
-
-  if (fillPct >= 85) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-900 ring-1 ring-rose-200">
-        <AlertTriangle className="h-3.5 w-3.5" />
-        важно пополнить
+      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-200">
+        почти
       </span>
     );
   }
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-900 ring-1 ring-red-200">
-      <AlertTriangle className="h-3.5 w-3.5" />
-      срочно пополнить
+    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-800 ring-1 ring-sky-200">
+      пополнить
     </span>
   );
 }
@@ -394,71 +148,50 @@ function BranchCard({ branch }: { branch: BranchStats }) {
   const missing = branch.missingNow || 0;
 
   const percent = planned > 0 ? clamp(Math.round((filled * 100) / planned), 0, 100) : 0;
-  const freeByCount = planned > 0 ? planned - filled : 0;
 
   return (
     <div
-      className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85
-                 ring-1 ring-sky-200/70 p-5
-                 shadow-[0_22px_70px_rgba(15,23,42,0.6)]
-                 backdrop-blur-xl text-slate-900
-                 transition-transform duration-200 hover:-translate-y-0.5"
+      className="rounded-2xl bg-white ring-1 ring-sky-200/70 p-4
+                 shadow-[0_8px_30px_rgba(15,23,42,0.45)]
+                 text-slate-900 transition-transform duration-200 hover:-translate-y-0.5"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold tracking-tight text-slate-900">{branch.name}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <FillChip plannedSlots={planned} filledNow={filled} fillPct={percent} />
-            {planned > 0 ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/85 px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">
-                {`к печати: ${missing}`}
-              </span>
-            ) : null}
-          </div>
-        </div>
+      {/* Name + status */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[15px] font-semibold tracking-tight text-slate-900">{branch.name}</div>
+        <FillChip plannedSlots={planned} filledNow={filled} fillPct={percent} />
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl bg-white/90 ring-1 ring-slate-200 p-3 shadow-[0_14px_40px_rgba(15,23,42,0.12)]">
-          <div className="text-[11px] uppercase tracking-wide text-slate-500">План слотов</div>
-          <div className="mt-1 text-lg font-semibold text-slate-900">{planned || '—'}</div>
-        </div>
-        <div className="rounded-2xl bg-white/90 ring-1 ring-slate-200 p-3 shadow-[0_14px_40px_rgba(15,23,42,0.12)]">
-          <div className="text-[11px] uppercase tracking-wide text-slate-500">Сейчас на витрине</div>
-          <div className="mt-1 text-lg font-semibold text-slate-900">{filled}</div>
-        </div>
-        <div className="rounded-2xl bg-white/90 ring-1 ring-slate-200 p-3 shadow-[0_14px_40px_rgba(15,23,42,0.12)]">
-          <div className="text-[11px] uppercase tracking-wide text-slate-500">К печати сейчас (по видам)</div>
-          <div className="mt-1 text-lg font-semibold text-slate-900">{planned > 0 ? missing : '—'}</div>
-        </div>
-      </div>
-
-      <div className="mt-4">
+      {/* Progress */}
+      <div className="mt-3">
         <ProgressBar percent={percent} />
-        <div className="mt-2 flex items-center justify-between text-[12px] text-slate-600">
-          <span>
-            Заполненность (по количеству):{' '}
-            <span className="font-semibold text-slate-900">{planned > 0 ? `${percent}%` : '—'}</span>
-          </span>
-          <span className="font-mono text-[12px] text-slate-700">{planned > 0 ? `${filled} / ${planned}` : `${filled} / —`}</span>
+        <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+          <span>{planned > 0 ? `${percent}%` : '—'}</span>
+          <span className="font-mono">{planned > 0 ? `${filled} / ${planned}` : `${filled} / —`}</span>
         </div>
+      </div>
 
-        {planned > 0 ? (
-          <div className="mt-1 text-[11px] text-slate-600">
-            Свободно по количеству:{' '}
-            <span className={`font-semibold ${freeByCount < 0 ? 'text-amber-700' : 'text-slate-900'}`}>{freeByCount}</span>
-            {freeByCount < 0 ? ' (перебор по количеству)' : ''}
-          </div>
-        ) : null}
+      {/* Stats row */}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="rounded-xl bg-slate-50 ring-1 ring-slate-100 px-2.5 py-2 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">План</div>
+          <div className="mt-0.5 text-[15px] font-bold text-slate-900">{planned || '—'}</div>
+        </div>
+        <div className="rounded-xl bg-slate-50 ring-1 ring-slate-100 px-2.5 py-2 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">Есть</div>
+          <div className="mt-0.5 text-[15px] font-bold text-slate-900">{filled}</div>
+        </div>
+        <div className="rounded-xl bg-slate-50 ring-1 ring-slate-100 px-2.5 py-2 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">Нужно</div>
+          <div className={`mt-0.5 text-[15px] font-bold ${missing > 0 ? 'text-sky-600' : 'text-slate-900'}`}>{planned > 0 ? missing : '—'}</div>
+        </div>
       </div>
 
       <Link
         href={`/settings/barcodes/${branch.id}`}
-        className="mt-4 inline-flex w-full items-center justify-center rounded-xl
-                   bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400
-                   px-4 py-2.5 text-sm font-semibold text-slate-950
-                   shadow-[0_16px_45px_rgba(34,211,238,0.28)]
-                   hover:brightness-110 active:brightness-95
+        className="mt-3 inline-flex w-full items-center justify-center rounded-xl
+                   bg-cyan-500 px-4 py-2 text-sm font-semibold text-white
+                   shadow-[0_4px_16px_rgba(34,211,238,0.28)]
+                   hover:bg-cyan-400 active:brightness-95
                    focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
       >
         Открыть филиал
@@ -478,7 +211,7 @@ type YearRow = {
   barcode: string | null;
 };
 
-async function fetchRowsForYear(yearNum: number): Promise<YearRow[]> {
+async function fetchAllRows(): Promise<YearRow[]> {
   const sb = getSupabase();
 
   const PAGE = 1000;
@@ -489,7 +222,6 @@ async function fetchRowsForYear(yearNum: number): Promise<YearRow[]> {
     const { data, error } = await sb
       .from('frame_barcodes')
       .select('branch_id, price, sold_at, type_code, gender, barcode')
-      .eq('year', yearNum)
       .is('voided_at', null)
       .order('barcode', { ascending: true })
       .range(from, from + PAGE - 1);
@@ -573,18 +305,18 @@ export default function BarcodesOverviewPage() {
       if (branchesError) throw branchesError;
 
       const list = (branchesData ?? []) as BranchRow[];
-      const yearNum = currentYear2();
 
-      // 2) Все штрихкоды за год (voided_at NULL)
-      const rows = await fetchRowsForYear(yearNum);
+      // 2) Все штрихкоды всех годов (voided_at NULL)
+      const rows = await fetchAllRows();
 
-      // 3) Группировка per-branch: totalMap + activeMap, затем suggestMap
+      // 3) Группировка per-branch: totalMap + activeMap + rawActiveCount
       const byBranch: Record<
         number,
         {
           totalMap: Record<string, Record<number, number>>;
           activeMap: Record<string, Record<number, number>>;
           suggestMap: Record<string, number[]>;
+          rawActiveCount: number; // ВСЕ оправы на полке (sold_at IS NULL), включая без типа/пола
         }
       > = {};
 
@@ -594,6 +326,7 @@ export default function BarcodesOverviewPage() {
             totalMap: {},
             activeMap: {},
             suggestMap: {},
+            rawActiveCount: 0,
           };
         }
         return byBranch[branchId];
@@ -603,16 +336,24 @@ export default function BarcodesOverviewPage() {
         const bid = r.branch_id;
         if (!bid || !Number.isFinite(bid)) continue;
 
+        const slot = ensure(bid);
+
+        // Считаем ВСЕ оправы на полке — вне зависимости от цены/типа/пола
+        if (!r.sold_at) {
+          slot.rawActiveCount += 1;
+        }
+
+        // Ценовая аналитика требует валидную цену
         const priceNum = r.price == null ? NaN : Number(r.price);
         if (!Number.isFinite(priceNum) || priceNum <= 0) continue;
 
+        // Для ценовой аналитики нужен тип+пол — пропускаем без них
         const inferred = inferFromBarcode(r.barcode || '');
         const t = (inferred?.typeCode ?? r.type_code ?? null) as FrameTypeCode | null;
         const g = (inferred?.gender ?? r.gender ?? null) as GenderCode | null;
         if (!t || !g) continue;
 
         const key = makeTypeKey(t, g);
-        const slot = ensure(bid);
 
         if (!slot.totalMap[key]) slot.totalMap[key] = {};
         if (!slot.activeMap[key]) slot.activeMap[key] = {};
@@ -652,7 +393,7 @@ export default function BarcodesOverviewPage() {
         slot.suggestMap = suggest;
       }
 
-      // 4) Сборка stats: filledNow/missingNow = как нижний блок
+      // 4) Сборка stats
       const stats: BranchStats[] = list.map((br) => {
         const plannedSlots = getPlannedSlots(br.id, br.name);
         const disableAutoSuggest = BRANCHES_WITHOUT_AUTO_REPLENISH.includes(br.name);
@@ -661,14 +402,16 @@ export default function BarcodesOverviewPage() {
         const rawSuggest = (byBranch[br.id]?.suggestMap ?? {}) as Record<string, number[]>;
         const typeSuggest = disableAutoSuggest ? {} : rawSuggest;
 
-        const totals = computeBranchTotals({ plannedSlots, typeActive, typeSuggest });
+        // filledNow = все оправы с sold_at IS NULL (включая те, у которых нет типа/пола)
+        const filledNow = byBranch[br.id]?.rawActiveCount ?? 0;
+        const missingNow = Math.max(0, plannedSlots - filledNow);
 
         return {
           id: br.id,
           name: br.name,
           plannedSlots,
-          filledNow: totals.activeAll,
-          missingNow: totals.toPrintAll,
+          filledNow,
+          missingNow,
           typeActive,
           typeSuggest,
         };
@@ -736,33 +479,29 @@ export default function BarcodesOverviewPage() {
         <div className="mb-6 flex items-start gap-3">
           <div
             className="grid h-10 w-10 place-items-center rounded-2xl
-                       bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400
-                       shadow-[0_0_26px_rgba(34,211,238,0.55)]"
+                       bg-cyan-500
+                       shadow-[0_4px_20px_rgba(34,211,238,0.40)]"
           >
             <Barcode className="h-5 w-5 text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]" />
           </div>
 
           <div>
-            <div className="text-3xl font-semibold tracking-tight text-slate-50 drop-shadow-[0_10px_30px_rgba(34,211,238,0.15)]">
-              Barcode Overview · филиалы
+            <div className="text-2xl font-bold tracking-tight text-slate-50">
+              Оправы и штрих-коды
             </div>
-            {loading ? <div className="mt-1 text-[11px] text-sky-200/80">Обновляю данные…</div> : null}
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">Обзор витрин по филиалам</div>
+            {loading ? <div className="mt-1 text-[11px] text-cyan-400 animate-pulse">Обновляю данные…</div> : null}
           </div>
         </div>
 
         {/* Ошибка */}
         {errorText ? (
-          <div
-            className="mb-6 rounded-3xl bg-gradient-to-r from-rose-50 via-rose-50 to-amber-50
-                       ring-1 ring-rose-200 px-5 py-4 text-slate-900
-                       shadow-[0_22px_70px_rgba(15,23,42,0.55)]
-                       backdrop-blur-xl"
-          >
+          <div className="mb-6 rounded-2xl bg-white ring-1 ring-amber-200 px-5 py-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
             <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-5 w-5 text-rose-600" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-500" />
               <div>
-                <div className="font-semibold">Ошибка загрузки данных</div>
-                <div className="mt-1 text-[12px] text-slate-700">{errorText}</div>
+                <div className="font-semibold text-slate-900">Ошибка загрузки данных</div>
+                <div className="mt-1 text-[12px] text-slate-600">{errorText}</div>
               </div>
             </div>
           </div>
@@ -777,18 +516,13 @@ export default function BarcodesOverviewPage() {
 
         {/* Филиалы */}
         {branches.length === 0 && !loading ? (
-          <div
-            className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85
-                       ring-1 ring-sky-200/70 p-6 text-slate-700
-                       shadow-[0_22px_70px_rgba(15,23,42,0.45)]
-                       backdrop-blur-xl"
-          >
+          <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-6 text-slate-500 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
             Ничего не найдено.
           </div>
         ) : null}
 
         {branches.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {branches.map((b) => (
               <BranchCard key={b.id} branch={b} />
             ))}
@@ -796,12 +530,7 @@ export default function BarcodesOverviewPage() {
         ) : null}
 
         {/* Откат штрихкода */}
-        <div
-          className="mt-8 rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85
-                     ring-1 ring-sky-200/70 p-5
-                     shadow-[0_22px_70px_rgba(15,23,42,0.6)]
-                     backdrop-blur-xl text-slate-900"
-        >
+        <div className="mt-8 rounded-2xl bg-white ring-1 ring-sky-100 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-base font-semibold tracking-tight">Откат тестовой продажи (вернуть штрихкод на полку)</div>
@@ -843,9 +572,9 @@ export default function BarcodesOverviewPage() {
               onClick={rollbackBarcode}
               disabled={rbBusy}
               className="inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold
-                         bg-gradient-to-r from-rose-300 via-amber-200 to-cyan-200 text-slate-950
-                         shadow-[0_16px_45px_rgba(15,23,42,0.18)]
-                         hover:brightness-105 active:brightness-95
+                         bg-cyan-500 text-white
+                         shadow-[0_4px_16px_rgba(34,211,238,0.28)]
+                         hover:bg-cyan-400 active:brightness-95
                          focus:outline-none focus:ring-2 focus:ring-cyan-300/70
                          disabled:opacity-60 disabled:cursor-not-allowed"
             >

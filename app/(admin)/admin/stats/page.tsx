@@ -4,6 +4,7 @@
 import * as React from 'react';
 import type { EChartsOption } from 'echarts';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import getSupabase from '@/lib/supabaseClient';
 import {
@@ -166,16 +167,14 @@ type LensStructRow = {
   revenue_sum: number;
 };
 
-// Диапазоны диоптрий
+// Конкретные диоптрии
 type LensSphRow = {
-  range_label: string | null;
-  lens_kind: 'sph' | 'astig' | null; // обычные / астигматические
-  items_cnt: number;
-  revenue_sum: number;
+  sph: string;
+  cnt: number;
 };
 
-// Чистая прибыль по дням
-type NetProfitRow = { day: string; net_profit: number };
+// Чистая прибыль по дням (все поля из admin_net_profit_by_day)
+type NetProfitRow = { day: string; orders_count: number; income: number; refunds: number; opex_total: number; cogs_total: number; payroll_total: number; net_profit: number };
 
 // Заказы по 10-минутным интервалам (bucket = 'HH24:MI' из SQL)
 type Orders10Row = {
@@ -184,8 +183,24 @@ type Orders10Row = {
   revenue_sum: number;
 };
 
-// полный список филиалов для фильтра
-const ALL_BRANCHES = ['Кант', 'Кара-Балта', 'Беловодск', 'Сокулук', 'Токмок'];
+// Дата старта POS по каждому филиалу (первый реальный оплаченный заказ)
+const BRANCH_START_DATE: Record<string, string> = {
+  'Сокулук': '2025-11-15',
+  'Кара-Балта': '2025-11-20',
+  'Кант': '2025-12-17',
+  // Беловодск и Токмок ещё не подключены к POS
+};
+
+// Только подключённые филиалы
+const ALL_BRANCHES = Object.keys(BRANCH_START_DATE);
+
+/** Дата старта для выбранных филиалов (самая ранняя из выбранных) */
+function getEffectiveStartDate(selectedBranches: string[]): string {
+  const branches = selectedBranches.length > 0 ? selectedBranches : ALL_BRANCHES;
+  const dates = branches.map((b) => BRANCH_START_DATE[b]).filter(Boolean);
+  if (dates.length === 0) return '2025-11-15';
+  return dates.sort()[0];
+}
 
 /* ====== попытка получить границы "за всё время" ====== */
 async function fetchAllTimeBounds(p_branches: string[]) {
@@ -234,8 +249,8 @@ async function fetchAllTimeBounds(p_branches: string[]) {
     // ignore
   }
 
-  // 3) Самый безопасный фолбэк: "очень давно → сегодня"
-  return { from: '2020-01-01', to: todayISO() };
+  // 3) Самый безопасный фолбэк
+  return { from: '2025-11-15', to: todayISO() };
 }
 
 export default function AdminStatsPage() {
@@ -246,9 +261,20 @@ export default function AdminStatsPage() {
   const branchOptions = ALL_BRANCHES;
   const [branches, setBranches] = React.useState<string[]>([]); // [] = все филиалы
 
-  // IMPORTANT: по умолчанию хотим "за всё время"
-  const [fromISO, setFromISO] = React.useState<string>('2020-01-01');
+  const [fromISO, setFromISO] = React.useState<string>(() => getEffectiveStartDate([]));
   const [toISO, setToISO] = React.useState<string>(() => todayISO());
+
+  // При смене филиалов — подставляем правильную дату старта
+  const prevBranchesRef = React.useRef<string[]>([]);
+  React.useEffect(() => {
+    const prev = prevBranchesRef.current;
+    if (JSON.stringify(prev) !== JSON.stringify(branches)) {
+      prevBranchesRef.current = branches;
+      const effectiveStart = getEffectiveStartDate(branches);
+      // Обновляем только если текущая fromISO раньше чем дата старта филиала
+      setFromISO((cur) => cur < effectiveStart ? effectiveStart : cur);
+    }
+  }, [branches]);
   const [filtersReady, setFiltersReady] = React.useState(false);
 
   /* --- данные --- */
@@ -267,6 +293,11 @@ export default function AdminStatsPage() {
 
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+
+  // Реальные зарплаты из v_payroll_daily + средние чеки из fn_finance_summary_todate_v2
+  const [realPayroll, setRealPayroll] = React.useState(0);
+  const [avgFrameCheck, setAvgFrameCheck] = React.useState(0);
+  const [avgLensCheck, setAvgLensCheck] = React.useState(0);
 
   // навигация/URL
   const router = useRouter();
@@ -306,12 +337,9 @@ export default function AdminStatsPage() {
       if (urlFrom) setFromISO(urlFrom);
       if (urlTo) setToISO(urlTo);
 
-      // Если диапазона нет — подтягиваем реальные границы (или fallback)
-      if (!urlFrom && !urlTo) {
-        const bounds = await fetchAllTimeBounds(initialBranches);
-        setFromISO(bounds.from);
-        setToISO(bounds.to);
-      }
+      // Если диапазона нет — с даты старта выбранных филиалов
+      if (!urlFrom) setFromISO(getEffectiveStartDate(initialBranches));
+      if (!urlTo) setToISO(todayISO());
 
       setFiltersReady(true);
     })();
@@ -334,6 +362,12 @@ export default function AdminStatsPage() {
     async (override?: { fromISO?: string; toISO?: string; branches?: string[] }) => {
       setLoading(true);
       setErr(null);
+
+      // Сбрасываем финансовые данные чтобы не мелькали старые цифры
+      setRealPayroll(0);
+      setAvgFrameCheck(0);
+      setAvgLensCheck(0);
+      setNetProfit([]);
 
       // берём либо override, либо стейт
       let from = (override?.fromISO ?? fromISO).slice(0, 10);
@@ -422,33 +456,112 @@ export default function AdminStatsPage() {
           customers_total: nv.customers_total,
         });
 
-        // === диапазоны диоптрий (stats_lens_sph_ranges) ===
+        // === конкретные диоптрии (прямой запрос) ===
         try {
           const sb = getSupabase();
-          const { data: lensSphRaw, error: lensErr } = await sb.rpc('stats_lens_sph_ranges', {
-            p_from: from,
-            p_to: to,
-            p_branches: brForRpc,
-          });
+          // SQL через RPC не нужен — делаем join через JS
+          // Сначала получаем order_id из payments за период
+          let pq = sb.from('payments').select('order_id, created_at').gte('created_at', from).lt('created_at', to + 'T23:59:59');
+          const { data: payRows } = await pq;
+          const orderIds = [...new Set((payRows || []).map((r: any) => r.order_id))];
 
-          if (lensErr) {
-            console.warn('[stats_lens_sph_ranges]', lensErr.message);
-            setLensSph([]);
-          } else if (Array.isArray(lensSphRaw)) {
-            setLensSph(
-              lensSphRaw.map((r: any) => ({
-                range_label: r.range_label ?? null,
-                lens_kind: (r.lens_kind as 'sph' | 'astig' | null) ?? null,
-                items_cnt: Number(r.items_cnt || 0),
-                revenue_sum: Number(r.revenue_sum || 0),
-              })),
-            );
+          if (orderIds.length > 0) {
+            // Берём sph из order_items для этих заказов, с фильтром по филиалам
+            let oiq = sb.from('order_items').select('sph, order_id').in('order_id', orderIds).eq('item_type', 'lens').not('sph', 'is', null);
+            const { data: oiRows } = await oiq;
+
+            // Если нужен фильтр по филиалам — дополнительно фильтруем
+            let filteredRows = oiRows || [];
+            if (brForRpc && brForRpc.length > 0) {
+              const { data: brOrders } = await sb.from('orders').select('id, branch_id').in('id', orderIds);
+              const { data: brList } = await sb.from('branches').select('id, name').in('name', brForRpc);
+              const brIdSet = new Set((brList || []).map((b: any) => b.id));
+              const validOrderIds = new Set((brOrders || []).filter((o: any) => brIdSet.has(o.branch_id)).map((o: any) => o.id));
+              filteredRows = filteredRows.filter((r: any) => validOrderIds.has(r.order_id));
+            }
+
+            const sphMap = new Map<string, number>();
+            for (const r of filteredRows) {
+              const sph = String(r.sph);
+              sphMap.set(sph, (sphMap.get(sph) || 0) + 1);
+            }
+            const sphRows = [...sphMap.entries()]
+              .map(([sph, cnt]) => ({ sph, cnt }))
+              .sort((a, b) => parseFloat(a.sph) - parseFloat(b.sph));
+            setLensSph(sphRows);
           } else {
             setLensSph([]);
           }
         } catch (e: any) {
-          console.warn('[stats_lens_sph_ranges]', e?.message ?? e);
+          console.warn('[lens_sph_exact]', e?.message ?? e);
           setLensSph([]);
+        }
+
+        // === реальные зарплаты из v_payroll_daily ===
+        try {
+          const sb = getSupabase();
+          let q = sb.from('v_payroll_daily').select('net_day, day').gte('day', from).lte('day', to);
+          if (brForRpc && brForRpc.length > 0) {
+            const { data: brIds } = await sb.from('branches').select('id').in('name', brForRpc);
+            if (brIds?.length) q = q.in('branch_id', brIds.map((b: any) => b.id));
+          }
+          const { data: payData } = await q;
+          // Исключаем воскресенья для консистентности с другими метриками
+          const totalPayroll = (payData || [])
+            .filter((r: any) => !isSundayISO(String(r.day)))
+            .reduce((s: number, r: any) => s + (Number(r.net_day) || 0), 0);
+          setRealPayroll(totalPayroll);
+        } catch {
+          setRealPayroll(0);
+        }
+
+        // === средние чеки оправ/линз — прямой запрос к order_items ===
+        try {
+          const sb = getSupabase();
+          // Получаем оплаченные заказы за период
+          let pq = sb.from('payments').select('order_id').gte('created_at', from).lt('created_at', to + 'T23:59:59');
+          const { data: paidRows } = await pq;
+          const paidIds = [...new Set((paidRows || []).map((r: any) => r.order_id))];
+
+          if (paidIds.length > 0) {
+            // Фильтр по филиалам если нужен
+            let validIds = paidIds;
+            if (brForRpc && brForRpc.length > 0) {
+              const { data: brList } = await sb.from('branches').select('id').in('name', brForRpc);
+              const brIdSet = new Set((brList || []).map((b: any) => b.id));
+              const { data: ordRows } = await sb.from('orders').select('id, branch_id').in('id', paidIds);
+              validIds = (ordRows || []).filter((o: any) => brIdSet.has(o.branch_id)).map((o: any) => o.id);
+            }
+
+            if (validIds.length > 0) {
+              const { data: oiRows } = await sb.from('order_items').select('order_id, item_type, price, qty').in('order_id', validIds);
+              const byOrder = new Map<number, { frame: number; lens: number }>();
+              for (const r of (oiRows || [])) {
+                const oid = r.order_id;
+                const prev = byOrder.get(oid) ?? { frame: 0, lens: 0 };
+                const amt = (Number(r.price) || 0) * (Number(r.qty) || 1);
+                if (r.item_type === 'frame') prev.frame += amt;
+                else if (r.item_type === 'lens') prev.lens += amt;
+                byOrder.set(oid, prev);
+              }
+              let frameSum = 0, frameCnt = 0, lensSum = 0, lensCnt = 0;
+              for (const v of byOrder.values()) {
+                if (v.frame > 0) { frameSum += v.frame; frameCnt++; }
+                if (v.lens > 0) { lensSum += v.lens; lensCnt++; }
+              }
+              setAvgFrameCheck(frameCnt > 0 ? Math.round(frameSum / frameCnt) : 0);
+              setAvgLensCheck(lensCnt > 0 ? Math.round(lensSum / lensCnt) : 0);
+            } else {
+              setAvgFrameCheck(0);
+              setAvgLensCheck(0);
+            }
+          } else {
+            setAvgFrameCheck(0);
+            setAvgLensCheck(0);
+          }
+        } catch {
+          setAvgFrameCheck(0);
+          setAvgLensCheck(0);
         }
 
         // === заказы по 10-минутным интервалам ===
@@ -504,7 +617,7 @@ export default function AdminStatsPage() {
       else if (preset === '30d') r = getLastNDaysRange(30);
       else if (preset === '7d') r = getLastNDaysRange(7);
       else if (preset === 'year') r = getCurrentYearRange();
-      else r = await fetchAllTimeBounds(branches);
+      else r = { from: getEffectiveStartDate(branches), to: todayISO() };
 
       const nextFrom = r.from.slice(0, 10);
       const nextTo = r.to.slice(0, 10);
@@ -529,6 +642,21 @@ export default function AdminStatsPage() {
 
     return { revenue, inflow, debt, orders };
   }, [byDay, byBranch]);
+
+  // Финансовые итоги из netProfit + реальные зарплаты + средние чеки
+  const financeTotals = React.useMemo(() => {
+    let income = 0, opex = 0, cogs = 0, netProfitSum = 0;
+    for (const r of netProfit) {
+      income += r.income || 0;
+      opex += r.opex_total || 0;
+      cogs += r.cogs_total || 0;
+      netProfitSum += r.net_profit || 0;
+    }
+    // Реальная прибыль = доходы - расходы (opex+cogs) - реальные зарплаты
+    const realNet = income - opex - cogs - realPayroll;
+    const margin = income > 0 ? Math.round((realNet / income) * 100) : 0;
+    return { income, opex, cogs, payroll: realPayroll, netProfit: realNet, margin, frameAvg: avgFrameCheck, lensAvg: avgLensCheck };
+  }, [netProfit, realPayroll, avgFrameCheck, avgLensCheck]);
 
   const paymentsTotals = React.useMemo(
     () => ({
@@ -777,6 +905,43 @@ export default function AdminStatsPage() {
       ],
     };
   }, [netProfit, axisCommon, chartTheme, gradTeal, tooltipGlass]);
+
+  // Доходы и расходы по дням
+  const optionIncomeVsExpenses: EChartsOption = React.useMemo(() => ({
+    backgroundColor: 'transparent',
+    legend: { top: 0, textStyle: { color: chartTheme.subtext, fontWeight: 600 } },
+    grid: { top: 40, right: 18, bottom: 38, left: 56 },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: 'rgba(34,211,238,0.45)' } }, valueFormatter: (v) => nf(Number(v as number)), ...(tooltipGlass as any) },
+    xAxis: { type: 'category', data: netProfit.map((r) => r.day), ...axisCommon },
+    yAxis: { type: 'value', ...axisCommon, axisLabel: { color: chartTheme.axis, formatter: (v: number) => nf(v) } },
+    series: [
+      { name: 'Доходы', type: 'line', smooth: 0.35, symbol: 'circle', symbolSize: 5, lineStyle: { width: 2.5, color: chartTheme.teal }, itemStyle: { color: chartTheme.teal }, areaStyle: { opacity: 0.06 }, data: netProfit.map((r) => r.income || 0) },
+      { name: 'Расходы', type: 'bar', barMaxWidth: 20, itemStyle: { color: chartTheme.sky, borderRadius: [4, 4, 0, 0] }, data: netProfit.map((r) => (r.refunds || 0) + (r.opex_total || 0) + (r.cogs_total || 0) + (r.payroll_total || 0)) },
+    ],
+  }), [netProfit, axisCommon, chartTheme, tooltipGlass]);
+
+  // Структура расходов (pie по категориям из netProfit)
+  const optionExpensesPie: EChartsOption = React.useMemo(() => {
+    const totals = { refunds: 0, opex: 0, cogs: 0, payroll: 0 };
+    for (const r of netProfit) {
+      totals.refunds += r.refunds || 0;
+      totals.opex += r.opex_total || 0;
+      totals.cogs += r.cogs_total || 0;
+      totals.payroll += r.payroll_total || 0;
+    }
+    const data = [
+      { name: 'Возвраты', value: Math.round(totals.refunds) },
+      { name: 'OPEX', value: Math.round(totals.opex) },
+      { name: 'Себестоимость', value: Math.round(totals.cogs) },
+      { name: 'Зарплаты', value: Math.round(totals.payroll) },
+    ].filter((d) => d.value > 0);
+    return {
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'item', valueFormatter: (v) => nf(Number(v as number)), ...(tooltipGlass as any) },
+      legend: { top: 0, textStyle: { color: chartTheme.subtext, fontWeight: 600 } },
+      series: [{ type: 'pie', radius: ['35%', '70%'], center: ['50%', '58%'], label: { formatter: '{b}: {c}', color: chartTheme.text }, data }],
+    };
+  }, [netProfit, chartTheme, tooltipGlass]);
 
   const optionNewReturning: EChartsOption = React.useMemo(() => {
     const a = custKpis?.new_customers ?? 0;
@@ -1177,83 +1342,42 @@ export default function AdminStatsPage() {
     if (!lensSph || lensSph.length === 0) {
       return {
         backgroundColor: 'transparent',
-        xAxis: { type: 'value' },
-        yAxis: { type: 'category', data: [] },
+        xAxis: { type: 'category', data: [] },
+        yAxis: { type: 'value' },
         series: [{ type: 'bar', data: [] }],
       };
     }
 
-    const map = new Map<string, { total: number; sph: number; astig: number }>();
-    for (const row of lensSph) {
-      const label = row.range_label || 'Без диапазона';
-      const kind = row.lens_kind === 'astig' ? 'astig' : 'sph';
-      const cnt = Number(row.items_cnt || 0);
-      const prev = map.get(label) ?? { total: 0, sph: 0, astig: 0 };
-      prev.total += cnt;
-      if (kind === 'astig') prev.astig += cnt;
-      else prev.sph += cnt;
-      map.set(label, prev);
-    }
-
-    const rows = [...map.entries()]
-      .map(([label, v]) => ({ label, ...v }))
-      .sort((a, b) => b.total - a.total);
-
-    const cats = rows.map((r) => r.label);
-    const sphData = rows.map((r) => r.sph);
-    const astigData = rows.map((r) => r.astig);
+    const labels = lensSph.map((r) => r.sph);
+    const values = lensSph.map((r) => r.cnt);
 
     return {
       backgroundColor: 'transparent',
-      grid: { top: 44, right: 18, bottom: 12, left: 240 },
+      grid: { top: 20, right: 18, bottom: 50, left: 48 },
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        formatter: (params: any) => {
-          const list = Array.isArray(params) ? params : [params];
-          const idx = list[0]?.dataIndex ?? 0;
-          const row = rows[idx];
-          return [
-            `<b>${row.label}</b>`,
-            `Всего: ${nf(row.total)}`,
-            `Обычные: ${nf(row.sph)}`,
-            `Астигматические: ${nf(row.astig)}`,
-          ].join('<br/>');
-        },
+        valueFormatter: (v) => nf(Number(v)),
         ...(tooltipGlass as any),
       },
-      legend: {
-        top: 8,
-        textStyle: { color: chartTheme.subtext, fontSize: 11, fontWeight: 600 },
-        data: ['Обычные', 'Астигматические'],
-      },
-      xAxis: { type: 'value', ...axisCommon, minInterval: 1 },
-      yAxis: {
+      xAxis: {
         type: 'category',
-        data: cats,
+        data: labels,
         ...axisCommon,
-        axisLabel: { color: chartTheme.axis, fontSize: 11 },
+        axisLabel: { color: chartTheme.axis, fontSize: 10, rotate: 45 },
       },
+      yAxis: { type: 'value', ...axisCommon, minInterval: 1, axisLabel: { color: chartTheme.axis, formatter: (v: number) => nf(v) } },
       series: [
         {
-          name: 'Обычные',
+          name: 'Кол-во линз',
           type: 'bar',
-          stack: 'total',
-          barMaxWidth: 22,
-          itemStyle: { borderRadius: [10, 0, 0, 10], color: 'rgba(34,211,238,0.90)' },
-          data: sphData,
-        },
-        {
-          name: 'Астигматические',
-          type: 'bar',
-          stack: 'total',
-          barMaxWidth: 22,
-          itemStyle: { borderRadius: [0, 10, 10, 0], color: 'rgba(20,184,166,0.78)' },
-          data: astigData,
+          barMaxWidth: 16,
+          itemStyle: { borderRadius: [6, 6, 0, 0], color: gradTeal as any },
+          data: values,
         },
       ],
     };
-  }, [lensSph, axisCommon, chartTheme, tooltipGlass]);
+  }, [lensSph, axisCommon, chartTheme, gradTeal, tooltipGlass]);
 
   /* ========== UI ========== */
   return (
@@ -1266,61 +1390,6 @@ export default function AdminStatsPage() {
       </div>
 
       <div className="mx-auto w-full max-w-7xl px-5 pb-10 pt-8">
-        {/* Header */}
-        <header className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/80 p-5 ring-1 ring-sky-200/55 shadow-[0_22px_80px_rgba(15,23,42,0.22)] backdrop-blur-2xl sm:p-6">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_18px_55px_rgba(34,211,238,0.55)]">
-                <BarChart3 className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="text-[22px] font-semibold leading-tight text-slate-900 md:text-[28px]">
-                  Статистика по всем оптикам
-                </h1>
-                <p className="mt-1 text-xs text-slate-600/90 md:text-sm">
-                  Один экран: выручка, прибыль, клиенты, линзы и загрузка по времени.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-col items-start gap-3 sm:items-end">
-              <div className="text-[11px] text-slate-600/90 sm:text-xs">
-                <div className="font-medium text-slate-800">Период</div>
-                <div className="mt-0.5">
-                  <span className="font-medium text-slate-900">{fromISO}</span> —{' '}
-                  <span className="font-medium text-slate-900">{toISO}</span>
-                </div>
-                <div className="mt-0.5 max-w-[320px] truncate">
-                  {branches.length > 0 ? `Филиалы: ${branches.join(', ')}` : 'Филиалы: все'}
-                </div>
-                <div className="mt-0.5 text-[11px] text-slate-500">Примечание: воскресенья исключены из дневных графиков.</div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <SoftGhostButton onClick={() => applyPreset('all')} icon={CalendarDays}>
-                  Всё время
-                </SoftGhostButton>
-                <SoftGhostButton onClick={() => applyPreset('month')} icon={CalendarDays}>
-                  Этот месяц
-                </SoftGhostButton>
-                <SoftGhostButton onClick={() => applyPreset('30d')} icon={Timer}>
-                  30 дней
-                </SoftGhostButton>
-                <SoftGhostButton onClick={() => applyPreset('7d')} icon={Timer}>
-                  7 дней
-                </SoftGhostButton>
-                <SoftGhostButton onClick={() => applyPreset('year')} icon={CalendarDays}>
-                  Год
-                </SoftGhostButton>
-
-                <SoftPrimaryButton onClick={() => loadAll()} disabled={loading} icon={RefreshCw}>
-                  {loading ? 'Обновляю…' : 'Обновить'}
-                </SoftPrimaryButton>
-              </div>
-            </div>
-          </div>
-        </header>
-
         {gate === 'pending' && (
           <Section tone="neutral">
             <div className="text-sm text-slate-500">Проверяю доступ…</div>
@@ -1329,7 +1398,7 @@ export default function AdminStatsPage() {
 
         {gate === 'denied' && (
           <Section tone="danger">
-            <div className="inline-flex items-center gap-2 rounded-2xl bg-rose-50/90 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200 shadow-[0_14px_40px_rgba(248,113,113,0.25)]">
+            <div className="inline-flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
               <AlertTriangle className="h-4 w-4" />
               Доступ только владельцу.
             </div>
@@ -1338,80 +1407,50 @@ export default function AdminStatsPage() {
 
         {gate === 'ok' && (
           <>
-            {/* Filters */}
-            <Section
-              tone="neutral"
-              title={
-                <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.35)]">
-                    <TrendingUp className="h-4 w-4" />
+            {/* Header + Filters */}
+            <Section tone="neutral">
+              {/* Строка 1: заголовок + быстрые пресеты + настройки */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.30)]">
+                    <BarChart3 className="h-4 w-4" />
                   </div>
-                  Фильтры
-                </span>
-              }
-              aside={
-                <span className="inline-flex items-center gap-2 text-slate-600/80">
-                  <Percent className="h-4 w-4" />
-                  По умолчанию: всё время
-                </span>
-              }
-            >
-              <div className="grid gap-4 lg:grid-cols-12">
-                <div className="lg:col-span-3">
-                  <Label>
-                    <CalendarDays className="mr-2 -mt-0.5 inline h-4 w-4 text-slate-500" />
-                    С даты
-                  </Label>
-                  <InputDate value={fromISO} onChange={(v) => setFromISO(v.slice(0, 10))} />
+                  <h1 className="text-lg font-bold text-slate-900">Статистика</h1>
+                  <div className="hidden sm:flex items-center gap-1 ml-2">
+                    <SoftGhostButton onClick={() => applyPreset('7d')}>7д</SoftGhostButton>
+                    <SoftGhostButton onClick={() => applyPreset('month')}>Месяц</SoftGhostButton>
+                    <SoftGhostButton onClick={() => applyPreset('all')}>Всё время</SoftGhostButton>
+                  </div>
                 </div>
+                <Link href="/finance/settings" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition">
+                  <CreditCard className="h-3.5 w-3.5" />
+                  Ставки
+                </Link>
+              </div>
 
-                <div className="lg:col-span-3">
-                  <Label>
-                    <CalendarDays className="mr-2 -mt-0.5 inline h-4 w-4 text-slate-500" />
-                    По дату
-                  </Label>
-                  <InputDate value={toISO} onChange={(v) => setToISO(v.slice(0, 10))} />
-                </div>
+              {/* Строка 2: даты + филиалы + показать */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <InputDate value={fromISO} onChange={(v) => setFromISO(v.slice(0, 10))} />
+                <span className="text-slate-400 text-xs">—</span>
+                <InputDate value={toISO} onChange={(v) => setToISO(v.slice(0, 10))} />
 
-                <div className="lg:col-span-4">
-                  <Label>
-                    <Building2 className="mr-2 -mt-0.5 inline h-4 w-4 text-slate-500" />
-                    Филиалы
-                  </Label>
-                  <div className="flex flex-wrap gap-2">
-                    <Chip active={branches.length === 0} onClick={() => setBranches([])}>
-                      Все филиалы
+                <div className="h-5 w-px bg-slate-200 mx-1" />
+
+                <Chip active={branches.length === 0} onClick={() => setBranches([])}>Все</Chip>
+                {branchOptions.map((b) => {
+                  const active = branches.includes(b);
+                  return (
+                    <Chip key={b} active={active} onClick={() => setBranches((prev) => (active ? prev.filter((x) => x !== b) : [...prev, b]))}>
+                      {b}
                     </Chip>
+                  );
+                })}
 
-                    {branchOptions.map((b) => {
-                      const active = branches.includes(b);
-                      return (
-                        <Chip
-                          key={b}
-                          active={active}
-                          onClick={() => setBranches((prev) => (active ? prev.filter((x) => x !== b) : [...prev, b]))}
-                        >
-                          {b}
-                        </Chip>
-                      );
-                    })}
+                <div className="h-5 w-px bg-slate-200 mx-1" />
 
-                    {branches.length > 0 && (
-                      <button
-                        onClick={() => setBranches([])}
-                        className="ml-1 text-xs font-medium text-slate-600/80 underline decoration-slate-400/40 underline-offset-4 hover:text-slate-900"
-                      >
-                        Сбросить
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-end lg:col-span-2">
-                  <SoftPrimaryButton onClick={() => loadAll()} disabled={loading} icon={TrendingUp} className="w-full">
-                    {loading ? 'Загружаю…' : 'Показать'}
-                  </SoftPrimaryButton>
-                </div>
+                <SoftPrimaryButton onClick={() => loadAll()} disabled={loading} icon={TrendingUp}>
+                  {loading ? '…' : 'Показать'}
+                </SoftPrimaryButton>
               </div>
 
               {err && (
@@ -1455,6 +1494,21 @@ export default function AdminStatsPage() {
               />
             </div>
 
+            {/* Finance KPIs */}
+            <div className="mt-4 grid gap-4 md:grid-cols-5">
+              <KPI label="Доходы" value={loading ? '0' : nf(financeTotals.income)} icon={HandCoins} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
+              <KPI label="OPEX" value={loading ? '0' : nf(financeTotals.opex)} icon={CreditCard} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-slate-200/40" />
+              <KPI label="Себестоимость" value={loading ? '0' : nf(financeTotals.cogs)} icon={CreditCard} iconTone="money" accent="from-slate-200/55 via-sky-200/45 to-cyan-200/40" />
+              <KPI label="Зарплаты" value={loading ? '0' : nf(financeTotals.payroll)} icon={CreditCard} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
+              <KPI label="Чистая прибыль" value={loading ? '0' : nf(financeTotals.netProfit)} icon={TrendingUp} iconTone="money" accent="from-cyan-200/55 via-sky-200/45 to-teal-200/40" />
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <KPI label="Маржа" value={loading ? '0%' : `${financeTotals.margin}%`} icon={Percent} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
+              <KPI label="Средний чек оправы" value={loading ? '0' : financeTotals.frameAvg > 0 ? nf(financeTotals.frameAvg) : '—'} icon={BarChart3} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-teal-200/40" />
+              <KPI label="Средний чек линз" value={loading ? '0' : financeTotals.lensAvg > 0 ? nf(financeTotals.lensAvg) : '—'} icon={BarChart3} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
+            </div>
+
             {/* Charts */}
             <Section
               tone="money"
@@ -1487,6 +1541,38 @@ export default function AdminStatsPage() {
             >
               <ChartFrame height={360}>
                 <ReactECharts option={optionNetProfit} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
+              </ChartFrame>
+            </Section>
+
+            <Section
+              tone="money"
+              title={
+                <span className="inline-flex items-center gap-2">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_16px_rgba(34,211,238,0.30)]">
+                    <HandCoins className="h-4 w-4" />
+                  </div>
+                  Доходы и расходы по дням
+                </span>
+              }
+            >
+              <ChartFrame height={360}>
+                <ReactECharts option={optionIncomeVsExpenses} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
+              </ChartFrame>
+            </Section>
+
+            <Section
+              tone="neutral"
+              title={
+                <span className="inline-flex items-center gap-2">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_16px_rgba(34,211,238,0.30)]">
+                    <PieChart className="h-4 w-4" />
+                  </div>
+                  Структура расходов
+                </span>
+              }
+            >
+              <ChartFrame height={360}>
+                <ReactECharts option={optionExpensesPie} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
               </ChartFrame>
             </Section>
 
@@ -1656,7 +1742,7 @@ export default function AdminStatsPage() {
                   <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.28)]">
                     <BarChart3 className="h-4 w-4" />
                   </div>
-                  Линзы: по видам и диапазонам диоптрий
+                  Линзы: по видам и диоптриям
                 </span>
               }
               aside={<span className="text-xs text-slate-600/80">Срез по продажам</span>}
@@ -1666,7 +1752,7 @@ export default function AdminStatsPage() {
                   <ReactECharts option={optionLensTypes} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
                 </ChartFrame>
 
-                <ChartFrame height={420} title="По диапазонам диоптрий" icon={BarChart3}>
+                <ChartFrame height={420} title="По диоптриям (SPH)" icon={BarChart3}>
                   <ReactECharts option={optionLensSphRanges} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
                 </ChartFrame>
               </div>

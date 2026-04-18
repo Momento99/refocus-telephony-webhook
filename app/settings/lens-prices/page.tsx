@@ -1,97 +1,152 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
-import getSupabase from '@/lib/supabaseClient';
-import { RefreshCw, Plus, Sparkles } from 'lucide-react';
+import { getBrowserSupabase } from '@/lib/supabaseBrowser';
+import { Sparkles, RotateCcw, Clock, Layers, Star, Crown, Calculator, ChevronDown, ChevronUp, Wand2, MapPin } from 'lucide-react';
+import {
+  CITY_INDEX,
+  COUNTRIES,
+  computeBranchPriceTable,
+  type CatalogCosts,
+  type LensId,
+} from '@/lib/lensPricingFormula';
 
 /* =========================
    Types
 ========================= */
-type LensRow = {
-  id: number | string;
-  lens_type: string | null;
-  refr_index: number | null;
-  coating: string | null;
-  is_astigmatism: boolean | null;
-  sph_min: number | null;
-  sph_max: number | null;
-  price: number;
-  currency: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+type Country = {
+  id: string;
+  name: string;
+  currency: string;
+  currency_symbol: string;
+  exchange_rate: number;
+  rate_updated_at: string | null;
+  is_active: boolean;
+};
+
+type LocalizedLens = {
+  lens_id: string;
+  country_id: string;
+  name: string;
+  category: string;
+  price_from: number;
+  price_to: number;
+  currency: string;
+  currency_symbol: string;
+  has_override: boolean;
+  is_active: boolean;
+  sort_order: number;
+};
+
+type LensCost = {
+  lens_id: string;
+  lens_name: string;
+  category: string;
+  sort_order: number;
+  cost_price_from: number | null; // до ±2.75 дптр
+  cost_price_to: number | null;   // от ±3.00 дптр
+  cost_price_updated_at: string | null;
+  retail_from: number; // KG, в сомах
+  retail_to: number;
 };
 
 /* =========================
    Helpers
 ========================= */
 function sb() {
-  const c = getSupabase?.();
-  if (!c) throw new Error('Supabase client is not configured');
-  return c;
-}
-
-function parsePrice(val: string): number | null {
-  if (!val && val !== '0') return null;
-  const n = Number(String(val).replace(/\s/g, '').replace(',', '.'));
-  return Number.isFinite(n) ? Math.max(0, Math.round(n)) : null;
+  return getBrowserSupabase();
 }
 
 function cx(...a: (string | false | null | undefined)[]) {
   return a.filter(Boolean).join(' ');
 }
 
-/* ========= Small UI helpers (в стиле сверки выручки) ========= */
+const CATEGORY_LABELS: Record<string, { label: string; desc: string; accent: string; accentBg: string; icon: 'layers' | 'star' | 'crown' }> = {
+  basic:   { label: 'Базовые',      desc: 'Стандартные линзы',    accent: 'text-white', accentBg: 'bg-gradient-to-br from-[#22d3ee] to-cyan-500', icon: 'layers' },
+  special: { label: 'Специальные',  desc: 'Линзы с покрытиями',   accent: 'text-white', accentBg: 'bg-gradient-to-br from-sky-400 to-blue-500', icon: 'star' },
+  premium: { label: 'Премиум',      desc: 'Топовые линзы',        accent: 'text-white', accentBg: 'bg-gradient-to-br from-slate-600 to-slate-800', icon: 'crown' },
+};
 
-function GlassCard({
-  children,
-  className = '',
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+const CATEGORY_ORDER = ['basic', 'special', 'premium'];
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('ru-RU', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function formatPrice(val: number, symbol: string) {
+  return val.toLocaleString('ru-RU') + '\u00a0' + symbol;
+}
+
+type LensNameInfo = { name: string; tag?: string; tagClass?: string };
+
+function getBeautifulName(lensId: string, lensName: string | null | undefined): LensNameInfo {
+  const map: Record<string, LensNameInfo> = {
+    'standard':         { name: 'Стандарт' },
+    'antiglare':        { name: 'Антибликовый', tag: 'AR', tagClass: 'bg-cyan-500/15 text-cyan-600 ring-cyan-500/20' },
+    'screen':           { name: 'Защита от экранов', tag: 'Blue Cut', tagClass: 'bg-blue-500/15 text-blue-600 ring-blue-500/20' },
+    'chameleon':        { name: 'Хамелеон', tag: 'Photo', tagClass: 'bg-amber-500/15 text-amber-600 ring-amber-500/20' },
+    'ast-antiglare':    { name: 'Антиблик', tag: 'AST', tagClass: 'bg-violet-500/15 text-violet-600 ring-violet-500/20' },
+    'ast-screen':       { name: 'Защита от экранов', tag: 'AST', tagClass: 'bg-violet-500/15 text-violet-600 ring-violet-500/20' },
+    'ast-chameleon':    { name: 'Хамелеон', tag: 'AST', tagClass: 'bg-violet-500/15 text-violet-600 ring-violet-500/20' },
+    'polycarbonate':    { name: 'Поликарбонат', tag: 'PC', tagClass: 'bg-emerald-500/15 text-emerald-600 ring-emerald-500/20' },
+    'thin':             { name: 'Утонченная', tag: '1.67', tagClass: 'bg-slate-500/15 text-slate-600 ring-slate-500/20' },
+    'thin-antiglare':   { name: 'Антибликовый', tag: '1.67', tagClass: 'bg-slate-500/15 text-slate-600 ring-slate-500/20' },
+    'thin-screen':      { name: 'Защита от экранов', tag: '1.67', tagClass: 'bg-slate-500/15 text-slate-600 ring-slate-500/20' },
+    'meopea-control':   { name: 'Контроль миопии', tag: 'MiYOSMART', tagClass: 'bg-rose-500/15 text-rose-600 ring-rose-500/20' },
+    'myopia-control':   { name: 'Контроль миопии', tag: 'MiYOSMART', tagClass: 'bg-rose-500/15 text-rose-600 ring-rose-500/20' },
+    'asph-standard':    { name: 'Стандарт', tag: 'ASPH', tagClass: 'bg-teal-500/15 text-teal-600 ring-teal-500/20' },
+    'asph-antiglare':   { name: 'Антибликовый', tag: 'ASPH', tagClass: 'bg-teal-500/15 text-teal-600 ring-teal-500/20' },
+    'asph-screen':      { name: 'Защита от экранов', tag: 'ASPH', tagClass: 'bg-teal-500/15 text-teal-600 ring-teal-500/20' },
+    'chameleon-screen': { name: 'Хамелеон + экран', tag: 'Photo+BC', tagClass: 'bg-amber-500/15 text-amber-600 ring-amber-500/20' },
+  };
+
+  if (map[lensId]) return map[lensId];
+
+  const fallback = lensName?.trim() || lensId.replace(/-/g, ' ').replace(/^./, s => s.toUpperCase());
+  return { name: fallback };
+}
+
+/* ========= UI primitives ========= */
+
+function GlassCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={cx(
-        'rounded-3xl border border-sky-100/80 bg-white/92 backdrop-blur-2xl',
-        'shadow-[0_22px_80px_rgba(15,23,42,0.22)]',
-        className,
-      )}
-    >
+    <div className={cx(
+      'rounded-2xl border border-slate-200 bg-white shadow-sm',
+      className,
+    )}>
       {children}
     </div>
   );
 }
 
 function GBtn({
-  children,
-  onClick,
-  disabled,
-  variant = 'solid',
-  type = 'button',
-  className = '',
+  children, onClick, disabled, variant = 'solid', type = 'button', className = '', size = 'md', title,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
-  variant?: 'solid' | 'outline';
+  variant?: 'solid' | 'outline' | 'ghost';
   type?: 'button' | 'submit';
   className?: string;
+  size?: 'sm' | 'md';
+  title?: string;
 }) {
-  const base =
-    'inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-[13px] font-medium transition ' +
-    'focus:outline-none focus:ring-2 focus:ring-sky-300 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap';
-  const solid =
-    'bg-gradient-to-r from-sky-500 via-cyan-500 to-emerald-400 text-slate-950 hover:from-sky-400 hover:via-cyan-400 hover:to-emerald-300 shadow-[0_12px_35px_rgba(56,189,248,0.6)]';
-  const outline =
-    'border border-sky-300/70 bg-white/90 text-sky-700 hover:bg-sky-50';
+  const base = cx(
+    'inline-flex items-center gap-1.5 rounded-xl font-medium transition-all focus:outline-none focus:ring-2 focus:ring-sky-300',
+    'disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap',
+    size === 'sm' ? 'px-2.5 py-1.5 text-[11px]' : 'px-4 py-2.5 text-[13px]',
+  );
+  const solid   = 'bg-gradient-to-r from-sky-500 to-cyan-500 text-white hover:from-sky-600 hover:to-cyan-600 shadow-sm';
+  const outline = 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300';
+  const ghost   = 'text-slate-600 hover:bg-slate-100';
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={cx(base, variant === 'solid' ? solid : outline, className)}
-    >
+    <button type={type} onClick={onClick} disabled={disabled} title={title}
+      className={cx(base, variant === 'solid' ? solid : variant === 'outline' ? outline : ghost, className)}>
       {children}
     </button>
   );
@@ -102,10 +157,10 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cx(
-        'w-full px-3.5 py-2.5 rounded-2xl border border-sky-100 bg-white/95 backdrop-blur',
+        'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white',
         'text-sm text-slate-900 placeholder:text-slate-400 outline-none',
-        'focus:ring-2 focus:ring-sky-300',
-        props.className || '',
+        'focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition',
+        props.className,
       )}
     />
   );
@@ -116,11 +171,122 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={cx(
-        'w-full px-3.5 py-2.5 rounded-2xl border border-sky-100 bg-white/95 backdrop-blur',
-        'text-sm text-slate-900 outline-none focus:ring-2 focus:ring-sky-300',
-        props.className || '',
+        'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white',
+        'text-sm text-slate-900 outline-none focus:ring-2 focus:ring-sky-400 transition',
+        props.className,
       )}
     />
+  );
+}
+
+/* =========================
+   CostRow — изолированный компонент, вынесен из страницы,
+   иначе React пересоздаёт input на каждый keystroke → теряется фокус.
+========================= */
+type CostRowProps = {
+  lens: LensCost;
+  draft: { from: string; to: string };
+  isSaving: boolean;
+  onChange: (side: 'from' | 'to', value: string) => void;
+  onSave: () => void;
+};
+
+function CostRow({ lens, draft, isSaving, onChange, onSave }: CostRowProps) {
+  const saved = {
+    from: lens.cost_price_from != null ? String(lens.cost_price_from) : '',
+    to:   lens.cost_price_to   != null ? String(lens.cost_price_to)   : '',
+  };
+  const isDirty = draft.from !== saved.from || draft.to !== saved.to;
+
+  const compute = (costRaw: string, retail: number) => {
+    const n = Number(costRaw || 0);
+    if (!(costRaw !== '' && Number.isFinite(n) && n > 0)) return null;
+    const pair = n * 2;
+    const markup = retail / pair;
+    const marginPct = (1 - 1 / markup) * 100;
+    return { pair, markup, marginPct };
+  };
+  const fromCalc = compute(draft.from, lens.retail_from);
+  const toCalc   = compute(draft.to,   lens.retail_to);
+
+  const marginCls = (m: number | null) => {
+    if (m == null) return 'bg-slate-100 text-slate-400 ring-slate-200';
+    if (m >= 85) return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+    if (m >= 70) return 'bg-amber-50 text-amber-700 ring-amber-200';
+    return 'bg-rose-50 text-rose-700 ring-rose-200';
+  };
+
+  const { name, tag, tagClass } = getBeautifulName(lens.lens_id, lens.lens_name);
+
+  const inputCls =
+    'w-[80px] rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-900 outline-none focus:ring-2 focus:ring-emerald-400 transition';
+
+  return (
+    <tr className="border-t border-slate-100 hover:bg-slate-50/40 transition">
+      <td className="px-3 py-2.5">
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium text-slate-800 text-[13px]">{name}</span>
+          {tag && (
+            <span className={cx('rounded-md px-1.5 py-0.5 text-[9px] font-bold ring-1', tagClass)}>
+              {tag}
+            </span>
+          )}
+        </div>
+      </td>
+
+      {/* FROM ±2.75 */}
+      <td className="px-2 py-2.5">
+        <input
+          type="number"
+          min={0}
+          value={draft.from}
+          placeholder="—"
+          onChange={(e) => onChange('from', e.target.value)}
+          className={inputCls}
+        />
+      </td>
+      <td className="px-2 py-2.5 font-mono text-slate-600 text-[11.5px]">
+        {lens.retail_from.toLocaleString('ru-RU')}
+        {fromCalc && <span className="ml-1 text-[10px] text-slate-400">·{fromCalc.markup.toFixed(1)}×</span>}
+      </td>
+      <td className="px-2 py-2.5">
+        <span className={cx('inline-flex rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1', marginCls(fromCalc?.marginPct ?? null))}>
+          {fromCalc ? `${fromCalc.marginPct.toFixed(0)}%` : '—'}
+        </span>
+      </td>
+
+      {/* TO ±3.00+ */}
+      <td className="px-2 py-2.5 border-l border-slate-100">
+        <input
+          type="number"
+          min={0}
+          value={draft.to}
+          placeholder="—"
+          onChange={(e) => onChange('to', e.target.value)}
+          className={inputCls}
+        />
+      </td>
+      <td className="px-2 py-2.5 font-mono text-slate-600 text-[11.5px]">
+        {lens.retail_to.toLocaleString('ru-RU')}
+        {toCalc && <span className="ml-1 text-[10px] text-slate-400">·{toCalc.markup.toFixed(1)}×</span>}
+      </td>
+      <td className="px-2 py-2.5">
+        <span className={cx('inline-flex rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1', marginCls(toCalc?.marginPct ?? null))}>
+          {toCalc ? `${toCalc.marginPct.toFixed(0)}%` : '—'}
+        </span>
+      </td>
+
+      <td className="px-2 py-2.5">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={isSaving || !isDirty}
+          className="rounded-lg bg-gradient-to-r from-emerald-400 to-teal-500 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        >
+          {isSaving ? '…' : 'OK'}
+        </button>
+      </td>
+    </tr>
   );
 }
 
@@ -128,616 +294,1015 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
    Page
 ========================= */
 export default function LensPricesSettingsPage() {
-  const [rows, setRows] = useState<LensRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [savingId, setSavingId] = useState<number | string | null>(null);
-  const [deletingId, setDeletingId] = useState<number | string | null>(null);
-  const [confirmRow, setConfirmRow] = useState<LensRow | null>(null);
+  const [countries, setCountries]           = useState<Country[]>([]);
+  const [lenses, setLenses]                 = useState<LocalizedLens[]>([]);
+  const [activeCountry, setActiveCountry]   = useState<string>('kg');
+  const [loading, setLoading]               = useState(false);
 
-  // filters
-  const [query, setQuery] = useState('');
-  const [fType, setFType] = useState('');
-  const [fIndex, setFIndex] = useState('');
-  const [fCoating, setFCoating] = useState('');
+  const [editPrices, setEditPrices]         = useState<Record<string, { from: string; to: string }>>({});
+  const [savingIds, setSavingIds]           = useState<Set<string>>(new Set());
+  const [resetingIds, setResetingIds]       = useState<Set<string>>(new Set());
 
-  // modals
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd]               = useState(false);
+  const [addForm, setAddForm]               = useState({ id: '', name: '', category: 'basic', price_from: '', price_to: '' });
+  const [addSaving, setAddSaving]           = useState(false);
 
-  // add form
-  const [form, setForm] = useState({
-    lens_type: '',
-    refr_index: '',
-    coating: '',
-    is_astigmatism: false,
-    sph_min: '',
-    sph_max: '',
-    price: '',
-  });
+  // Себестоимость линз (KGS, за одну линзу) — две графы: слабые/сильные диоптрии
+  const [costs, setCosts]                   = useState<LensCost[]>([]);
+  const [editCosts, setEditCosts]           = useState<Record<string, { from: string; to: string }>>({});
+  const [savingCostIds, setSavingCostIds]   = useState<Set<string>>(new Set());
+  const [showCosts, setShowCosts]           = useState(false);
 
-  // load
-  async function load() {
+  // Предпросмотр формулы v6 — считается в браузере, в БД не сохраняется
+  const [showFormula, setShowFormula]       = useState(false);
+  const [formulaCity, setFormulaCity]       = useState<string>('Токмок');
+
+  // Филиальные цены по формуле (branch-level override)
+  type BranchFormulaStatus = {
+    branch_id: number;
+    branch_name: string;
+    city: string | null;
+    country_id: string | null;
+    is_enabled: boolean;
+    enabled_at: string | null;
+    applied_skus: number;
+    last_updated: string | null;
+  };
+  const [showBranches, setShowBranches]           = useState(false);
+  const [branchStatuses, setBranchStatuses]       = useState<BranchFormulaStatus[]>([]);
+  const [loadingBranchStatus, setLoadingBranchStatus] = useState(false);
+  const [applyingBranchId, setApplyingBranchId]   = useState<number | null>(null);
+
+  const formulaTable = useMemo(() => {
+    const input: CatalogCosts = {};
+    for (const c of costs) {
+      if (c.cost_price_from != null && c.cost_price_to != null) {
+        input[c.lens_id as LensId] = {
+          costFromKGS: Number(c.cost_price_from) * 2,
+          costToKGS:   Number(c.cost_price_to)   * 2,
+        };
+      }
+    }
     try {
-      setLoading(true);
+      return computeBranchPriceTable(input, formulaCity);
+    } catch {
+      return {};
+    }
+  }, [costs, formulaCity]);
+
+  const formulaCityEntry = CITY_INDEX[formulaCity];
+  const formulaCountry   = formulaCityEntry ? COUNTRIES[formulaCityEntry.country] : null;
+  const formulaCurrency  = formulaCountry?.currencySymbol ?? '';
+
+  async function loadCountries() {
+    const { data, error } = await sb()
+      .from('franchise_countries')
+      .select('*')
+      .eq('is_active', true)
+      .order('id');
+    if (error) { toast.error('Ошибка загрузки стран: ' + error.message); return; }
+    setCountries((data as Country[]) || []);
+  }
+
+  const loadLenses = useCallback(async (countryId: string) => {
+    setLoading(true);
+    try {
       const { data, error } = await sb()
-        .from('lens_prices')
+        .from('lens_catalog_localized')
         .select('*')
-        .order('lens_type', { ascending: true })
-        .order('refr_index', { ascending: true })
-        .order('coating', { ascending: true })
-        .order('is_astigmatism', { ascending: true })
-        .order('sph_min', { ascending: true });
+        .eq('country_id', countryId)
+        .order('sort_order', { ascending: true });
       if (error) throw error;
-      setRows((data as any) || []);
+      const rows = (data as LocalizedLens[]) || [];
+      setLenses(rows);
+      const ep: Record<string, { from: string; to: string }> = {};
+      for (const r of rows) {
+        ep[r.lens_id] = { from: String(r.price_from ?? 0), to: String(r.price_to ?? 0) };
+      }
+      setEditPrices(ep);
     } catch (e: any) {
-      toast.error(`Ошибка загрузки: ${e.message ?? e}`);
+      toast.error('Ошибка загрузки линз: ' + e.message);
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    void load();
   }, []);
 
-  // options
-  const typeOptions = useMemo(
-    () =>
-      Array.from(new Set(rows.map(r => r.lens_type ?? '').filter(Boolean))).sort(),
-    [rows],
-  );
-  const indexOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(rows.map(r => String(r.refr_index ?? '')).filter(Boolean)),
-      ).sort(),
-    [rows],
-  );
-  const coatingOptions = useMemo(
-    () =>
-      Array.from(new Set(rows.map(r => r.coating ?? '').filter(Boolean))).sort(),
-    [rows],
-  );
-
-  // filtering
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter(r => {
-      const okQ =
-        !q ||
-        `${r.lens_type ?? ''} ${r.refr_index ?? ''} ${r.coating ?? ''}`
-          .toLowerCase()
-          .includes(q);
-      const okT = !fType || (r.lens_type ?? '') === fType;
-      const okI = !fIndex || String(r.refr_index ?? '') === fIndex;
-      const okC = !fCoating || (r.coating ?? '') === fCoating;
-      return okQ && okT && okI && okC;
-    });
-  }, [rows, query, fType, fIndex, fCoating]);
-
-  // save price
-  async function savePrice(row: LensRow, newVal: string) {
-    const parsed = parsePrice(newVal);
-    if (parsed == null) {
-      toast.error('Некорректная цена');
-      return;
+  const loadCosts = useCallback(async () => {
+    const { data, error } = await sb()
+      .from('lens_catalog')
+      .select('id, name, category, sort_order, cost_price_from, cost_price_to, cost_price_updated_at, price_from, price_to')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    if (error) { toast.error('Ошибка загрузки себестоимости: ' + error.message); return; }
+    const rows = ((data as Array<{
+      id: string; name: string; category: string; sort_order: number;
+      cost_price_from: number | null; cost_price_to: number | null;
+      cost_price_updated_at: string | null;
+      price_from: number; price_to: number;
+    }>) || []).map((r) => ({
+      lens_id: r.id,
+      lens_name: r.name,
+      category: r.category,
+      sort_order: r.sort_order,
+      cost_price_from: r.cost_price_from,
+      cost_price_to: r.cost_price_to,
+      cost_price_updated_at: r.cost_price_updated_at,
+      retail_from: r.price_from,
+      retail_to: r.price_to,
+    }));
+    setCosts(rows);
+    const ec: Record<string, { from: string; to: string }> = {};
+    for (const r of rows) {
+      ec[r.lens_id] = {
+        from: r.cost_price_from != null ? String(r.cost_price_from) : '',
+        to:   r.cost_price_to   != null ? String(r.cost_price_to)   : '',
+      };
     }
+    setEditCosts(ec);
+  }, []);
+
+  async function saveCost(lensId: string) {
+    const draft = editCosts[lensId] ?? { from: '', to: '' };
+    const fromVal = draft.from === '' ? null : Number(draft.from);
+    const toVal   = draft.to === ''   ? null : Number(draft.to);
+    if ((fromVal !== null && (!Number.isFinite(fromVal) || fromVal < 0)) ||
+        (toVal   !== null && (!Number.isFinite(toVal)   || toVal   < 0))) {
+      toast.error('Некорректная себестоимость'); return;
+    }
+    setSavingCostIds((s) => new Set(s).add(lensId));
     try {
-      setSavingId(row.id);
-      const { error } = await sb().rpc('set_lens_price', {
-        p_price_row_id: Number(row.id),
-        p_new_price: parsed,
-      });
+      const { error } = await sb().from('lens_catalog')
+        .update({
+          cost_price_from: fromVal,
+          cost_price_to:   toVal,
+          cost_price_updated_at: new Date().toISOString(),
+        })
+        .eq('id', lensId);
       if (error) throw error;
-      toast.success('Цена обновлена');
-      setRows(prev =>
-        prev.map(r => (r.id === row.id ? { ...r, price: parsed } : r)),
-      );
+      toast.success('Себестоимость сохранена');
+      await loadCosts();
     } catch (e: any) {
-      toast.error(`Ошибка сохранения: ${e.message ?? e}`);
+      toast.error('Ошибка: ' + e.message);
     } finally {
-      setSavingId(null);
+      setSavingCostIds((s) => { const n = new Set(s); n.delete(lensId); return n; });
     }
   }
 
-  // delete price row
-  async function doDelete(row: LensRow) {
+  const loadBranchStatuses = useCallback(async () => {
+    setLoadingBranchStatus(true);
     try {
-      setDeletingId(row.id);
-      const { error } = await sb().rpc('delete_lens_price', {
-        p_price_row_id: Number(row.id),
-      });
-      if (error) throw error;
-      setRows(prev => prev.filter(r => r.id !== row.id));
-      toast.success('Строка удалена');
+      const res = await fetch('/api/lens-branch-prices');
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'unknown_error');
+      setBranchStatuses(json.branches as BranchFormulaStatus[]);
     } catch (e: any) {
-      toast.error(`Удалить не удалось: ${e.message ?? e}`);
+      toast.error('Ошибка статуса филиалов: ' + e.message);
     } finally {
-      setDeletingId(null);
-      setConfirmRow(null);
+      setLoadingBranchStatus(false);
+    }
+  }, []);
+
+  async function applyFormulaToBranch(branchId: number, city: string) {
+    // Собираем cost для формулы
+    const input: CatalogCosts = {};
+    for (const c of costs) {
+      if (c.cost_price_from != null && c.cost_price_to != null) {
+        input[c.lens_id as LensId] = {
+          costFromKGS: Number(c.cost_price_from) * 2,
+          costToKGS:   Number(c.cost_price_to)   * 2,
+        };
+      }
+    }
+    if (Object.keys(input).length === 0) {
+      toast.error('Нет заполненных себестоимостей'); return;
+    }
+    let table;
+    try {
+      table = computeBranchPriceTable(input, city);
+    } catch (e: any) {
+      toast.error(`Город «${city}» не в CITY_INDEX: ${e.message}`); return;
+    }
+    // Собираем prices[]
+    const lensIds = new Set<string>();
+    for (const key in table) {
+      const m = key.match(/^(.+)_(from|to)$/);
+      if (m) lensIds.add(m[1]);
+    }
+    const prices: Array<{ lens_id: string; price_from: number; price_to: number }> = [];
+    for (const lensId of lensIds) {
+      const from = table[`${lensId as LensId}_from`];
+      const to   = table[`${lensId as LensId}_to`];
+      if (from && to) {
+        prices.push({ lens_id: lensId, price_from: from.price, price_to: to.price });
+      }
+    }
+    if (prices.length === 0) { toast.error('Формула не вернула ни одной линзы'); return; }
+
+    setApplyingBranchId(branchId);
+    try {
+      const res = await fetch('/api/lens-branch-prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch_id: branchId, prices }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'unknown_error');
+      toast.success(`Применено для «${city}»: ${json.result?.applied ?? prices.length} линз`);
+      await loadBranchStatuses();
+    } catch (e: any) {
+      toast.error('Ошибка: ' + e.message);
+    } finally {
+      setApplyingBranchId(null);
     }
   }
 
-  // upsert
+  async function disableFormulaForBranch(branchId: number, branchName: string) {
+    if (!confirm(`Выключить формулу для «${branchName}»?\nФилиал вернётся к ценам страны.`)) return;
+    setApplyingBranchId(branchId);
+    try {
+      const res = await fetch(`/api/lens-branch-prices?branch_id=${branchId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'unknown_error');
+      toast.success('Формула выключена');
+      await loadBranchStatuses();
+    } catch (e: any) {
+      toast.error('Ошибка: ' + e.message);
+    } finally {
+      setApplyingBranchId(null);
+    }
+  }
+
+  useEffect(() => { loadCountries(); loadCosts(); loadBranchStatuses(); }, [loadCosts, loadBranchStatuses]);
+  useEffect(() => { loadLenses(activeCountry); }, [activeCountry, loadLenses]);
+
+  const grouped = CATEGORY_ORDER.map(cat => ({
+    cat,
+    meta: CATEGORY_LABELS[cat] ?? { label: cat, color: 'bg-slate-100 text-slate-500' },
+    items: lenses.filter(l => l.category === cat),
+  })).filter(g => g.items.length > 0);
+
+  async function savePrice(lensId: string) {
+    const ep = editPrices[lensId];
+    if (!ep) return;
+    const fromVal = parseInt(ep.from, 10);
+    const toVal   = parseInt(ep.to, 10);
+    if (isNaN(fromVal) || isNaN(toVal) || fromVal < 0 || toVal < 0) {
+      toast.error('Некорректная цена'); return;
+    }
+    setSavingIds(s => new Set(s).add(lensId));
+    try {
+      if (activeCountry === 'kg') {
+        const { error } = await sb().from('lens_catalog')
+          .update({ price_from: fromVal, price_to: toVal }).eq('id', lensId);
+        if (error) throw error;
+      } else {
+        const { error } = await sb().from('lens_catalog_prices')
+          .upsert({ country_id: activeCountry, lens_id: lensId, price_from: fromVal, price_to: toVal },
+            { onConflict: 'country_id,lens_id' });
+        if (error) throw error;
+      }
+      toast.success('Цена сохранена');
+      await loadLenses(activeCountry);
+    } catch (e: any) {
+      toast.error('Ошибка: ' + e.message);
+    } finally {
+      setSavingIds(s => { const n = new Set(s); n.delete(lensId); return n; });
+    }
+  }
+
+  async function resetOverride(lensId: string) {
+    setResetingIds(s => new Set(s).add(lensId));
+    try {
+      const { error } = await sb().from('lens_catalog_prices')
+        .delete().eq('country_id', activeCountry).eq('lens_id', lensId);
+      if (error) throw error;
+      toast.success('Сброшено — используется автокурс');
+      await loadLenses(activeCountry);
+    } catch (e: any) {
+      toast.error('Ошибка: ' + e.message);
+    } finally {
+      setResetingIds(s => { const n = new Set(s); n.delete(lensId); return n; });
+    }
+  }
+
+  // toggleActive removed — hiding lenses is disabled
+
   async function submitAdd() {
-    const p = parsePrice(form.price);
-    const refr = form.refr_index
-      ? Number(String(form.refr_index).replace(',', '.'))
-      : null;
-    const sMin = form.sph_min
-      ? Number(String(form.sph_min).replace(',', '.'))
-      : null;
-    const sMax = form.sph_max
-      ? Number(String(form.sph_max).replace(',', '.'))
-      : null;
-
-    if (p == null) {
-      toast.error('Укажи корректную цену');
-      return;
-    }
+    const slugOk = /^[a-z0-9-]+$/.test(addForm.id);
+    if (!slugOk) { toast.error('ID: только строчные латинские буквы, цифры и дефис'); return; }
+    if (!addForm.name.trim()) { toast.error('Укажи название'); return; }
+    const pf = parseInt(addForm.price_from, 10);
+    const pt = parseInt(addForm.price_to, 10);
+    if (isNaN(pf) || isNaN(pt) || pf < 0 || pt < 0) { toast.error('Некорректные цены'); return; }
+    setAddSaving(true);
     try {
-      const { error } = await sb().rpc('upsert_lens_price', {
-        p_lens_type: form.lens_type || null,
-        p_refr_index: refr,
-        p_coating: form.coating || null,
-        p_is_astigmatism: form.is_astigmatism,
-        p_sph_min: sMin,
-        p_sph_max: sMax,
-        p_price: p,
-        p_currency: 'KGS',
+      const { error } = await sb().from('lens_catalog').insert({
+        id: addForm.id, name: addForm.name.trim(),
+        category: addForm.category, price_from: pf, price_to: pt, is_active: true,
       });
       if (error) throw error;
-      toast.success('Строка сохранена');
+      toast.success('Линза добавлена');
       setShowAdd(false);
-      setForm({
-        lens_type: '',
-        refr_index: '',
-        coating: '',
-        is_astigmatism: false,
-        sph_min: '',
-        sph_max: '',
-        price: '',
-      });
-      await load();
+      setAddForm({ id: '', name: '', category: 'basic', price_from: '', price_to: '' });
+      await loadLenses(activeCountry);
     } catch (e: any) {
-      toast.error(`Ошибка: ${e.message ?? e}`);
+      toast.error('Ошибка: ' + e.message);
+    } finally {
+      setAddSaving(false);
     }
   }
+
+  const activeCountryData = countries.find(c => c.id === activeCountry);
+  const otherCountries    = countries.filter(c => c.id !== 'kg');
 
   return (
     <div className="min-h-[100dvh] text-slate-900">
-      {/* фон теперь только из layout, без лишнего прямоугольника */}
       <Toaster position="top-right" />
 
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-4">
-        {/* Header */}
-        <GlassCard className="px-6 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-400 to-emerald-400 text-slate-950 shadow-[0_16px_40px_rgba(56,189,248,0.7)]">
-                <Sparkles size={20} />
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-5">
+
+        {/* ── Header ── */}
+        <div className="rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_8px_32px_rgba(15,23,42,0.08)] overflow-hidden">
+          <div className="h-1.5 w-full bg-gradient-to-r from-[#22d3ee] via-cyan-400 to-sky-500" />
+          <div className="px-6 py-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3.5">
+              <div className="w-13 h-13 w-[52px] h-[52px] rounded-2xl bg-gradient-to-br from-[#22d3ee] to-cyan-500 flex items-center justify-center shadow-[0_4px_20px_rgba(34,211,238,0.4)] shrink-0">
+                <Sparkles size={22} className="text-white" />
               </div>
               <div>
-                <h1 className="text-[18px] font-semibold tracking-tight text-slate-900 sm:text-[20px]">
-                  Настройки · Цены на линзы
-                </h1>
-                <p className="text-[11px] text-slate-500 sm:text-[12px]">
-                  Единый прайс для всех оптик. Любое изменение сразу попадает в
-                  «Новый заказ» и отчёты.
-                </p>
+                <h1 className="text-[20px] font-bold text-[#0f172a] tracking-tight">Цены на линзы</h1>
+                <p className="text-[12px] text-slate-500 mt-0.5">Мультивалютный каталог · цены синхронизируются на кассу и тач-экран</p>
               </div>
-            </div>
-
-            <div className="hidden items-center gap-2 sm:flex">
-              <GBtn variant="outline" onClick={() => setShowAdd(true)}>
-                <Plus className="h-4 w-4" />
-                Добавить строку
-              </GBtn>
-              <GBtn onClick={() => load()} disabled={loading}>
-                <RefreshCw
-                  className={cx('h-4 w-4', loading && 'animate-spin')}
-                />
-                {loading ? 'Обновляю…' : 'Обновить'}
-              </GBtn>
-            </div>
-          </div>
-        </GlassCard>
-
-        {/* Фильтры */}
-        <Section
-          title="Фильтры"
-          subtitle={
-            <span>
-              Строк всего:{' '}
-              <span className="font-semibold">{rows.length}</span>, отфильтровано:{' '}
-              <span className="font-semibold">{filtered.length}</span>
-            </span>
-          }
-        >
-          <div className="grid gap-3 md:grid-cols-4">
-            <Input
-              placeholder="Поиск: тип / индекс / покрытие"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-            />
-            <Select value={fType} onChange={e => setFType(e.target.value)}>
-              <option value="">Тип: все</option>
-              {typeOptions.map(v => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-            <Select value={fIndex} onChange={e => setFIndex(e.target.value)}>
-              <option value="">Индекс: все</option>
-              {indexOptions.map(v => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={fCoating}
-              onChange={e => setFCoating(e.target.value)}
-            >
-              <option value="">Покрытие: все</option>
-              {coatingOptions.map(v => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          {/* Mobile actions */}
-          <div className="mt-3 flex items-center justify-between gap-2 sm:hidden">
-            <GBtn
-              variant="outline"
-              onClick={() => setShowAdd(true)}
-              className="flex-1 justify-center"
-            >
-              <Plus className="h-4 w-4" />
-              Добавить
-            </GBtn>
-            <GBtn
-              onClick={() => load()}
-              disabled={loading}
-              className="flex-1 justify-center"
-            >
-              <RefreshCw
-                className={cx('h-4 w-4', loading && 'animate-spin')}
-              />
-              {loading ? 'Обновляю…' : 'Обновить'}
-            </GBtn>
-          </div>
-        </Section>
-
-        {/* Таблица */}
-        <Section
-          title="Прайс-лист линз"
-          subtitle="Любое изменение уходит в lens_prices и используется в «Новом заказе» и отчётах."
-        >
-          <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white/98 shadow-sm">
-            <table className="min-w-full text-[12px] sm:text-[13px] leading-tight">
-              <thead className="bg-slate-50 text-[11px] sm:text-[12px] font-semibold tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-3 py-1.5 text-left whitespace-nowrap">
-                    Тип
-                  </th>
-                  <th className="px-3 py-1.5 text-left whitespace-nowrap">
-                    Индекс
-                  </th>
-                  <th className="px-3 py-1.5 text-left whitespace-nowrap">
-                    Покрытие
-                  </th>
-                  <th className="px-3 py-1.5 text-left whitespace-nowrap">
-                    Астигм.
-                  </th>
-                  <th className="px-3 py-1.5 text-left whitespace-nowrap">
-                    SPH от
-                  </th>
-                  <th className="px-3 py-1.5 text-left whitespace-nowrap">
-                    SPH до
-                  </th>
-                  <th className="px-3 py-1.5 text-left whitespace-nowrap">
-                    Цена
-                  </th>
-                  <th className="px-3 py-1.5 text-left w-40 whitespace-nowrap">
-                    Действия
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loading && (
-                  <tr>
-                    <td
-                      className="px-3 py-6 text-center text-slate-500"
-                      colSpan={8}
-                    >
-                      Загрузка…
-                    </td>
-                  </tr>
-                )}
-                {!loading && filtered.length === 0 && (
-                  <tr>
-                    <td
-                      className="px-3 py-6 text-center text-slate-500"
-                      colSpan={8}
-                    >
-                      Ничего не найдено
-                    </td>
-                  </tr>
-                )}
-                {!loading &&
-                  filtered.map((r, i) => (
-                    <Row
-                      key={String(r.id)}
-                      row={r}
-                      stripe={i % 2 === 1}
-                      onSave={savePrice}
-                      onDelete={() => setConfirmRow(r)}
-                      saving={savingId === r.id}
-                      deleting={deletingId === r.id}
-                    />
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </Section>
-      </div>
-
-      {/* Add modal */}
-      {showAdd && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4">
-          <div className="w-[720px] max-w-[95vw] max-h-[90vh] overflow-y-auto rounded-3xl border border-sky-100 bg-white/98 p-6 shadow-[0_18px_70px_rgba(15,23,42,0.75)]">
-            <div className="mb-4 text-base font-semibold text-slate-900">
-              Добавить / обновить строку прайса
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <LabeledInput
-                label="Тип линзы"
-                value={form.lens_type}
-                onChange={v => setForm(p => ({ ...p, lens_type: v }))}
-              />
-              <LabeledInput
-                label="Индекс (например 1.56)"
-                value={form.refr_index}
-                onChange={v => setForm(p => ({ ...p, refr_index: v }))}
-              />
-              <LabeledInput
-                label="Покрытие (AR / BB / Photo…)"
-                value={form.coating}
-                onChange={v => setForm(p => ({ ...p, coating: v }))}
-              />
-              <label className="mt-1 flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  id="astig"
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-sky-600"
-                  checked={form.is_astigmatism}
-                  onChange={e =>
-                    setForm(p => ({
-                      ...p,
-                      is_astigmatism: e.target.checked,
-                    }))
-                  }
-                />
-                <span>Астигматизм</span>
-              </label>
-              <LabeledInput
-                label="SPH от"
-                value={form.sph_min}
-                onChange={v => setForm(p => ({ ...p, sph_min: v }))}
-              />
-              <LabeledInput
-                label="SPH до"
-                value={form.sph_max}
-                onChange={v => setForm(p => ({ ...p, sph_max: v }))}
-              />
-              <LabeledInput
-                label="Цена (сом)"
-                value={form.price}
-                onChange={v => setForm(p => ({ ...p, price: v }))}
-              />
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                onClick={() => setShowAdd(false)}
-              >
-                Отмена
-              </button>
-              <GBtn onClick={submitAdd}>Сохранить</GBtn>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Confirm delete */}
-      {confirmRow && (
+        {/* ── Себестоимость линз (KGS, за одну линзу) ── */}
+        <div className="px-2">
+          <button
+            type="button"
+            onClick={() => setShowCosts((s) => !s)}
+            className="w-full flex items-center gap-3 py-3 hover:opacity-80 transition"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-[0_2px_10px_rgba(16,185,129,0.3)] shrink-0">
+              <Calculator size={18} className="text-white" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="text-[15px] font-bold text-white">Себестоимость линз</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                За одну линзу в сомах · маржа и наценка считаются автоматически
+              </div>
+            </div>
+            <span className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-slate-300 ring-1 ring-white/10">
+              {costs.filter((c) => c.cost_price_from != null || c.cost_price_to != null).length}/{costs.length} заполнено
+            </span>
+            {showCosts ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
+          </button>
+
+          {showCosts && (
+            <div className="mt-3 space-y-5">
+              {CATEGORY_ORDER.map((cat) => {
+                const meta = CATEGORY_LABELS[cat];
+                const items = costs.filter((c) => c.category === cat);
+                if (items.length === 0) return null;
+
+                const CatIcon = meta?.icon === 'layers' ? Layers : meta?.icon === 'star' ? Star : Crown;
+
+                return (
+                  <div key={cat} className="rounded-2xl border border-slate-100 bg-white overflow-hidden">
+                    {/* Category header */}
+                    <div className={cx('flex items-center gap-2.5 px-4 py-2.5', meta?.accentBg ?? 'bg-slate-500')}>
+                      <CatIcon size={16} className="text-white" />
+                      <div className="flex-1">
+                        <div className="text-[12px] font-bold text-white uppercase tracking-wide">{meta?.label ?? cat}</div>
+                        <div className="text-[10px] text-white/70">{meta?.desc ?? ''}</div>
+                      </div>
+                      <span className="rounded-md bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white">
+                        {items.length} поз.
+                      </span>
+                    </div>
+
+                    {/* Rows */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[12px]">
+                        <thead>
+                          <tr className="text-left text-[9.5px] uppercase tracking-wide text-slate-400 bg-slate-50/60">
+                            <th className="px-3 py-2 font-semibold min-w-[170px]">Линза</th>
+                            <th className="px-2 py-2 font-semibold" colSpan={3}>До ±2.75 дптр</th>
+                            <th className="px-2 py-2 font-semibold" colSpan={3}>От ±3.00 дптр</th>
+                            <th className="px-2 py-2"></th>
+                          </tr>
+                          <tr className="text-left text-[9.5px] text-slate-400 bg-slate-50/40">
+                            <th></th>
+                            <th className="px-2 py-1 font-normal">закуп/шт</th>
+                            <th className="px-2 py-1 font-normal">розница</th>
+                            <th className="px-2 py-1 font-normal">маржа</th>
+                            <th className="px-2 py-1 font-normal border-l border-slate-200">закуп/шт</th>
+                            <th className="px-2 py-1 font-normal">розница</th>
+                            <th className="px-2 py-1 font-normal">маржа</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {items.map((lens) => (
+                            <CostRow
+                              key={lens.lens_id}
+                              lens={lens}
+                              draft={editCosts[lens.lens_id] ?? { from: '', to: '' }}
+                              isSaving={savingCostIds.has(lens.lens_id)}
+                              onChange={(side, value) =>
+                                setEditCosts((prev) => {
+                                  const prevDraft = prev[lens.lens_id] ?? { from: '', to: '' };
+                                  return { ...prev, [lens.lens_id]: { ...prevDraft, [side]: value } };
+                                })
+                              }
+                              onSave={() => saveCost(lens.lens_id)}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Предпросмотр формулы v6 (без записи в БД) ── */}
+        <div className="px-2">
+          <button
+            type="button"
+            onClick={() => setShowFormula((s) => !s)}
+            className="w-full flex items-center gap-3 py-3 hover:opacity-80 transition"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-fuchsia-400 to-pink-500 flex items-center justify-center shadow-[0_2px_10px_rgba(236,72,153,0.3)] shrink-0">
+              <Wand2 size={18} className="text-white" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="text-[15px] font-bold text-white">Предпросмотр формулы v6</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Считается из себестоимости · НЕ сохраняется в БД · только для просмотра
+              </div>
+            </div>
+            <select
+              value={formulaCity}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setFormulaCity(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-700 outline-none focus:ring-2 focus:ring-fuchsia-300"
+            >
+              {(['KG', 'UZ', 'KZ', 'RU'] as const).map((cc) => {
+                const cities = Object.entries(CITY_INDEX).filter(([, v]) => v.country === cc);
+                return (
+                  <optgroup key={cc} label={COUNTRIES[cc].name}>
+                    {cities.map(([name]) => <option key={name} value={name}>{name}</option>)}
+                  </optgroup>
+                );
+              })}
+            </select>
+            {showFormula ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
+          </button>
+
+          {showFormula && (
+            <div className="mt-3 rounded-2xl border border-slate-100 bg-white overflow-hidden">
+              <div className="px-4 py-3 bg-gradient-to-r from-fuchsia-50 to-pink-50 border-b border-slate-100 flex flex-wrap items-center gap-3">
+                <div className="text-[12px] text-slate-600">
+                  Город: <span className="font-bold text-slate-800">{formulaCity}</span>
+                  {formulaCityEntry && (
+                    <span className="ml-2 font-mono text-slate-500">
+                      K = {(COUNTRIES[formulaCityEntry.country].countryIndex * formulaCityEntry.cityMultiplier).toFixed(2)}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Валюта: <span className="font-semibold">{formulaCountry?.currency}</span>
+                </div>
+                <div className="flex-1" />
+                <div className="rounded-lg bg-white/70 border border-fuchsia-200 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-700">
+                  Read-only
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="text-left text-[9.5px] uppercase tracking-wide text-slate-400 bg-slate-50/60">
+                      <th className="px-3 py-2 font-semibold min-w-[170px]">Линза</th>
+                      <th className="px-2 py-2 font-semibold">Cost пары (KGS)</th>
+                      <th className="px-2 py-2 font-semibold border-l border-slate-200" colSpan={3}>До ±2.75 дптр</th>
+                      <th className="px-2 py-2 font-semibold border-l border-slate-200" colSpan={3}>От ±3.00 дптр</th>
+                    </tr>
+                    <tr className="text-left text-[9.5px] text-slate-400 bg-slate-50/40">
+                      <th></th>
+                      <th className="px-2 py-1 font-normal">from / to</th>
+                      <th className="px-2 py-1 font-normal border-l border-slate-200">текущая</th>
+                      <th className="px-2 py-1 font-normal">формула</th>
+                      <th className="px-2 py-1 font-normal">маржа / Δ</th>
+                      <th className="px-2 py-1 font-normal border-l border-slate-200">текущая</th>
+                      <th className="px-2 py-1 font-normal">формула</th>
+                      <th className="px-2 py-1 font-normal">маржа / Δ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {CATEGORY_ORDER.map((cat) => {
+                      const meta = CATEGORY_LABELS[cat];
+                      const items = costs.filter((c) => c.category === cat);
+                      if (items.length === 0) return null;
+                      return (
+                        <React.Fragment key={cat}>
+                          <tr>
+                            <td colSpan={8} className={cx('px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white', meta?.accentBg)}>
+                              {meta?.label}
+                            </td>
+                          </tr>
+                          {items.map((lens) => {
+                            const resFrom = formulaTable[`${lens.lens_id as LensId}_from`];
+                            const resTo   = formulaTable[`${lens.lens_id as LensId}_to`];
+                            const { name, tag, tagClass } = getBeautifulName(lens.lens_id, lens.lens_name);
+                            const hasCosts = lens.cost_price_from != null && lens.cost_price_to != null;
+                            const costPair = hasCosts
+                              ? `${Number(lens.cost_price_from) * 2} / ${Number(lens.cost_price_to) * 2}`
+                              : '—';
+
+                            // retail в БД хранится в KGS — сравнение Δ корректно только для KG городов
+                            const isKG = formulaCityEntry?.country === 'KG';
+                            const currFrom = isKG ? lens.retail_from : null;
+                            const currTo   = isKG ? lens.retail_to   : null;
+
+                            const deltaFrom = resFrom && currFrom != null ? resFrom.price - currFrom : null;
+                            const deltaTo   = resTo   && currTo   != null ? resTo.price   - currTo   : null;
+
+                            const deltaCls = (d: number | null) => {
+                              if (d == null) return 'text-slate-400';
+                              if (d > 0) return 'text-emerald-600';
+                              if (d < 0) return 'text-rose-600';
+                              return 'text-slate-500';
+                            };
+
+                            const marginCls = (m?: number) => {
+                              if (m == null) return 'bg-slate-100 text-slate-400 ring-slate-200';
+                              if (m >= 85) return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+                              if (m >= 70) return 'bg-amber-50 text-amber-700 ring-amber-200';
+                              return 'bg-rose-50 text-rose-700 ring-rose-200';
+                            };
+
+                            return (
+                              <tr key={lens.lens_id} className="border-t border-slate-100 hover:bg-fuchsia-50/20 transition">
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-medium text-slate-800 text-[12.5px]">{name}</span>
+                                    {tag && (
+                                      <span className={cx('rounded-md px-1.5 py-0.5 text-[9px] font-bold ring-1', tagClass)}>
+                                        {tag}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2 font-mono text-slate-500 text-[11px]">
+                                  {costPair}
+                                </td>
+
+                                {/* FROM */}
+                                <td className="px-2 py-2 font-mono text-slate-500 border-l border-slate-100 text-[11px]">
+                                  {currFrom != null ? currFrom.toLocaleString('ru-RU') : '—'}
+                                </td>
+                                <td className="px-2 py-2 font-mono font-bold text-fuchsia-700 text-[12px]">
+                                  {resFrom ? `${resFrom.price.toLocaleString('ru-RU')} ${formulaCurrency}` : '—'}
+                                </td>
+                                <td className="px-2 py-2 text-[11px]">
+                                  <div className="flex items-center gap-1.5">
+                                    {resFrom && (
+                                      <span className={cx('inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1', marginCls(resFrom.marginPercent))}>
+                                        {resFrom.marginPercent.toFixed(0)}%
+                                      </span>
+                                    )}
+                                    {deltaFrom != null && (
+                                      <span className={cx('font-mono text-[10.5px] font-semibold', deltaCls(deltaFrom))}>
+                                        {deltaFrom > 0 ? '+' : ''}{deltaFrom.toLocaleString('ru-RU')}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* TO */}
+                                <td className="px-2 py-2 font-mono text-slate-500 border-l border-slate-100 text-[11px]">
+                                  {currTo != null ? currTo.toLocaleString('ru-RU') : '—'}
+                                </td>
+                                <td className="px-2 py-2 font-mono font-bold text-fuchsia-700 text-[12px]">
+                                  {resTo ? `${resTo.price.toLocaleString('ru-RU')} ${formulaCurrency}` : '—'}
+                                </td>
+                                <td className="px-2 py-2 text-[11px]">
+                                  <div className="flex items-center gap-1.5">
+                                    {resTo && (
+                                      <span className={cx('inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1', marginCls(resTo.marginPercent))}>
+                                        {resTo.marginPercent.toFixed(0)}%
+                                      </span>
+                                    )}
+                                    {deltaTo != null && (
+                                      <span className={cx('font-mono text-[10.5px] font-semibold', deltaCls(deltaTo))}>
+                                        {deltaTo > 0 ? '+' : ''}{deltaTo.toLocaleString('ru-RU')}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 text-[10.5px] text-slate-500 flex items-center gap-2">
+                <Sparkles size={11} className="text-fuchsia-500" />
+                Цены рассчитаны формулой v6 из себестоимостей. Ничего в базу не записано.
+                Пустое «—» = не заполнена себестоимость или линза вне формулы.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Филиальные цены по формуле ── */}
+        <div className="px-2">
+          <button
+            type="button"
+            onClick={() => setShowBranches((s) => !s)}
+            className="w-full flex items-center gap-3 py-3 hover:opacity-80 transition"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shadow-[0_2px_10px_rgba(99,102,241,0.3)] shrink-0">
+              <MapPin size={18} className="text-white" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="text-[15px] font-bold text-white">Филиальные цены по формуле</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                По умолчанию филиал использует цены страны. Формулу можно включить как исключение (например, для Токмока).
+              </div>
+            </div>
+            <span className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-slate-300 ring-1 ring-white/10">
+              {branchStatuses.filter(b => b.is_enabled).length}/{branchStatuses.length} с формулой
+            </span>
+            {showBranches ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
+          </button>
+
+          {showBranches && (
+            <div className="mt-3 rounded-2xl border border-slate-100 bg-white overflow-hidden">
+              {loadingBranchStatus ? (
+                <div className="p-8 text-center text-sm text-slate-400">
+                  <Sparkles className="mx-auto mb-2 h-5 w-5 animate-spin text-indigo-400" />
+                  Загрузка…
+                </div>
+              ) : branchStatuses.length === 0 ? (
+                <div className="p-8 text-center text-sm text-slate-400">Нет филиалов</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[12.5px]">
+                    <thead>
+                      <tr className="text-left text-[10px] uppercase tracking-wide text-slate-400 bg-slate-50/60">
+                        <th className="px-4 py-2 font-semibold">Филиал</th>
+                        <th className="px-3 py-2 font-semibold">Страна</th>
+                        <th className="px-3 py-2 font-semibold">Статус</th>
+                        <th className="px-3 py-2 font-semibold">SKU</th>
+                        <th className="px-3 py-2 font-semibold">Обновлено</th>
+                        <th className="px-3 py-2 font-semibold text-right">Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {branchStatuses.map(b => {
+                        const cityInFormula = b.city && CITY_INDEX[b.city];
+                        const cityUnknown = Boolean(b.city && !cityInFormula);
+                        return (
+                          <tr key={b.branch_id} className="border-t border-slate-100 hover:bg-slate-50/40 transition">
+                            <td className="px-4 py-2.5">
+                              <div className="font-medium text-slate-800">{b.branch_name}</div>
+                              <div className="text-[10.5px] text-slate-400">{b.city ?? '—'} · id={b.branch_id}</div>
+                            </td>
+                            <td className="px-3 py-2.5 text-slate-500 uppercase text-[11px]">{b.country_id ?? '—'}</td>
+                            <td className="px-3 py-2.5">
+                              {b.is_enabled ? (
+                                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 px-2 py-0.5 text-[11px] font-semibold">
+                                  ● ВКЛ
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-500 ring-1 ring-slate-200 px-2 py-0.5 text-[11px]">
+                                  ○ выкл
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 font-mono text-slate-600">
+                              {b.applied_skus}
+                            </td>
+                            <td className="px-3 py-2.5 text-slate-500 text-[11px]">
+                              {b.last_updated ? formatDate(b.last_updated) : '—'}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              <div className="flex justify-end gap-1.5 flex-wrap">
+                                {cityUnknown && (
+                                  <span className="inline-flex items-center rounded-md bg-rose-50 text-rose-600 ring-1 ring-rose-200 px-2 py-1 text-[10.5px] font-semibold">
+                                    Город «{b.city}» не в CITY_INDEX
+                                  </span>
+                                )}
+                                {cityInFormula && (
+                                  <button
+                                    type="button"
+                                    onClick={() => applyFormulaToBranch(b.branch_id, b.city!)}
+                                    disabled={applyingBranchId === b.branch_id}
+                                    className="rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                                  >
+                                    {applyingBranchId === b.branch_id
+                                      ? '…'
+                                      : b.is_enabled ? 'Пересчитать' : 'Применить формулу'}
+                                  </button>
+                                )}
+                                {b.is_enabled && (
+                                  <button
+                                    type="button"
+                                    onClick={() => disableFormulaForBranch(b.branch_id, b.branch_name)}
+                                    disabled={applyingBranchId === b.branch_id}
+                                    className="rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 text-[11px] font-semibold transition disabled:opacity-40"
+                                  >
+                                    Выкл
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 text-[10.5px] text-slate-500 flex items-center gap-2">
+                <Sparkles size={11} className="text-indigo-500" />
+                При нажатии «Применить» формула пересчитает цены из себестоимости и запишет их в БД. POS/Kiosk филиала увидят их при следующем запросе.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Вкладки стран ── */}
+        <div className="px-2 py-4">
+          <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.15em] text-cyan-500/70">Страна</p>
+          <div className="flex flex-wrap gap-2">
+            {countries.map(c => (
+              <button
+                key={c.id}
+                onClick={() => setActiveCountry(c.id)}
+                className={cx(
+                  'flex items-center gap-2 rounded-xl px-5 py-3 text-[13px] font-semibold transition-all',
+                  activeCountry === c.id
+                    ? 'bg-gradient-to-r from-[#22d3ee] via-cyan-400 to-sky-400 text-[#0f172a] shadow-[0_4px_20px_rgba(34,211,238,0.3)]'
+                    : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:ring-cyan-300 hover:text-cyan-700',
+                )}
+              >
+                <span>{c.name}</span>
+                <span className={cx(
+                  'rounded-lg px-2 py-0.5 text-[10px] font-bold',
+                  activeCountry === c.id ? 'bg-[#0f172a]/15 text-[#0f172a]' : 'bg-slate-100 text-slate-400',
+                )}>
+                  {c.currency}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Таблица линз ── */}
+        <div className="px-2 py-5">
+          {/* Заголовок секции */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[17px] font-bold text-white">
+                {activeCountryData?.name ?? activeCountry}
+              </h2>
+              <p className="text-[12px] text-slate-400 mt-0.5">
+                Валюта: <span className="font-semibold text-slate-300">{activeCountryData?.currency_symbol} ({activeCountryData?.currency})</span>
+                {activeCountry !== 'kg' && activeCountryData?.exchange_rate
+                  ? <> · Курс: <span className="font-mono text-cyan-400">1 KGS = {(1 / activeCountryData.exchange_rate).toFixed(4)} {activeCountryData.currency_symbol}</span></>
+                  : ''}
+              </p>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="py-16 text-center text-sm text-slate-400">
+              <Sparkles className="mx-auto mb-2 h-5 w-5 animate-spin text-sky-400" />
+              Загрузка…
+            </div>
+          ) : grouped.length === 0 ? (
+            <div className="py-16 text-center text-sm text-slate-400">Нет данных</div>
+          ) : (
+            <div className="space-y-6">
+              {grouped.map(({ cat, meta, items }) => (
+                <div key={cat} className="overflow-hidden rounded-2xl ring-1 ring-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.12)]">
+                  {/* Заголовок категории */}
+                  <div className={cx('px-4 py-3.5 flex items-center gap-3', meta.accentBg)}>
+                    <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                      {meta.icon === 'layers' && <Layers size={18} className="text-white" />}
+                      {meta.icon === 'star' && <Star size={18} className="text-white" />}
+                      {meta.icon === 'crown' && <Crown size={18} className="text-white" />}
+                    </div>
+                    <div>
+                      <div className="text-[14px] font-bold text-white">{meta.label}</div>
+                      <div className="text-[11px] text-white/60">{meta.desc} · {items.length} шт.</div>
+                    </div>
+                  </div>
+                  <div className="bg-white">
+                    <table className="min-w-full text-[13px] leading-tight">
+                      <thead>
+                        <tr className="text-[11px] font-semibold tracking-wide text-slate-500 border-b border-slate-100/60">
+                          <th className="px-3 py-2.5 text-left">Линза</th>
+                          <th className="px-3 py-2.5 text-right w-36">
+                            <span className="text-cyan-600">до ±2.75</span>
+                          </th>
+                          <th className="px-3 py-2.5 text-right w-36">
+                            <span className="text-cyan-600">от ±3.00 и выше</span>
+                          </th>
+                          <th className="px-3 py-2.5 text-right w-28"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100/50">
+                        {items.map(lens => {
+                          const ep         = editPrices[lens.lens_id] ?? { from: String(lens.price_from), to: String(lens.price_to) };
+                          const isSaving   = savingIds.has(lens.lens_id);
+                          const isReseting = resetingIds.has(lens.lens_id);
+                          return (
+                            <tr
+                              key={lens.lens_id}
+                              className="transition-colors hover:bg-sky-50/40 group"
+                            >
+                              <td className="px-3 py-3">
+                                {(() => {
+                                  const info = getBeautifulName(lens.lens_id, lens.name);
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold text-slate-800 text-[13px]">{info.name}</span>
+                                      {info.tag && (
+                                        <span className={cx('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-md ring-1', info.tagClass)}>
+                                          {info.tag}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+
+                              <td className="px-3 py-2.5 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <input
+                                    className="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-right text-[12px] text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400 focus:border-cyan-400 focus:bg-white transition"
+                                    value={ep.from}
+                                    onChange={e => setEditPrices(p => ({ ...p, [lens.lens_id]: { ...ep, from: e.target.value } }))}
+                                  />
+                                  <span className="text-[10px] text-slate-400">{lens.currency_symbol}</span>
+                                </div>
+                              </td>
+
+                              <td className="px-3 py-2.5 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <input
+                                    className="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-right text-[12px] text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400 focus:border-cyan-400 focus:bg-white transition"
+                                    value={ep.to}
+                                    onChange={e => setEditPrices(p => ({ ...p, [lens.lens_id]: { ...ep, to: e.target.value } }))}
+                                  />
+                                  <span className="text-[10px] text-slate-400">{lens.currency_symbol}</span>
+                                </div>
+                              </td>
+
+                              <td className="px-3 py-2.5 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <GBtn size="sm" onClick={() => savePrice(lens.lens_id)} disabled={isSaving}>
+                                    {isSaving ? '…' : 'Сохранить'}
+                                  </GBtn>
+                                  {activeCountry !== 'kg' && lens.has_override && (
+                                    <GBtn size="sm" variant="outline" onClick={() => resetOverride(lens.lens_id)} disabled={isReseting} title="Сбросить на автокурс">
+                                      <RotateCcw className="h-3 w-3" />
+                                    </GBtn>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Курсы валют (только чтение) ── */}
+        {otherCountries.length > 0 && (
+          <div className="px-2 py-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-[17px] font-bold text-white">Курсы валют</h2>
+                <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                  <Clock size={11} />
+                  Обновляются автоматически каждый день из ЦБ РФ
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {otherCountries.map(c => (
+                <div
+                  key={c.id}
+                  className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50/80 p-4"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="text-[13px] font-semibold text-slate-800">{c.name}</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">{c.currency} · {c.currency_symbol}</div>
+                    </div>
+                    <span className="rounded-xl bg-sky-50 border border-sky-100 px-2.5 py-1 text-[12px] font-mono font-semibold text-sky-700">
+                      {c.exchange_rate?.toFixed(4) ?? '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <Clock size={11} className="shrink-0" />
+                    <span>
+                      {c.rate_updated_at
+                        ? <>Обновлён {formatDate(c.rate_updated_at)}</>
+                        : 'Дата неизвестна'}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-[10px] text-slate-400">
+                    1 KGS = {c.exchange_rate ? (1 / c.exchange_rate).toFixed(4) : '—'} {c.currency_symbol}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* ── Модал: добавить линзу ── */}
+      {showAdd && (
         <div
-          className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4"
-          onClick={() => setConfirmRow(null)}
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 backdrop-blur-sm p-4"
+          onClick={() => setShowAdd(false)}
         >
           <div
-            className="w-[560px] max-w-[95vw] max-h-[90vh] overflow-y-auto rounded-3xl border border-rose-100 bg-white/98 p-6 shadow-[0_18px_70px_rgba(127,29,29,0.7)]"
+            className="w-[540px] max-w-[95vw] rounded-3xl border border-slate-100 bg-white p-6 shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
-            <div className="mb-2 text-base font-semibold text-rose-600">
-              Удалить строку?
+            <h3 className="mb-1 text-base font-semibold text-slate-900">Добавить линзу</h3>
+            <p className="mb-5 text-xs text-slate-400">
+              Цены для других стран будут рассчитаны автоматически по текущему курсу.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5 sm:col-span-2">
+                <span className="text-xs font-semibold text-slate-600">
+                  ID (slug) — только a–z, 0–9, дефис
+                </span>
+                <Input
+                  placeholder="antiglare, chameleon-brown, blue-cut"
+                  value={addForm.id}
+                  onChange={e => setAddForm(p => ({ ...p, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 sm:col-span-2">
+                <span className="text-xs font-semibold text-slate-600">Название на русском</span>
+                <Input
+                  placeholder="Антибликовое, Защита от экранов, Хамелеон…"
+                  value={addForm.name}
+                  onChange={e => setAddForm(p => ({ ...p, name: e.target.value }))}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-slate-600">Категория</span>
+                <Select value={addForm.category} onChange={e => setAddForm(p => ({ ...p, category: e.target.value }))}>
+                  <option value="basic">Базовые</option>
+                  <option value="special">Специальные</option>
+                  <option value="premium">Премиум</option>
+                </Select>
+              </label>
+              <div />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-slate-600">до ±2.75 (сом)</span>
+                <Input type="number" min={0} placeholder="1 000" value={addForm.price_from}
+                  onChange={e => setAddForm(p => ({ ...p, price_from: e.target.value }))} />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold text-slate-600">±3.00 и выше (сом)</span>
+                <Input type="number" min={0} placeholder="2 500" value={addForm.price_to}
+                  onChange={e => setAddForm(p => ({ ...p, price_to: e.target.value }))} />
+              </label>
             </div>
-            <div className="mb-4 text-xs text-slate-600">
-              {confirmRow.lens_type} • {confirmRow.refr_index ?? '—'} •{' '}
-              {confirmRow.coating ?? '—'} • SPH {confirmRow.sph_min ?? '—'}..
-              {confirmRow.sph_max ?? '—'}
-              <br />
-              Это действие необратимо. Если сомневаешься, просто закрой окно.
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                onClick={() => setConfirmRow(null)}
-              >
-                Отмена
-              </button>
-              <button
-                onClick={() => doDelete(confirmRow)}
-                className={cx(
-                  'rounded-2xl bg-gradient-to-r from-rose-500 to-red-600 px-5 py-2 text-sm font-medium text-white shadow hover:opacity-95',
-                  deletingId === confirmRow.id && 'cursor-not-allowed opacity-70',
-                )}
-                disabled={deletingId === confirmRow.id}
-              >
-                {deletingId === confirmRow.id ? 'Удаляю…' : 'Удалить'}
-              </button>
+            <div className="mt-6 flex justify-end gap-2">
+              <GBtn variant="outline" onClick={() => setShowAdd(false)}>Отмена</GBtn>
+              <GBtn onClick={submitAdd} disabled={addSaving}>
+                {addSaving ? 'Сохраняю…' : 'Добавить'}
+              </GBtn>
             </div>
           </div>
         </div>
       )}
     </div>
-  );
-}
-
-/* =========================
-   Row
-========================= */
-function Row({
-  row,
-  stripe,
-  onSave,
-  onDelete,
-  saving,
-  deleting,
-}: {
-  row: LensRow;
-  stripe: boolean;
-  onSave: (row: LensRow, val: string) => void;
-  onDelete: () => void;
-  saving: boolean;
-  deleting: boolean;
-}) {
-  const [val, setVal] = useState(String(row.price ?? 0));
-
-  useEffect(() => setVal(String(row.price ?? 0)), [row.price]);
-
-  return (
-    <tr
-      className={cx(
-        'transition-colors',
-        stripe ? 'bg-slate-50/80' : 'bg-white',
-        'hover:bg-sky-50/70',
-      )}
-    >
-      <td className="px-3 py-1.5 align-middle text-[12px] sm:text-[13px] text-slate-800 whitespace-nowrap">
-        {row.lens_type || '—'}
-      </td>
-      <td className="px-3 py-1.5 align-middle text-[12px] sm:text-[13px] text-slate-800 whitespace-nowrap">
-        {row.refr_index ?? '—'}
-      </td>
-      <td className="px-3 py-1.5 align-middle text-[12px] sm:text-[13px] text-slate-800 whitespace-nowrap">
-        {row.coating || '—'}
-      </td>
-      <td className="px-3 py-1.5 align-middle text-[12px] sm:text-[13px] text-slate-800 whitespace-nowrap">
-        {row.is_astigmatism ? 'Да' : 'Нет'}
-      </td>
-      <td className="px-3 py-1.5 align-middle text-[12px] sm:text-[13px] text-slate-800 whitespace-nowrap">
-        {row.sph_min ?? '—'}
-      </td>
-      <td className="px-3 py-1.5 align-middle text-[12px] sm:text-[13px] text-slate-800 whitespace-nowrap">
-        {row.sph_max ?? '—'}
-      </td>
-      <td className="px-3 py-1.5 align-middle whitespace-nowrap">
-        <input
-          className="w-24 rounded-2xl border border-sky-100 bg-white/95 px-3 py-1 text-right text-[12px] sm:text-[13px] text-slate-900 shadow-inner outline-none focus:ring-2 focus:ring-sky-300"
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          onBlur={() => onSave(row, val)}
-        />
-      </td>
-      <td className="px-3 py-1.5 align-middle">
-        <div className="flex flex-nowrap gap-1.5">
-          <button
-            className={cx(
-              'inline-flex items-center justify-center rounded-2xl px-3 py-1.5 text-[11px] sm:text-[12px] font-semibold',
-              'bg-gradient-to-r from-sky-500 via-cyan-500 to-emerald-400 text-slate-950',
-              'shadow-[0_10px_25px_rgba(56,189,248,0.6)] hover:brightness-110 transition',
-              saving && 'cursor-not-allowed opacity-60',
-            )}
-            onClick={() => onSave(row, val)}
-            disabled={saving}
-          >
-            {saving ? 'Сохр.' : 'Сохранить'}
-          </button>
-          <button
-            className={cx(
-              'inline-flex items-center justify-center rounded-2xl px-3 py-1.5 text-[11px] sm:text-[12px] font-semibold',
-              'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow hover:opacity-95 transition',
-              deleting && 'cursor-not-allowed opacity-60',
-            )}
-            onClick={onDelete}
-            disabled={deleting}
-          >
-            {deleting ? 'Удаляю…' : 'Удалить'}
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-/* =========================
-   Labeled input
-========================= */
-function LabeledInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-xs font-medium text-slate-600">{label}</span>
-      <input
-        className="w-full rounded-2xl border border-sky-100 bg-white/95 px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-sky-300"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-      />
-    </label>
-  );
-}
-
-/* =========================
-   Section
-========================= */
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title?: React.ReactNode;
-  subtitle?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const hasHeader = title || subtitle;
-  return (
-    <GlassCard className="mt-2 px-6 py-4 sm:py-5">
-      {hasHeader && (
-        <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          {title && (
-            <h2 className="text-[15px] font-semibold text-slate-900">
-              {title}
-            </h2>
-          )}
-          {subtitle && (
-            <div className="text-[11px] text-slate-500 sm:text-xs">
-              {subtitle}
-            </div>
-          )}
-        </header>
-      )}
-      {children}
-    </GlassCard>
   );
 }

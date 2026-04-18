@@ -11,14 +11,12 @@ import {
   ChevronUp,
   Clipboard,
   ExternalLink,
-  MessageCircle,
   Package,
   Plus,
   ShoppingBag,
   Sparkles,
   Star,
   StarOff,
-  Store,
   Trash2,
   Truck,
   ArrowLeft,
@@ -32,6 +30,7 @@ import {
   Layers,
   FileText,
   Calculator as CalcIcon,
+  Settings2,
 } from 'lucide-react';
 
 /* ───────────────── Routing ───────────────── */
@@ -94,13 +93,29 @@ function dtFmt(d: Date) {
 function fmtMoneyUSD(n: number, digits = 2) {
   const x = Number(n ?? 0);
   if (!Number.isFinite(x)) return '0.00';
+  if (x === 0) return '0.00';
+  // For very small values, show enough significant digits
+  if (Math.abs(x) > 0 && Math.abs(x) < Math.pow(10, -digits)) {
+    // Find how many decimals we need for 2 significant digits
+    const mag = Math.floor(Math.log10(Math.abs(x)));
+    const needed = Math.max(digits, -mag + 1);
+    return x.toFixed(Math.min(needed, 8));
+  }
   return x.toFixed(digits);
 }
 function fmtMoneyKGSFromUSD(usd: number) {
   const x = Number(usd ?? 0);
   const rate = Number(USD_TO_KGS);
   if (!Number.isFinite(x) || !Number.isFinite(rate)) return '0';
-  return String(Math.round(x * rate));
+  const kgs = x * rate;
+  if (kgs === 0) return '0';
+  if (Math.abs(kgs) < 0.5) {
+    // Show decimal for sub-1 som values
+    const mag = Math.floor(Math.log10(Math.abs(kgs)));
+    const needed = Math.max(2, -mag + 1);
+    return kgs.toFixed(Math.min(needed, 6));
+  }
+  return String(Math.round(kgs));
 }
 function safeStr(x: any) {
   return String(x ?? '').trim();
@@ -128,38 +143,40 @@ async function copyToClipboard(text: string) {
   }
 }
 
-/* ───────────────── UI (Refocus style) ───────────────── */
+/* ───────────────── UI (Refocus: dark layout bg, white cards, cyan/teal accents) ── */
 const UI = {
-  // ✅ теперь фон прозрачный (фон берём из layout)
-  shell: 'min-h-screen bg-transparent text-slate-900',
-  container: 'relative mx-auto w-full max-w-7xl px-5 md:px-6 pt-8 pb-10 space-y-6',
+  shell: 'min-h-screen bg-transparent text-slate-200',
+  container: 'relative mx-auto w-full max-w-7xl px-5 md:px-6 pt-8 pb-10 space-y-5',
 
-  // ✅ верхняя плитка белая (не тёмная)
   headerCard:
-    'rounded-3xl p-5 sm:p-6 bg-white/92 ring-1 ring-sky-200/80 shadow-[0_22px_70px_rgba(15,23,42,0.12)] backdrop-blur-xl text-slate-900',
+    'rounded-3xl p-5 sm:p-6',
 
-  // секции — светлые “плавающие”
   sectionCard:
-    'rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 ring-1 ring-sky-200/80 shadow-[0_22px_70px_rgba(15,23,42,0.14)] backdrop-blur-xl text-slate-900',
+    'space-y-4',
+
+  innerCard:
+    'rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]',
 
   badgeIcon:
-    'h-10 w-10 rounded-2xl grid place-items-center bg-gradient-to-tr from-teal-400 via-cyan-400 to-sky-400 shadow-[0_16px_55px_rgba(34,211,238,0.35)] ring-1 ring-white/60',
+    'h-11 w-11 rounded-2xl grid place-items-center bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.35)]',
 
   input:
-    'w-full rounded-[14px] bg-white/92 ring-1 ring-sky-200/80 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 shadow-[0_14px_40px_rgba(15,23,42,0.12)] focus:outline-none focus:ring-2 focus:ring-cyan-400/70 disabled:bg-white/60 disabled:text-slate-400',
+    'w-full rounded-xl px-3 py-2.5 text-sm bg-white text-slate-900 placeholder:text-slate-400 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:bg-slate-50 disabled:text-slate-400 transition',
   textarea:
-    'w-full rounded-[14px] bg-white/92 ring-1 ring-sky-200/80 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 shadow-[0_14px_40px_rgba(15,23,42,0.12)] focus:outline-none focus:ring-2 focus:ring-cyan-400/70 disabled:bg-white/60 disabled:text-slate-400',
+    'w-full rounded-xl px-3 py-2.5 text-sm bg-white text-slate-900 placeholder:text-slate-400 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:bg-slate-50 disabled:text-slate-400 transition',
   select:
-    'w-full rounded-[14px] bg-white/92 ring-1 ring-sky-200/80 px-3 py-2 text-sm text-slate-900 shadow-[0_14px_40px_rgba(15,23,42,0.12)] focus:outline-none focus:ring-2 focus:ring-cyan-400/70',
+    'w-full rounded-xl px-3 py-2.5 text-sm bg-white text-slate-900 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 transition',
 
   btnBase: 'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition active:translate-y-[0.5px] focus:outline-none',
   btnPrimary:
-    'text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 shadow-[0_14px_38px_rgba(34,211,238,0.32)] hover:brightness-110 focus:ring-2 focus:ring-teal-300/70',
-  btnGhost: 'bg-white/90 text-teal-700 ring-1 ring-teal-200 shadow-[0_12px_32px_rgba(15,23,42,0.10)] hover:bg-white',
+    'text-white font-semibold bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.30)] hover:bg-cyan-400 focus:ring-2 focus:ring-cyan-300/70',
+  btnGhost:
+    'text-slate-600 bg-white ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 hover:text-slate-900',
   btnWarn:
-    'text-white bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 shadow-[0_14px_38px_rgba(251,191,36,0.22)] hover:brightness-110 focus:ring-2 focus:ring-amber-300/70',
-  btnDanger: 'text-rose-700 bg-white/92 ring-1 ring-rose-200 shadow-[0_12px_32px_rgba(15,23,42,0.10)] hover:bg-rose-50 focus:ring-2 focus:ring-rose-300/70',
-  btnDisabled: 'bg-white/70 text-slate-400 ring-1 ring-slate-200 cursor-not-allowed',
+    'text-white bg-gradient-to-r from-amber-500 to-orange-500 shadow-[0_4px_16px_rgba(245,158,11,0.25)] hover:brightness-110 focus:ring-2 focus:ring-amber-300/70',
+  btnDanger:
+    'text-rose-600 bg-white ring-1 ring-rose-200 shadow-sm hover:bg-rose-50 focus:ring-2 focus:ring-rose-300/70',
+  btnDisabled: 'bg-slate-100 text-slate-400 ring-1 ring-slate-200 cursor-not-allowed',
 };
 
 /* ───────────────── Domain types ───────────────── */
@@ -190,7 +207,7 @@ type ItemTypeDef = {
   group?: ItemGroup; // ✅ расходник / инвентарь
 };
 
-type IconKey = 'wechat' | 'taobao' | 'chat' | 'store' | 'truck' | 'link' | 'spark';
+type IconKey = 'wechat' | 'taobao' | '1688' | 'alibaba' | 'pinduoduo' | 'other';
 
 type Supplier = {
   id: string;
@@ -249,6 +266,7 @@ type ConsumablesSettings = {
   version?: number;
   china_cargos?: ChinaCargo[];
   china_cargo_default_id?: string;
+  cargo_per_type?: Record<string, string>;
   [k: string]: any;
 };
 
@@ -273,19 +291,18 @@ function itemGroupOf(def: ItemTypeDef | null | undefined): ItemGroup {
 
 function typeTileClasses(active: boolean, group: ItemGroup) {
   if (active) {
-    // ✅ активная плитка тоже чуть отличается по категории
     return group === 'consumable'
-      ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 text-white ring-white/40 shadow-[0_16px_46px_rgba(34,211,238,0.25)]'
-      : 'bg-gradient-to-r from-violet-400 via-indigo-400 to-sky-400 text-white ring-white/40 shadow-[0_16px_46px_rgba(99,102,241,0.22)]';
+      ? 'bg-gradient-to-r from-cyan-500 to-teal-500 text-white ring-cyan-400/30 shadow-[0_4px_16px_rgba(34,211,238,0.30)]'
+      : 'bg-gradient-to-r from-cyan-500 to-indigo-500 text-white ring-indigo-400/30 shadow-[0_4px_16px_rgba(99,102,241,0.25)]';
   }
   return group === 'consumable'
-    ? 'bg-gradient-to-br from-white via-emerald-50/60 to-sky-50/85 text-slate-900 ring-emerald-200/60 hover:bg-white shadow-[0_12px_32px_rgba(15,23,42,0.08)]'
-    : 'bg-gradient-to-br from-white via-violet-50/60 to-sky-50/85 text-slate-900 ring-violet-200/60 hover:bg-white shadow-[0_12px_32px_rgba(15,23,42,0.08)]';
+    ? 'bg-gradient-to-r from-cyan-100/70 to-teal-100/70 text-slate-700 ring-1 ring-cyan-200 hover:from-cyan-100 hover:to-teal-100 hover:ring-cyan-300 hover:text-slate-900'
+    : 'bg-gradient-to-r from-cyan-100/70 to-indigo-100/70 text-slate-700 ring-1 ring-indigo-200 hover:from-cyan-100 hover:to-indigo-100 hover:ring-indigo-300 hover:text-slate-900';
 }
 
-function typeMiniIconBg(active: boolean, group: ItemGroup) {
-  if (active) return 'bg-white/20 ring-white/30';
-  return group === 'consumable' ? 'bg-emerald-50 ring-emerald-200/60' : 'bg-violet-50 ring-violet-200/60';
+function typeMiniIconBg(active: boolean, _group: ItemGroup) {
+  if (active) return 'bg-white/25 ring-white/30';
+  return 'bg-slate-50 ring-slate-200';
 }
 
 const GROUP_LABEL: Record<ItemGroup, string> = {
@@ -341,33 +358,60 @@ const DEFAULT_ITEM_TYPES: ItemTypeDef[] = [
 ];
 
 const ICON_OPTIONS: { key: IconKey; label: string }[] = [
-  { key: 'wechat', label: 'WeChat' },
   { key: 'taobao', label: 'Taobao' },
-  { key: 'chat', label: 'Chat' },
-  { key: 'store', label: 'Store' },
-  { key: 'truck', label: 'Truck' },
-  { key: 'link', label: 'Link' },
-  { key: 'spark', label: 'Spark' },
+  { key: '1688', label: '1688.com' },
+  { key: 'alibaba', label: 'Alibaba' },
+  { key: 'pinduoduo', label: 'Pinduoduo' },
+  { key: 'wechat', label: 'WeChat' },
+  { key: 'other', label: 'Другое' },
 ];
 
 function IconPick({ k, className }: { k: IconKey; className?: string }) {
   const c = className ?? 'h-4 w-4';
   switch (k) {
-    case 'wechat':
-      return <MessageCircle className={c} />;
     case 'taobao':
-      return <ShoppingBag className={c} />;
-    case 'store':
-      return <Store className={c} />;
-    case 'truck':
-      return <Truck className={c} />;
-    case 'link':
-      return <ExternalLink className={c} />;
-    case 'spark':
-      return <Sparkles className={c} />;
-    case 'chat':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={c}>
+          <rect width="24" height="24" rx="6" fill="#FF5000" />
+          <text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="800" fill="white" fontFamily="system-ui">TB</text>
+        </svg>
+      );
+    case '1688':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={c}>
+          <rect width="24" height="24" rx="6" fill="#FF6A00" />
+          <text x="12" y="15.5" textAnchor="middle" fontSize="8.5" fontWeight="800" fill="white" fontFamily="system-ui">1688</text>
+        </svg>
+      );
+    case 'alibaba':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={c}>
+          <rect width="24" height="24" rx="6" fill="#FF6A00" />
+          <text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="800" fill="white" fontFamily="system-ui">Ali</text>
+        </svg>
+      );
+    case 'pinduoduo':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={c}>
+          <rect width="24" height="24" rx="6" fill="#E02E24" />
+          <text x="12" y="15.5" textAnchor="middle" fontSize="8.5" fontWeight="800" fill="white" fontFamily="system-ui">PDD</text>
+        </svg>
+      );
+    case 'wechat':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={c}>
+          <rect width="24" height="24" rx="6" fill="#07C160" />
+          <ellipse cx="10" cy="11" rx="5.5" ry="4.5" fill="white" />
+          <ellipse cx="15" cy="13.5" rx="4.5" ry="3.5" fill="white" />
+          <circle cx="8.5" cy="10.5" r="0.8" fill="#07C160" />
+          <circle cx="11.5" cy="10.5" r="0.8" fill="#07C160" />
+          <circle cx="13.5" cy="13" r="0.7" fill="#07C160" />
+          <circle cx="16.5" cy="13" r="0.7" fill="#07C160" />
+        </svg>
+      );
+    case 'other':
     default:
-      return <MessageCircle className={c} />;
+      return <Package className={c} />;
   }
 }
 
@@ -491,19 +535,20 @@ function normalizeCargos(input: any): { cargos: ChinaCargo[]; defId: string } {
   const fallback: ChinaCargo[] = [
     { id: 'cargo_1', name: 'Карго #1', address: '', price_per_kg: 0 },
     { id: 'cargo_2', name: 'Карго #2', address: '', price_per_kg: 0 },
+    { id: 'cargo_3', name: 'Карго #3', address: '', price_per_kg: 0 },
   ];
 
   const raw = Array.isArray(input?.china_cargos) ? input.china_cargos : null;
 
   let cargos: ChinaCargo[] = fallback.map((c) => ({ ...c }));
   if (raw) {
-    cargos = raw.slice(0, 2).map((x: any, i: number) => ({
+    cargos = raw.slice(0, 3).map((x: any, i: number) => ({
       id: typeof x?.id === 'string' ? x.id : fallback[i]?.id ?? uid(),
       name: String(x?.name ?? `Карго #${i + 1}`),
       address: String(x?.address ?? ''),
       price_per_kg: Number.isFinite(Number(x?.price_per_kg)) ? Number(x.price_per_kg) : 0,
     }));
-    while (cargos.length < 2) {
+    while (cargos.length < 3) {
       const i = cargos.length;
       cargos.push({ id: fallback[i]?.id ?? uid(), name: `Карго #${i + 1}`, address: '', price_per_kg: 0 });
     }
@@ -615,7 +660,9 @@ function normalizeSuppliersSettings(input: any): SuppliersSettings {
       const mapped: Supplier[] = arr.map((x: any, i: number) => {
         const id = typeof x?.id === 'string' ? x.id : uid();
         const display_name = String(x?.display_name ?? `Поставщик ${i + 1}`);
-        const icon_key = (ICON_OPTIONS.some((k) => k.key === x?.icon_key) ? x.icon_key : 'chat') as IconKey;
+        const rawIcon = String(x?.icon_key ?? '');
+        const LEGACY_ICON_MAP: Record<string, IconKey> = { chat: 'other', store: 'taobao', truck: 'other', link: 'other', spark: 'other' };
+        const icon_key = (ICON_OPTIONS.some((k) => k.key === rawIcon) ? rawIcon : LEGACY_ICON_MAP[rawIcon] ?? 'other') as IconKey;
         const link_url = String(x?.link_url ?? x?.chat_url ?? x?.store_url ?? '').trim();
 
         const unit_price_usd = Number.isFinite(Number(x?.unit_price_usd)) ? Number(x.unit_price_usd) : 0;
@@ -735,7 +782,7 @@ function importLegacySuppliers(legacy: any): SuppliersSettings | null {
       type: t,
       display_name: String(x?.display_name ?? `Поставщик ${i + 1}`),
       description: typeof x?.description === 'string' ? x.description : '',
-      icon_key: (ICON_OPTIONS.some((k) => k.key === x?.icon_key) ? x.icon_key : 'chat') as IconKey,
+      icon_key: (() => { const ri = String(x?.icon_key ?? ''); const LM: Record<string, IconKey> = { chat: 'other', store: 'taobao', truck: 'other', link: 'other', spark: 'other' }; return (ICON_OPTIONS.some((k) => k.key === ri) ? ri : LM[ri] ?? 'other') as IconKey; })(),
       link_url: String(x?.chat_url ?? x?.store_url ?? x?.link_url ?? '').trim(),
       unit_price_usd: Number.isFinite(Number(x?.unit_price_usd)) ? Number(x.unit_price_usd) : 0,
       unit_weight_kg: Number.isFinite(Number(x?.unit_weight_kg)) ? Number(x.unit_weight_kg) : 0,
@@ -797,7 +844,7 @@ function SupplierCard({ s, typeDef, typeLabel, onPatch, onRemove, onMakeDefault 
       : 'bg-violet-50 text-violet-800 ring-1 ring-violet-200';
 
   return (
-    <div className="rounded-3xl bg-white/92 ring-1 ring-sky-200/80 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.12)]">
+    <div className="rounded-3xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <span className="h-11 w-11 rounded-3xl grid place-items-center bg-gradient-to-tr from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_16px_46px_rgba(34,211,238,0.22)] ring-1 ring-white/50 shrink-0">
@@ -806,7 +853,7 @@ function SupplierCard({ s, typeDef, typeLabel, onPatch, onRemove, onMakeDefault 
 
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-sm font-extrabold text-slate-900 truncate max-w-[320px]">{s.display_name}</div>
+              <div className="text-sm font-bold text-slate-900 truncate max-w-[320px]">{s.display_name}</div>
 
               {s.is_default && (
                 <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-sky-50 text-sky-700 ring-1 ring-sky-200">
@@ -844,12 +891,12 @@ function SupplierCard({ s, typeDef, typeLabel, onPatch, onRemove, onMakeDefault 
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <div className="grid gap-1">
-          <div className="text-[11px] font-semibold text-slate-500">Название (RU)</div>
+          <div className="text-[11px] font-semibold text-slate-400">Название (RU)</div>
           <input className={UI.input} value={s.display_name} onChange={(e) => onPatch(s.id, { display_name: e.target.value })} />
         </div>
 
         <div className="grid gap-1">
-          <div className="text-[11px] font-semibold text-slate-500">Ссылка</div>
+          <div className="text-[11px] font-semibold text-slate-400">Ссылка</div>
           <input
             className={UI.input}
             value={s.link_url ?? ''}
@@ -860,7 +907,7 @@ function SupplierCard({ s, typeDef, typeLabel, onPatch, onRemove, onMakeDefault 
 
         <div className="grid gap-3 lg:col-span-2 sm:grid-cols-2">
           <div className="grid gap-1">
-            <div className="text-[11px] font-semibold text-slate-500">Цена за 1 шт (USD)</div>
+            <div className="text-[11px] font-semibold text-slate-400">Цена за 1 шт (USD)</div>
             <input
               className={UI.input}
               type="text"
@@ -879,7 +926,7 @@ function SupplierCard({ s, typeDef, typeLabel, onPatch, onRemove, onMakeDefault 
           </div>
 
           <div className="grid gap-1">
-            <div className="text-[11px] font-semibold text-slate-500">Вес 1 шт (кг)</div>
+            <div className="text-[11px] font-semibold text-slate-400">Вес 1 шт (кг)</div>
             <input
               className={UI.input}
               type="text"
@@ -897,13 +944,13 @@ function SupplierCard({ s, typeDef, typeLabel, onPatch, onRemove, onMakeDefault 
             />
           </div>
 
-          <div className="sm:col-span-2 text-[11px] text-slate-500">
+          <div className="sm:col-span-2 text-[11px] text-slate-400">
             Используется в расчёте: <span className="font-semibold text-slate-900">себестоимость + доставка по весу</span>.
           </div>
         </div>
 
         <div className="grid gap-1 lg:col-span-2">
-          <div className="text-[11px] font-semibold text-slate-500">Комментарий</div>
+          <div className="text-[11px] font-semibold text-slate-400">Комментарий</div>
           <textarea
             className={cls(UI.textarea, 'min-h-[110px] resize-y')}
             value={s.description ?? ''}
@@ -913,7 +960,7 @@ function SupplierCard({ s, typeDef, typeLabel, onPatch, onRemove, onMakeDefault 
         </div>
 
         <div className="grid gap-1 lg:col-span-2">
-          <div className="text-[11px] font-semibold text-slate-500">Иконка</div>
+          <div className="text-[11px] font-semibold text-slate-400">Иконка</div>
           <select className={UI.select} value={s.icon_key} onChange={(e) => onPatch(s.id, { icon_key: e.target.value as IconKey })}>
             {ICON_OPTIONS.map((o) => (
               <option key={o.key} value={o.key}>
@@ -949,7 +996,7 @@ function CargoCard({ c, isDef, onPickDefault, onPatch }: CargoCardProps) {
   }, [shipTxt, onPatch, c.id]);
 
   return (
-    <div className="rounded-3xl bg-white/92 ring-1 ring-sky-200/80 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.12)]">
+    <div className="rounded-3xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-900 truncate">{(c.name ?? '').trim() || '—'}</div>
@@ -963,12 +1010,12 @@ function CargoCard({ c, isDef, onPickDefault, onPatch }: CargoCardProps) {
 
       <div className="mt-4 grid gap-3">
         <div className="grid gap-1">
-          <div className="text-[11px] font-semibold text-slate-500">Название</div>
+          <div className="text-[11px] font-semibold text-slate-400">Название</div>
           <input className={UI.input} value={c.name ?? ''} onChange={(e) => onPatch(c.id, { name: e.target.value })} placeholder="Напр. Карго Guangdong" />
         </div>
 
         <div className="grid gap-1">
-          <div className="text-[11px] font-semibold text-slate-500">Адрес (Китай)</div>
+          <div className="text-[11px] font-semibold text-slate-400">Адрес (Китай)</div>
           <textarea
             className={cls(UI.textarea, 'min-h-[110px] resize-y')}
             value={c.address ?? ''}
@@ -978,7 +1025,7 @@ function CargoCard({ c, isDef, onPickDefault, onPatch }: CargoCardProps) {
         </div>
 
         <div className="grid gap-1">
-          <div className="text-[11px] font-semibold text-slate-500">Доставка (USD / кг)</div>
+          <div className="text-[11px] font-semibold text-slate-400">Доставка (USD / кг)</div>
           <input
             className={UI.input}
             type="text"
@@ -1006,14 +1053,17 @@ type QuickSupplierEditorProps = {
   typeLabel: string;
   qty: number;
   cargo: ChinaCargo;
+  allCargos: ChinaCargo[];
+  onSelectCargo: (cargoId: string) => void;
 
   onPatch: (id: string, patch: Partial<Supplier>) => void;
   onPatchCargo: (cargoId: string, patch: Partial<ChinaCargo>) => void;
+  onRemove: (id: string) => void;
 
   onOrder: () => void;
 };
 
-function QuickSupplierEditor({ s, typeLabel, qty, cargo, onPatch, onPatchCargo, onOrder }: QuickSupplierEditorProps) {
+function QuickSupplierEditor({ s, typeLabel, qty, cargo, allCargos, onSelectCargo, onPatch, onPatchCargo, onRemove, onOrder }: QuickSupplierEditorProps) {
   const [editing, setEditing] = useState(false);
 
   const [draftLink, setDraftLink] = useState<string>(s.link_url ?? '');
@@ -1082,22 +1132,17 @@ function QuickSupplierEditor({ s, typeLabel, qty, cargo, onPatch, onPatchCargo, 
       unit_weight_kg: clampNum(draftWeight, 0),
     });
 
-    const nextShip = clampNum(draftShip, 0);
-    if (Number.isFinite(nextShip) && nextShip !== Number(cargo?.price_per_kg ?? 0)) {
-      onPatchCargo(cargo.id, { price_per_kg: nextShip });
-    }
-
     setEditing(false);
-  }, [onPatch, onPatchCargo, s.id, draftLink, draftDesc, draftPrice, draftWeight, draftShip, cargo?.id, cargo?.price_per_kg]);
+  }, [onPatch, s.id, draftLink, draftDesc, draftPrice, draftWeight]);
 
   const hasLink = !!safeStr(s.link_url);
 
   const usdWithKgs = useCallback((usd: number, digits = 2) => {
-    return `$${fmtMoneyUSD(usd, digits)} (${fmtMoneyKGSFromUSD(usd)} сом)`;
+    return `$${fmtMoneyUSD(usd, digits)}  ·  ${fmtMoneyKGSFromUSD(usd)} сом`;
   }, []);
 
   return (
-    <div className="rounded-3xl bg-white/92 ring-1 ring-sky-200/80 shadow-[0_18px_55px_rgba(15,23,42,0.12)] overflow-hidden max-w-full">
+    <div className="rounded-3xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden max-w-full">
       <div className="p-4 sm:p-5">
         <div className="grid gap-2">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1133,10 +1178,15 @@ function QuickSupplierEditor({ s, typeLabel, qty, cargo, onPatch, onPatchCargo, 
               </button>
 
               {!editing ? (
-                <button type="button" onClick={startEdit} className={cls(UI.btnBase, UI.btnGhost, 'px-3 py-2 text-xs whitespace-nowrap')}>
-                  <Pencil className="h-4 w-4" />
-                  Изменить
-                </button>
+                <>
+                  <button type="button" onClick={startEdit} className={cls(UI.btnBase, UI.btnGhost, 'px-3 py-2 text-xs whitespace-nowrap')}>
+                    <Pencil className="h-4 w-4" />
+                    Изменить
+                  </button>
+                  <button type="button" onClick={() => onRemove(s.id)} className={cls(UI.btnBase, UI.btnDanger, 'px-3 py-2 text-xs whitespace-nowrap')} title="Удалить поставщика">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </>
               ) : (
                 <>
                   <button type="button" onClick={saveEdit} className={cls(UI.btnBase, UI.btnPrimary, 'px-3 py-2 text-xs whitespace-nowrap')}>
@@ -1155,28 +1205,37 @@ function QuickSupplierEditor({ s, typeLabel, qty, cargo, onPatch, onPatchCargo, 
 
         <div className="mt-4 rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/80 ring-1 ring-sky-200/70 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs text-slate-600">
-              Кол-во: <span className="font-extrabold text-slate-900 tabular-nums">{fmt(c.qty)}</span>
+            <div className="text-xs text-slate-400">
+              Кол-во: <span className="font-extrabold text-cyan-600 tabular-nums">{fmt(c.qty)}</span>
             </div>
-            <div className="text-[11px] text-slate-500">Курс: 1$ = {USD_TO_KGS} сом</div>
+            <div className="text-[11px] text-slate-400">Курс: 1$ = {USD_TO_KGS} сом</div>
           </div>
 
           <div className="mt-3 grid gap-2">
             <Row label="Цена за 1 шт" value={usdWithKgs(c.unitPrice)} />
             <Row label="Себестоимость товара" value={usdWithKgs(c.itemsCost)} />
-            <Row label="Вес 1 шт" value={`${fmtMoneyUSD(c.unitWeight, 3)} кг`} />
-            <Row label="Общий вес" value={`${fmtMoneyUSD(c.weightKg, 3)} кг`} />
+            <Row label="Вес 1 шт" value={`${fmtMoneyUSD(c.unitWeight, 5)} кг`} />
+            <Row label="Общий вес" value={`${fmtMoneyUSD(c.weightKg, 4)} кг`} />
             <Row label="Доставка ($/кг)" value={`$${fmtMoneyUSD(c.pricePerKg)} (${String(Math.round(c.pricePerKg * USD_TO_KGS))} сом/кг)`} />
             <Row label="Стоимость доставки" value={usdWithKgs(c.shipCost)} />
           </div>
 
-          <div className="mt-3 rounded-2xl bg-white/92 ring-1 ring-slate-200 p-3 flex items-center justify-between gap-3">
-            <div className="text-sm font-extrabold text-slate-900">Итого</div>
-            <div className="text-right">
-              <div className="text-[20px] font-extrabold text-slate-900 tabular-nums whitespace-nowrap">{`$${fmtMoneyUSD(c.total)}`}</div>
-              <div className="text-[11px] font-semibold text-slate-500 tabular-nums whitespace-nowrap">{`${fmtMoneyKGSFromUSD(c.total)} сом`}</div>
+          <div className="mt-3 rounded-2xl bg-cyan-50 ring-1 ring-cyan-200 p-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-bold text-slate-700">Итого</div>
+            <div className="flex items-baseline gap-3">
+              <div className="text-[20px] font-extrabold text-cyan-700 tabular-nums whitespace-nowrap">{`$${fmtMoneyUSD(c.total)}`}</div>
+              <div className="text-[20px] font-extrabold text-slate-800 tabular-nums whitespace-nowrap">{`${fmtMoneyKGSFromUSD(c.total)} сом`}</div>
             </div>
           </div>
+
+          {c.qty > 0 && c.total > 0 && (
+            <div className="mt-3 rounded-2xl bg-slate-50 ring-1 ring-slate-200 px-3 py-2 flex items-center justify-between gap-3">
+              <div className="text-[12px] text-slate-500">1 шт (товар + доставка)</div>
+              <div className="text-[12px] font-extrabold text-slate-700 tabular-nums">
+                ${fmtMoneyUSD(c.total / c.qty)}  ·  {fmtMoneyKGSFromUSD(c.total / c.qty)} сом
+              </div>
+            </div>
+          )}
 
           {(c.unitPrice === 0 || c.unitWeight === 0 || c.pricePerKg === 0) && (
             <div className="mt-3 rounded-2xl bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-[11px] text-amber-800">
@@ -1194,17 +1253,42 @@ function QuickSupplierEditor({ s, typeLabel, qty, cargo, onPatch, onPatchCargo, 
         {editing && (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="grid gap-1 md:col-span-2">
-              <div className="text-[11px] font-semibold text-slate-500">Ссылка</div>
+              <div className="text-[11px] font-semibold text-slate-400">Ссылка</div>
               <input className={UI.input} value={draftLink} onChange={(e) => setDraftLink(e.target.value)} placeholder="WeChat / Taobao / любая ссылка" />
             </div>
 
             <div className="grid gap-1 md:col-span-2">
-              <div className="text-[11px] font-semibold text-slate-500">Комментарий</div>
+              <div className="text-[11px] font-semibold text-slate-400">Маркетплейс</div>
+              <div className="flex flex-wrap gap-1.5">
+                {ICON_OPTIONS.map((o) => {
+                  const active = s.icon_key === o.key;
+                  return (
+                    <button
+                      key={o.key}
+                      type="button"
+                      onClick={() => onPatch(s.id, { icon_key: o.key })}
+                      className={cls(
+                        'flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium ring-1 transition',
+                        active
+                          ? 'bg-cyan-50 text-cyan-800 ring-cyan-300 shadow-sm'
+                          : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50',
+                      )}
+                    >
+                      <IconPick k={o.key} className="h-5 w-5" />
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-1 md:col-span-2">
+              <div className="text-[11px] font-semibold text-slate-400">Комментарий</div>
               <textarea className={cls(UI.textarea, 'min-h-[90px] resize-y')} value={draftDesc} onChange={(e) => setDraftDesc(e.target.value)} />
             </div>
 
             <div className="grid gap-1">
-              <div className="text-[11px] font-semibold text-slate-500">Цена за 1 шт (USD)</div>
+              <div className="text-[11px] font-semibold text-slate-400">Цена за 1 шт (USD)</div>
               <input
                 className={UI.input}
                 type="text"
@@ -1221,7 +1305,7 @@ function QuickSupplierEditor({ s, typeLabel, qty, cargo, onPatch, onPatchCargo, 
             </div>
 
             <div className="grid gap-1">
-              <div className="text-[11px] font-semibold text-slate-500">Вес 1 шт (кг)</div>
+              <div className="text-[11px] font-semibold text-slate-400">Вес 1 шт (кг)</div>
               <input
                 className={UI.input}
                 type="text"
@@ -1238,20 +1322,22 @@ function QuickSupplierEditor({ s, typeLabel, qty, cargo, onPatch, onPatchCargo, 
             </div>
 
             <div className="grid gap-1 md:col-span-2">
-              <div className="text-[11px] font-semibold text-slate-500">Доставка (USD / кг) — карго “{cargo?.name ?? '—'}”</div>
-              <input
-                className={UI.input}
-                type="text"
-                inputMode="decimal"
-                value={draftShip}
+              <div className="text-[11px] font-semibold text-slate-400">Карго для доставки</div>
+              <select
+                className={UI.select}
+                value={cargo?.id ?? ''}
                 onChange={(e) => {
-                  const v = acceptDecimalTyping(e.target.value);
-                  if (v !== null) setDraftShip(v);
+                  onSelectCargo(e.target.value);
+                  const picked = allCargos.find((c) => c.id === e.target.value);
+                  if (picked) setDraftShip(String(Number.isFinite(Number(picked.price_per_kg)) ? picked.price_per_kg : 0));
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-                }}
-              />
+              >
+                {allCargos.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name || c.id} — ${fmtMoneyUSD(c.price_per_kg)}/кг
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         )}
@@ -1262,11 +1348,11 @@ function QuickSupplierEditor({ s, typeLabel, qty, cargo, onPatch, onPatchCargo, 
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-white/92 ring-1 ring-slate-200 px-3 py-2 flex items-center justify-between gap-3">
+    <div className="rounded-2xl bg-white ring-1 ring-slate-200 px-3 py-2 flex items-center justify-between gap-3">
       <div className="text-[12px] text-slate-700 min-w-0">
         <span className="break-words">{label}</span>
       </div>
-      <div className="text-[12px] font-extrabold text-slate-900 tabular-nums whitespace-nowrap">{value}</div>
+      <div className="text-[12px] font-extrabold text-cyan-600 tabular-nums whitespace-nowrap">{value}</div>
     </div>
   );
 }
@@ -1291,8 +1377,10 @@ export default function SuppliersPage() {
   const [chinaCargos, setChinaCargos] = useState<ChinaCargo[]>([
     { id: 'cargo_1', name: 'Карго #1', address: '', price_per_kg: 0 },
     { id: 'cargo_2', name: 'Карго #2', address: '', price_per_kg: 0 },
+    { id: 'cargo_3', name: 'Карго #3', address: '', price_per_kg: 0 },
   ]);
   const [chinaCargoDefaultId, setChinaCargoDefaultId] = useState<string>('cargo_1');
+  const [cargoPerType, setCargoPerType] = useState<Record<string, string>>({});
 
   // ✅ по умолчанию свернуто
   const [cargoOpen, setCargoOpen] = useState(false);
@@ -1301,6 +1389,14 @@ export default function SuppliersPage() {
     const found = chinaCargos.find((c) => c.id === chinaCargoDefaultId);
     return found ?? chinaCargos[0] ?? { id: 'cargo_1', name: 'Карго', address: '', price_per_kg: 0 };
   }, [chinaCargos, chinaCargoDefaultId]);
+
+  const getCargoForType = useCallback(
+    (t: string): ChinaCargo => {
+      const id = cargoPerType[t] || chinaCargoDefaultId;
+      return chinaCargos.find((c) => c.id === id) ?? chinaCargos[0] ?? { id: 'cargo_1', name: 'Карго', address: '', price_per_kg: 0 };
+    },
+    [cargoPerType, chinaCargoDefaultId, chinaCargos],
+  );
 
   /* suppliers settings */
   const [itemTypes, setItemTypes] = useState<ItemTypeDef[]>(DEFAULT_ITEM_TYPES.map((t) => ({ ...t })));
@@ -1332,13 +1428,14 @@ export default function SuppliersPage() {
   /* autosave */
   const [busy, setBusy] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const saveTimer = useRef<number | null>(null);
 
   /* ui controls */
   const [quickType, setQuickType] = useState<AccType>('bag');
+  const [dirTab, setDirTab] = useState<AccType>('bag');
   const [quickPrefs, setQuickPrefs] = useState<QuickPrefs>({});
   const [copyMode, setCopyMode] = useState<'cn' | 'ru' | 'both'>('cn');
-  const [dirTab, setDirTab] = useState<AccType>('bag');
 
   const [preview, setPreview] = useState<{ cn: string; ru: string; supplier?: Supplier; template?: SupplierTemplate } | null>(null);
 
@@ -1436,6 +1533,7 @@ export default function SuppliersPage() {
       { id: 'cargo_2', name: 'Карго #2', address: '', price_per_kg: 0 },
     ] as ChinaCargo[],
     chinaCargoDefaultId: 'cargo_1' as string,
+    cargoPerType: {} as Record<string, string>,
   });
 
   useEffect(() => {
@@ -1456,6 +1554,9 @@ export default function SuppliersPage() {
   useEffect(() => {
     latestRef.current.chinaCargoDefaultId = chinaCargoDefaultId ?? 'cargo_1';
   }, [chinaCargoDefaultId]);
+  useEffect(() => {
+    latestRef.current.cargoPerType = cargoPerType ?? {};
+  }, [cargoPerType]);
 
   function makeSuppliersPayloadFromRef(): SuppliersSettings {
     const safeTypes = (latestRef.current.itemTypes ?? []).length
@@ -1513,7 +1614,7 @@ export default function SuppliersPage() {
         ? ({ ...consumablesRawRef.current } as ConsumablesSettings)
         : ({} as ConsumablesSettings);
 
-    const cargosIn = (latestRef.current.chinaCargos ?? []).slice(0, 2);
+    const cargosIn = (latestRef.current.chinaCargos ?? []).slice(0, 3);
     const cargos = cargosIn.map((c, i) => ({
       id: typeof c.id === 'string' ? c.id : `cargo_${i + 1}`,
       name: String(c.name ?? `Карго #${i + 1}`),
@@ -1532,6 +1633,7 @@ export default function SuppliersPage() {
     base.version = base.version ?? 1;
     base.china_cargos = cargos;
     base.china_cargo_default_id = defId;
+    base.cargo_per_type = latestRef.current.cargoPerType ?? {};
 
     return base;
   }
@@ -1570,6 +1672,14 @@ export default function SuppliersPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const setCargoForType = useCallback(
+    (t: string, cargoId: string) => {
+      setCargoPerType((prev) => ({ ...prev, [t]: cargoId }));
+      saveSoon();
+    },
+    [saveSoon],
+  );
 
   async function upsertSettings(key: string, payload: any) {
     try {
@@ -1626,6 +1736,7 @@ export default function SuppliersPage() {
       if (!r1.ok) errs.push(`Поставщики: сохранено локально (${(r1 as any).error})`);
       if (!r2.ok) errs.push(`Карго: сохранено локально (${(r2 as any).error})`);
       if (errs.length && mountedRef.current) setSaveErr(errs.join(' • '));
+      if (!errs.length && mountedRef.current) setLastSavedAt(new Date());
     } catch (e: any) {
       if (mountedRef.current) setSaveErr(e?.message ?? 'Не удалось сохранить настройки');
     } finally {
@@ -1699,6 +1810,15 @@ export default function SuppliersPage() {
     const { cargos, defId } = normalizeCargos(consumablesRawRef.current);
     setChinaCargos(cargos);
     setChinaCargoDefaultId(defId);
+
+    const cptRaw = consumablesRawRef.current?.cargo_per_type;
+    if (cptRaw && typeof cptRaw === 'object') {
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(cptRaw)) {
+        if (typeof v === 'string' && cargos.some((c) => c.id === v)) cleaned[k] = v;
+      }
+      setCargoPerType(cleaned);
+    }
 
     let s = normalizeSuppliersSettings(suppliersRaw);
 
@@ -1954,7 +2074,7 @@ export default function SuppliersPage() {
           type: t,
           display_name: `Поставщик ${list.length + 1}`,
           description: '',
-          icon_key: 'chat',
+          icon_key: 'taobao',
           link_url: '',
           unit_price_usd: 0,
           unit_weight_kg: 0,
@@ -2124,44 +2244,57 @@ export default function SuppliersPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className={UI.badgeIcon}>
-                <Truck className="h-5 w-5 text-white" />
+                <Truck className="h-5 w-5 text-white drop-shadow" />
               </div>
-
               <div className="min-w-0">
-                <h1 className="text-[28px] md:text-[32px] font-extrabold tracking-tight text-slate-900">Поставщики</h1>
-                {loading && <div className="mt-2 text-xs text-slate-500">Загрузка…</div>}
-                {err && <div className="mt-3 rounded-2xl bg-amber-50 text-amber-800 ring-1 ring-amber-200 px-3 py-2 text-sm">{err}</div>}
-                {saveErr && <div className="mt-3 rounded-2xl bg-amber-50 text-amber-800 ring-1 ring-amber-200 px-3 py-2 text-xs">{saveErr}</div>}
+                <h1 className="text-[26px] md:text-[30px] font-extrabold tracking-tight text-white">Поставщики</h1>
+                <p className="mt-0.5 text-[13px] text-slate-400">Карго, справочник и быстрые заказы</p>
+                {loading && <div className="mt-1 text-xs text-cyan-600 font-medium">Загрузка…</div>}
+                {err && <div className="mt-2 rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-200 px-3 py-2 text-xs">{err}</div>}
+                {saveErr && <div className="mt-1 rounded-xl bg-amber-50 text-amber-700 ring-1 ring-amber-200 px-3 py-2 text-xs">{saveErr}</div>}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
+              {busy ? (
+                <span className="text-xs text-indigo-500 font-medium animate-pulse">Сохранение…</span>
+              ) : lastSavedAt ? (
+                <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> {dtFmt(lastSavedAt)}
+                </span>
+              ) : null}
+              <button type="button" onClick={() => saveAllNow()} disabled={busy} className={cls(UI.btnBase, UI.btnPrimary, 'px-3 py-2')}>
+                <Save className="h-4 w-4" /> Сохранить
+              </button>
               <Link href={ROUTE_WAREHOUSE} className={cls(UI.btnBase, UI.btnGhost)}>
-                <ArrowLeft className="h-4 w-4" />
-                Назад
+                <ArrowLeft className="h-4 w-4" /> Назад
               </Link>
-
-              {busy && <span className="text-xs text-slate-700 rounded-full bg-white/90 ring-1 ring-slate-200 px-3 py-2">Сохранение…</span>}
             </div>
           </div>
         </div>
 
         {/* Cargo */}
         <div className={UI.sectionCard}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-900">Карго</div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-xl grid place-items-center bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.30)]">
+                <Truck className="h-4 w-4 text-white" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-100">Карго-компании</div>
+                <div className="text-[11px] text-slate-500">Адреса и тарифы доставки</div>
+              </div>
             </div>
 
-            <button type="button" className={cls(UI.btnBase, UI.btnGhost)} onClick={() => setCargoOpen((v) => !v)} title={cargoOpen ? 'Свернуть' : 'Развернуть'}>
+            <button type="button" className={cls(UI.btnBase, UI.btnGhost, 'px-3 py-1.5 text-xs')} onClick={() => setCargoOpen((v) => !v)}>
               {cargoOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               {cargoOpen ? 'Свернуть' : 'Развернуть'}
             </button>
           </div>
 
           {cargoOpen && (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {chinaCargos.slice(0, 2).map((c) => (
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {chinaCargos.slice(0, 3).map((c) => (
                 <CargoCard
                   key={c.id}
                   c={c}
@@ -2176,15 +2309,37 @@ export default function SuppliersPage() {
 
         {/* Main */}
         <div className={UI.sectionCard}>
-          <div className="text-sm font-semibold text-slate-900">Поставщики</div>
+          <div className="flex items-center gap-2.5 mb-4">
+            <div className="h-8 w-8 rounded-xl grid place-items-center bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.30)]">
+              <Package className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-slate-100">Поставщики и заказы</div>
+              <div className="text-[11px] text-slate-500">Быстрый заказ слева, справочник справа</div>
+            </div>
+          </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             {/* Quick order */}
-            <div className="rounded-3xl bg-white/92 ring-1 ring-sky-200/80 p-5 sm:p-6 shadow-[0_18px_55px_rgba(15,23,42,0.12)]">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-slate-500 truncate">
-                  Карго: <span className="font-semibold text-slate-900">{defaultCargo?.name ?? '—'}</span>
+            <div className={UI.innerCard}>
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="h-6 w-6 rounded-lg grid place-items-center bg-cyan-50 ring-1 ring-cyan-200">
+                    <ShoppingBag className="h-3.5 w-3.5 text-cyan-600" />
+                  </div>
+                  <div className="text-xs font-bold text-slate-700 uppercase tracking-wide">Быстрый заказ</div>
                 </div>
+                <select
+                  className="rounded-lg px-2 py-1 text-[11px] font-semibold bg-white text-slate-700 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+                  value={cargoPerType[quickType] || chinaCargoDefaultId}
+                  onChange={(e) => setCargoForType(quickType, e.target.value)}
+                >
+                  {chinaCargos.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || c.id}{c.id === chinaCargoDefaultId ? ' (глобальн.)' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="mt-4 grid gap-4">
@@ -2196,8 +2351,8 @@ export default function SuppliersPage() {
                     return (
                       <div key={g}>
                         <div className="mb-2 flex items-center justify-between gap-2">
-                          <div className="text-[11px] font-extrabold text-slate-700">{GROUP_LABEL[g]}</div>
-                          <div className="text-[11px] text-slate-500">{fmt(list.length)} шт.</div>
+                          <div className="text-[11px] font-semibold text-slate-600">{GROUP_LABEL[g]}</div>
+                          <div className="text-[11px] text-slate-400">{fmt(list.length)} шт.</div>
                         </div>
 
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -2205,21 +2360,30 @@ export default function SuppliersPage() {
                             const active = quickType === t.key;
                             const grp = itemGroupOf(t);
                             return (
-                              <button
-                                key={t.key}
-                                type="button"
-                                onClick={() => setQuickType(t.key)}
-                                className={cls('rounded-2xl p-3 text-left transition ring-1', typeTileClasses(active, grp))}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <span className={cls('h-10 w-10 rounded-2xl grid place-items-center ring-1 shrink-0', typeMiniIconBg(active, grp))}>
-                                    <ItemTypeIcon def={t} className={cls('h-5 w-5', active ? 'text-white' : 'text-slate-700')} />
-                                  </span>
-                                  <div className="min-w-0 flex-1">
-                                    <div className={cls('text-sm font-extrabold truncate', active ? 'text-white' : 'text-slate-900')}>{t.ru}</div>
+                              <div key={t.key} className={cls('relative rounded-2xl p-3 text-left transition ring-1 group', typeTileClasses(active, grp))}>
+                                <button
+                                  type="button"
+                                  onClick={() => setQuickType(t.key)}
+                                  className="w-full text-left"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <span className={cls('h-10 w-10 rounded-2xl grid place-items-center ring-1 shrink-0', typeMiniIconBg(active, grp))}>
+                                      <ItemTypeIcon def={t} className={cls('h-5 w-5', active ? 'text-white' : 'text-slate-700')} />
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <div className={cls('text-sm font-extrabold truncate', active ? 'text-white' : 'text-slate-900')}>{t.ru}</div>
+                                    </div>
                                   </div>
-                                </div>
-                              </button>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); removeItemType(t.key); }}
+                                  className="absolute top-1 right-1 h-5 w-5 rounded-full grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 hover:bg-rose-500 text-white"
+                                  title={`Удалить "${t.ru}"`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
                             );
                           })}
                         </div>
@@ -2257,16 +2421,16 @@ export default function SuppliersPage() {
                 <div className="grid gap-2">
                   <div className="flex items-end justify-between gap-2">
                     <div className="text-[12px] font-semibold text-slate-700">{itemRu(quickType)}</div>
-                    <div className="text-[11px] text-slate-500">
-                      Всего: <span className="font-extrabold text-slate-900 tabular-nums">{fmt((suppliers[quickType] ?? []).length)}</span>
+                    <div className="text-[11px] text-slate-400">
+                      Всего: <span className="font-extrabold text-cyan-600 tabular-nums">{fmt((suppliers[quickType] ?? []).length)}</span>
                     </div>
                   </div>
 
                   <div className="grid gap-3">
                     {(suppliers[quickType] ?? []).length === 0 ? (
-                      <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85 ring-1 ring-sky-200/80 p-6 text-center shadow-[0_18px_55px_rgba(15,23,42,0.10)]">
-                        <div className="text-slate-800 font-extrabold">Для этой позиции нет поставщиков</div>
-                        <div className="mt-1 text-sm text-slate-600">Добавь справа в “Справочнике”.</div>
+                      <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85 ring-1 ring-slate-200 p-6 text-center shadow-sm">
+                        <div className="text-slate-700 font-semibold">Для этой позиции нет поставщиков</div>
+                        <div className="mt-1 text-sm text-slate-400">Добавь справа в Справочнике.</div>
                       </div>
                     ) : (
                       (suppliers[quickType] ?? [])
@@ -2278,12 +2442,15 @@ export default function SuppliersPage() {
                             s={s}
                             typeLabel={itemRu(quickType)}
                             qty={safeQuickQty || 0}
-                            cargo={defaultCargo}
+                            cargo={getCargoForType(quickType)}
+                            allCargos={chinaCargos}
+                            onSelectCargo={(cid) => setCargoForType(quickType, cid)}
                             onPatch={(id, patch) => patchSupplier(quickType, id, patch)}
                             onPatchCargo={(cargoId, patch) => patchCargo(cargoId, patch)}
+                            onRemove={(id) => removeSupplier(quickType, id)}
                             onOrder={() => {
                               const qty = nInt(quickQty);
-                              runOrder({ t: quickType, qty, supplier: s, templateId: quickTemplateId, cargoId: chinaCargoDefaultId });
+                              runOrder({ t: quickType, qty, supplier: s, templateId: quickTemplateId, cargoId: cargoPerType[quickType] || chinaCargoDefaultId });
                             }}
                           />
                         ))
@@ -2292,23 +2459,23 @@ export default function SuppliersPage() {
                 </div>
 
                 {preview && (
-                  <div className="mt-1 rounded-3xl bg-white/92 ring-1 ring-sky-200/80 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.12)]">
+                  <div className="mt-1 rounded-3xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-sm font-extrabold text-slate-900">Предпросмотр</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="text-xs text-slate-400">
                         {preview.supplier?.display_name ?? '—'} • {preview.template?.name ?? '—'}
                       </div>
                     </div>
 
                     <div className="mt-3 grid gap-3">
                       <div>
-                        <div className="text-[11px] font-extrabold text-slate-500 mb-1">RU</div>
-                        <div className="whitespace-pre-wrap rounded-2xl bg-white/92 ring-1 ring-slate-200 p-3 text-sm text-slate-900 min-h-[110px]">{preview.ru}</div>
+                        <div className="text-[11px] font-semibold text-slate-500 mb-1">RU</div>
+                        <div className="whitespace-pre-wrap rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-3 text-sm text-slate-800 min-h-[110px]">{preview.ru}</div>
                       </div>
 
                       <div>
-                        <div className="text-[11px] font-extrabold text-slate-500 mb-1">CN</div>
-                        <div className="whitespace-pre-wrap rounded-2xl bg-white/92 ring-1 ring-slate-200 p-3 text-sm text-slate-900 min-h-[110px]">{preview.cn}</div>
+                        <div className="text-[11px] font-semibold text-slate-500 mb-1">CN</div>
+                        <div className="whitespace-pre-wrap rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-3 text-sm text-slate-800 min-h-[110px]">{preview.cn}</div>
                       </div>
 
                       <div className="flex flex-wrap gap-2">
@@ -2339,104 +2506,136 @@ export default function SuppliersPage() {
 
             {/* Directory + Templates */}
             <div className="grid gap-4">
-              {/* Directory */}
-              <div className="rounded-3xl bg-white/92 ring-1 ring-sky-200/80 p-6 shadow-[0_18px_55px_rgba(15,23,42,0.12)]">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-semibold text-slate-900">Справочник</div>
+              {/* Directory — collapsible groups */}
+              <div className={UI.innerCard}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-lg grid place-items-center bg-sky-50 ring-1 ring-sky-200">
+                      <Layers className="h-3.5 w-3.5 text-sky-600" />
+                    </div>
+                    <div className="text-xs font-bold text-slate-700 uppercase tracking-wide">Справочник</div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={openAddItemTypeModal} className="h-8 w-8 rounded-xl grid place-items-center text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition" title="Добавить позицию">
+                      <Plus className="h-4 w-4" />
+                    </button>
+                    <button type="button" onClick={openDeleteTypeModal} className="h-8 w-8 rounded-xl grid place-items-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition" title="Удалить позицию">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
 
-                {/* ✅ вкладки разделили на расходники/инвентарь */}
-                <div className="mt-4 grid gap-3">
+                <div className="mt-3 grid gap-2">
                   {(['consumable', 'asset'] as ItemGroup[]).map((g) => {
                     const list = (groupedTypes as any)[g] as ItemTypeDef[];
                     if (!list?.length) return null;
+                    const isOpen = g === 'consumable' ? dirTab === '__cons__' || list.some((t) => t.key === dirTab) : dirTab === '__asset__' || list.some((t) => t.key === dirTab);
+                    const groupCls = g === 'consumable'
+                      ? 'bg-gradient-to-r from-cyan-500 to-teal-500 text-white ring-cyan-400/30 shadow-[0_4px_16px_rgba(34,211,238,0.25)]'
+                      : 'bg-gradient-to-r from-cyan-500 to-indigo-500 text-white ring-indigo-400/30 shadow-[0_4px_16px_rgba(99,102,241,0.20)]';
+
                     return (
-                      <div key={g} className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] font-extrabold text-slate-500 mr-1">{GROUP_LABEL[g]}:</span>
-                        {list.map((t) => {
-                          const active = dirTab === t.key;
-                          const grp = itemGroupOf(t);
-                          return (
-                            <button
-                              key={t.key}
-                              type="button"
-                              className={cls(UI.btnBase, active ? UI.btnPrimary : UI.btnGhost, 'px-3 py-2')}
-                              onClick={() => setDirTab(t.key)}
-                              title={t.ru}
-                            >
-                              <ItemTypeIcon def={t} className="h-4 w-4" />
-                              {t.ru}
-                              {!active && (
-                                <span
+                      <div key={g}>
+                        {/* Group header — clickable to expand */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const first = list[0]?.key;
+                            if (isOpen && dirTab !== '__none__') {
+                              setDirTab('__none__');
+                            } else if (first) {
+                              setDirTab(first);
+                            }
+                          }}
+                          className={cls(
+                            'w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left transition ring-1',
+                            isOpen ? `${groupCls} font-semibold` : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100 hover:text-slate-800',
+                          )}
+                        >
+                          {isOpen ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
+                          <span className="text-sm font-semibold flex-1">{GROUP_LABEL[g]}</span>
+                          <span className={cls('text-xs font-medium', isOpen ? 'text-white/70' : 'text-slate-400')}>{list.length}</span>
+                        </button>
+
+                        {/* Expanded items */}
+                        {isOpen && (
+                          <div className="mt-1.5 ml-2 grid gap-1">
+                            {list.map((t) => {
+                              const active = dirTab === t.key;
+                              const supCount = (suppliers[t.key] ?? []).length;
+                              return (
+                                <button
+                                  key={t.key}
+                                  type="button"
+                                  onClick={() => setDirTab(t.key)}
                                   className={cls(
-                                    'ml-1 inline-block h-2 w-2 rounded-full ring-1',
-                                    grp === 'consumable' ? 'bg-emerald-400 ring-emerald-200' : 'bg-violet-400 ring-violet-200',
+                                    'flex items-center gap-2.5 rounded-xl px-3 py-2 text-left transition ring-1 text-sm',
+                                    active
+                                      ? 'bg-cyan-50 text-cyan-800 ring-cyan-300'
+                                      : 'bg-white text-slate-600 ring-slate-200 hover:bg-cyan-50/40 hover:text-slate-800',
                                   )}
-                                  aria-hidden
-                                />
-                              )}
-                            </button>
-                          );
-                        })}
+                                >
+                                  <ItemTypeIcon def={t} className={cls('h-4 w-4 shrink-0', active ? 'text-cyan-400' : 'text-slate-500')} />
+                                  <span className={cls('flex-1 truncate', active ? 'font-semibold' : 'font-medium')}>{t.ru}</span>
+                                  {supCount > 0 && <span className={cls('text-[11px] tabular-nums font-medium rounded-full px-1.5 py-0.5', active ? 'bg-cyan-100 text-cyan-700' : 'bg-slate-100 text-slate-500')}>{supCount}</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
-
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <button type="button" className={cls(UI.btnBase, UI.btnGhost, 'px-3 py-2')} onClick={openAddItemTypeModal} title="Добавить новую позицию">
-                      <Plus className="h-4 w-4" />
-                      Плюс позиция
-                    </button>
-
-                    <button type="button" className={cls(UI.btnBase, UI.btnDanger, 'px-3 py-2')} onClick={openDeleteTypeModal} title="Удалить позицию из справочника">
-                      <Trash2 className="h-4 w-4" />
-                      Удалить позицию
-                    </button>
-                  </div>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between gap-2">
-                  <div className="text-xs text-slate-500">
-                    Всего: <span className="font-extrabold text-slate-900 tabular-nums">{fmt((suppliers[dirTab] ?? []).length)}</span>
-                  </div>
-                  <button type="button" className={cls(UI.btnBase, UI.btnGhost, 'px-3 py-2 text-xs')} onClick={() => addSupplier(dirTab)}>
-                    <Plus className="h-4 w-4" />
-                    Добавить
-                  </button>
-                </div>
-
-                <div className="mt-4 grid gap-3">
-                  {(suppliers[dirTab] ?? [])
-                    .slice()
-                    .sort((a, b) => Number(a.sort_order ?? 9999) - Number(b.sort_order ?? 9999))
-                    .map((s) => (
-                      <SupplierCard
-                        key={s.id}
-                        s={s}
-                        typeDef={itemByKey[s.type]}
-                        typeLabel={itemRu(s.type)}
-                        onPatch={(id, p) => patchSupplier(s.type, id, p)}
-                        onRemove={(id) => removeSupplier(s.type, id)}
-                        onMakeDefault={(id) => setDefaultSupplier(s.type, id)}
-                      />
-                    ))}
-
-                  {(suppliers[dirTab] ?? []).length === 0 && (
-                    <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85 ring-1 ring-sky-200/80 p-8 text-center shadow-[0_18px_55px_rgba(15,23,42,0.12)]">
-                      <div className="text-slate-800 font-extrabold">Пока пусто</div>
-                      <div className="mt-1 text-sm text-slate-600">Добавь поставщика.</div>
+                {/* Supplier list for selected type */}
+                {dirTab && dirTab !== '__none__' && !dirTab.startsWith('__') && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="text-xs font-semibold text-slate-700">{itemRu(dirTab)}</div>
+                      <button type="button" className={cls(UI.btnBase, UI.btnGhost, 'px-2.5 py-1.5 text-xs')} onClick={() => addSupplier(dirTab)}>
+                        <Plus className="h-3.5 w-3.5" /> Добавить
+                      </button>
                     </div>
-                  )}
-                </div>
+
+                    <div className="grid gap-3">
+                      {(suppliers[dirTab] ?? [])
+                        .slice()
+                        .sort((a, b) => Number(a.sort_order ?? 9999) - Number(b.sort_order ?? 9999))
+                        .map((s) => (
+                          <SupplierCard
+                            key={s.id}
+                            s={s}
+                            typeDef={itemByKey[s.type]}
+                            typeLabel={itemRu(s.type)}
+                            onPatch={(id, p) => patchSupplier(s.type, id, p)}
+                            onRemove={(id) => removeSupplier(s.type, id)}
+                            onMakeDefault={(id) => setDefaultSupplier(s.type, id)}
+                          />
+                        ))}
+
+                      {(suppliers[dirTab] ?? []).length === 0 && (
+                        <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-6 text-center">
+                          <div className="text-slate-500 text-sm">Нет поставщиков</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Templates (collapsible) */}
-              <div className="rounded-3xl bg-white/92 ring-1 ring-sky-200/80 p-6 shadow-[0_18px_55px_rgba(15,23,42,0.12)]">
+              <div className={UI.innerCard}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">Шаблоны</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Всего: <span className="font-extrabold text-slate-900 tabular-nums">{fmt((templates ?? []).length)}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-lg grid place-items-center bg-teal-50 ring-1 ring-teal-200">
+                        <FileText className="h-3.5 w-3.5 text-teal-600" />
+                      </div>
+                      <div className="text-xs font-bold text-slate-700 uppercase tracking-wide">Шаблоны</div>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">
+                      Всего: <span className="font-extrabold text-cyan-600 tabular-nums">{fmt((templates ?? []).length)}</span>
                     </div>
                   </div>
 
@@ -2463,11 +2662,11 @@ export default function SuppliersPage() {
                 {templatesOpen && (
                   <div className="mt-4 grid gap-3">
                     {(templates ?? []).map((t) => (
-                      <div key={t.id} className="rounded-3xl bg-white/92 ring-1 ring-slate-200 p-4 shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
+                      <div key={t.id} className="rounded-3xl bg-white ring-1 ring-slate-200 p-4 shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <div className="text-sm font-extrabold text-slate-900 truncate max-w-[420px]">{t.name}</div>
+                              <div className="text-sm font-bold text-slate-900 truncate max-w-[420px]">{t.name}</div>
                               {t.is_default && (
                                 <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-sky-50 text-sky-700 ring-1 ring-sky-200">
                                   <Star className="h-3.5 w-3.5" /> Default
@@ -2491,17 +2690,17 @@ export default function SuppliersPage() {
 
                         <div className="mt-3 grid gap-2">
                           <div className="grid gap-1">
-                            <div className="text-[11px] font-semibold text-slate-500">Название</div>
+                            <div className="text-[11px] font-semibold text-slate-400">Название</div>
                             <input className={UI.input} value={t.name} onChange={(e) => patchTemplate(t.id, { name: e.target.value })} />
                           </div>
 
                           <div className="grid gap-1">
-                            <div className="text-[11px] font-semibold text-slate-500">RU</div>
+                            <div className="text-[11px] font-semibold text-slate-400">RU</div>
                             <textarea className={cls(UI.textarea, 'min-h-[110px] resize-y')} value={t.ru_template} onChange={(e) => patchTemplate(t.id, { ru_template: e.target.value })} />
                           </div>
 
                           <div className="grid gap-1">
-                            <div className="text-[11px] font-semibold text-slate-500">CN</div>
+                            <div className="text-[11px] font-semibold text-slate-400">CN</div>
                             <textarea className={cls(UI.textarea, 'min-h-[110px] resize-y')} value={t.cn_template} onChange={(e) => patchTemplate(t.id, { cn_template: e.target.value })} />
                           </div>
                         </div>
@@ -2511,7 +2710,7 @@ export default function SuppliersPage() {
                 )}
 
                 {!templatesOpen && (
-                  <div className="mt-4 rounded-2xl bg-slate-50 ring-1 ring-slate-200 px-3 py-2 text-[12px] text-slate-600">
+                  <div className="mt-4 rounded-2xl bg-slate-50 ring-1 ring-slate-200 px-3 py-2 text-[12px] text-slate-400">
                     Шаблоны свернуты. Нажми «Развернуть», чтобы редактировать.
                   </div>
                 )}
@@ -2519,26 +2718,25 @@ export default function SuppliersPage() {
             </div>
           </div>
         </div>
-
         {/* Modal: Add item type */}
         {addTypeOpen && (
           <div className="fixed inset-0 z-[260] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-[720px] rounded-2xl bg-white/95 ring-1 ring-sky-200 shadow-[0_30px_120px_rgba(0,0,0,0.65)] overflow-hidden">
+            <div className="w-full max-w-[720px] rounded-2xl bg-white ring-1 ring-slate-200 shadow-[0_30px_100px_rgba(0,0,0,0.30)] overflow-hidden">
               <div className="p-5 sm:p-6">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm font-extrabold text-slate-900">Новая позиция</div>
-                    <div className="mt-1 text-xs text-slate-600">Только тип (расходник/инвентарь), название и иконка.</div>
+                    <div className="text-sm font-bold text-slate-900">Новая позиция</div>
+                    <div className="mt-1 text-xs text-slate-400">Только тип (расходник/инвентарь), название и иконка.</div>
                   </div>
                   <button type="button" className="h-9 w-9 rounded-xl grid place-items-center hover:bg-slate-100" onClick={() => setAddTypeOpen(false)} title="Закрыть">
-                    <X className="h-5 w-5 text-slate-700" />
+                    <X className="h-5 w-5 text-slate-500" />
                   </button>
                 </div>
 
                 <div className="mt-4 grid gap-4">
                   {/* Group */}
                   <div className="grid gap-2">
-                    <div className="text-[11px] font-semibold text-slate-500">Тип</div>
+                    <div className="text-[11px] font-semibold text-slate-400">Тип</div>
                     <div className="flex flex-wrap gap-2">
                       {(['consumable', 'asset'] as ItemGroup[]).map((g) => {
                         const active = addTypeGroup === g;
@@ -2558,13 +2756,13 @@ export default function SuppliersPage() {
 
                   {/* Name */}
                   <div className="grid gap-2">
-                    <div className="text-[11px] font-semibold text-slate-500">Название</div>
+                    <div className="text-[11px] font-semibold text-slate-400">Название</div>
                     <input className={UI.input} value={addTypeName} onChange={(e) => setAddTypeName(e.target.value)} placeholder="Напр.: Полки / Рефрактометр / Листовки" />
                   </div>
 
                   {/* Icon */}
                   <div className="grid gap-2">
-                    <div className="text-[11px] font-semibold text-slate-500">Иконка</div>
+                    <div className="text-[11px] font-semibold text-slate-400">Иконка</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                       {ITEM_TYPE_ICON_OPTIONS.map((o) => {
                         const active = addTypeIcon === o.key;
@@ -2575,15 +2773,15 @@ export default function SuppliersPage() {
                             onClick={() => setAddTypeIcon(o.key)}
                             className={cls(
                               'rounded-2xl p-3 text-left ring-1 transition',
-                              active ? 'bg-sky-50 ring-sky-200 shadow-[0_12px_32px_rgba(15,23,42,0.10)]' : 'bg-white/92 ring-slate-200 hover:bg-white',
+                              active ? 'bg-cyan-50 ring-cyan-200' : 'bg-white ring-slate-200 hover:bg-slate-50',
                             )}
                           >
                             <div className="flex items-center gap-3">
-                              <span className={cls('h-10 w-10 rounded-2xl grid place-items-center ring-1', active ? 'bg-white ring-sky-200' : 'bg-slate-50 ring-slate-200')}>
-                                <ItemTypeIcon def={{ key: 'x', ru: 'x', ru_singular: 'x', cn: 'x', icon: o.key, group: addTypeGroup }} className="h-5 w-5 text-slate-700" />
+                              <span className={cls('h-10 w-10 rounded-2xl grid place-items-center ring-1', active ? 'bg-cyan-50 ring-cyan-200' : 'bg-slate-50 ring-slate-200')}>
+                                <ItemTypeIcon def={{ key: 'x', ru: 'x', ru_singular: 'x', cn: 'x', icon: o.key, group: addTypeGroup }} className="h-5 w-5 text-slate-500" />
                               </span>
                               <div className="min-w-0">
-                                <div className="text-sm font-extrabold text-slate-900 truncate">{o.label}</div>
+                                <div className="text-sm font-bold text-slate-900 truncate">{o.label}</div>
                               </div>
                             </div>
                           </button>
@@ -2610,20 +2808,20 @@ export default function SuppliersPage() {
         {/* Modal: Delete item type */}
         {deleteTypeOpen && (
           <div className="fixed inset-0 z-[260] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-[640px] rounded-2xl bg-white/95 ring-1 ring-sky-200 shadow-[0_30px_120px_rgba(0,0,0,0.65)] overflow-hidden">
+            <div className="w-full max-w-[640px] rounded-2xl bg-white ring-1 ring-slate-200 shadow-[0_30px_100px_rgba(0,0,0,0.30)] overflow-hidden">
               <div className="p-5 sm:p-6">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm font-extrabold text-slate-900">Удалить позицию</div>
-                    <div className="mt-1 text-xs text-slate-600">Выбери позицию справочника. Это удалит и её поставщиков, и быстрые настройки.</div>
+                    <div className="text-sm font-bold text-slate-900">Удалить позицию</div>
+                    <div className="mt-1 text-xs text-slate-400">Выбери позицию справочника. Это удалит и её поставщиков, и быстрые настройки.</div>
                   </div>
                   <button type="button" className="h-9 w-9 rounded-xl grid place-items-center hover:bg-slate-100" onClick={() => setDeleteTypeOpen(false)} title="Закрыть">
-                    <X className="h-5 w-5 text-slate-700" />
+                    <X className="h-5 w-5 text-slate-500" />
                   </button>
                 </div>
 
                 <div className="mt-4 grid gap-2">
-                  <div className="text-[11px] font-semibold text-slate-500">Позиции</div>
+                  <div className="text-[11px] font-semibold text-slate-400">Позиции</div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {(itemTypes ?? []).map((t) => {
                       const active = deleteTypeKey === t.key;
@@ -2667,7 +2865,7 @@ export default function SuppliersPage() {
         {/* Toast */}
         {toast && (
           <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[300]">
-            <div className="rounded-full bg-white/95 px-4 py-2 text-sm font-semibold text-slate-800 ring-1 ring-slate-200 shadow-[0_16px_40px_rgba(15,23,42,0.25)]">{toast}</div>
+            <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-800 ring-1 ring-slate-200 shadow-[0_8px_30px_rgba(15,23,42,0.20)]">{toast}</div>
           </div>
         )}
       </div>

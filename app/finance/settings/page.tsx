@@ -458,9 +458,9 @@ export default function FinanceSettingsPage() {
               </div>
             </div>
 
-            <IconLinkButton href={`/finance/overview?month=${monthStr}&branch=${branchId}`}>
+            <IconLinkButton href="/admin/stats">
               <ArrowLeft className="h-4 w-4" />
-              Назад к финансам
+              Назад к статистике
             </IconLinkButton>
           </div>
         </div>

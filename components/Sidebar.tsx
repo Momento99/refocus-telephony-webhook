@@ -4,57 +4,26 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Store,
-  ReceiptText,
-  LineChart,
-  WalletCards,
-  ChevronsLeft,
-  ChevronsRight,
-  LogOut,
-  LogIn,
-  Wallet,
-  Boxes,
-  FileText,
-  Settings2,
-  Timer,
-  PackageCheck,
-  Users,
-  ShoppingCart,
+  ReceiptText, LineChart, WalletCards,
+  ChevronLeft, ChevronRight,
+  LogOut, LogIn, Boxes, FileText, Settings2,
+  PackageCheck, Users, Bell, BrainCircuit, Globe,
+  Landmark, Map, MessageCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
-import { Role } from "@/lib/access";
+import { Role } from "@/lib/getUserRole";
 
-/* =============================
-   Настройки UI
-============================= */
-const LOGO_SRC = "/brand/refocus-logo.png"; // /public/brand/refocus-logo.png
-const NEW_BADGE_TTL_DAYS = 14; // "NEW" исчезает через N дней с момента первого показа
 
-/* =============================
-   Типы меню
-============================= */
-type MenuItem = {
-  label: string;
-  href: string;
-  icon: ElementType;
-  badgeText?: string;
-  badgeKey?: string;
-};
+type MenuItem = { label: string; href: string; icon: ElementType };
+type MenuSection = { title: string; items: MenuItem[] };
 
-type MenuSection = {
-  title: string;
-  items: MenuItem[];
-};
-
-/* =============================
-   Меню (секции)
-============================= */
 const MENU_SECTIONS: MenuSection[] = [
   {
     title: "Операции",
     items: [
       { label: "Сверка выручки", href: "/finance/reconciliation", icon: ReceiptText },
+      { label: "Налоги", href: "/taxes", icon: Landmark },
       { label: "Заказы", href: "/orders", icon: PackageCheck },
       { label: "Клиенты", href: "/customers", icon: Users },
     ],
@@ -62,56 +31,49 @@ const MENU_SECTIONS: MenuSection[] = [
   {
     title: "Персонал",
     items: [
-      { label: "Зарплаты", href: "/settings/payroll", icon: WalletCards },
-      { label: "Посещаемость", href: "/settings/attendance", icon: Timer },
+      { label: "Зарплаты и посещаемость", href: "/settings/payroll", icon: WalletCards },
     ],
   },
   {
-    title: "Склад и закуп",
+    title: "Склад",
     items: [
-      {
-        label: "Закуп линз",
-        href: "/admin/lens-procurement",
-        icon: ShoppingCart,
-        badgeText: "NEW",
-        badgeKey: "lens-procurement",
-      },
       { label: "Склад", href: "/warehouse", icon: Boxes },
     ],
   },
   {
     title: "Аналитика",
     items: [
-      { label: "Статистика", href: "/admin/stats", icon: LineChart },
-      { label: "Финансы", href: "/finance/overview", icon: Wallet },
+      { label: "Статистика и финансы", href: "/admin/stats", icon: LineChart },
+      { label: "AI-центр", href: "/admin/ai-employee-messages", icon: BrainCircuit },
+      { label: "WhatsApp контроль", href: "/admin/whatsapp-control", icon: MessageCircle },
+      { label: "Карта системы", href: "/admin/system-map", icon: Map },
+    ],
+  },
+  {
+    title: "Франшиза",
+    items: [
+      { label: "Карта и управление", href: "/admin/franchise-map", icon: Globe },
     ],
   },
   {
     title: "Настройки",
     items: [
-      { label: "Оправы и штрих-коды", href: "/settings/barcodes/overview", icon: FileText },
+      { label: "Уведомления", href: "/admin/notifications", icon: Bell },
+      { label: "Штрих-коды", href: "/settings/barcodes/overview", icon: FileText },
       { label: "Цены на линзы", href: "/settings/lens-prices", icon: LineChart },
       { label: "Настройки", href: "/settings", icon: Settings2 },
     ],
   },
 ];
 
-/* =============================
-   Sidebar
-============================= */
 export default function Sidebar({ role }: { role: Role }) {
   void role;
-
   const pathname = usePathname();
   const router = useRouter();
 
   const [collapsed, setCollapsed] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-
-  const [logoError, setLogoError] = useState(false);
-
-  useEffect(() => setHydrated(true), []);
+  const [unreadFranchise, setUnreadFranchise] = useState(0);
 
   useEffect(() => {
     const supabase = getBrowserSupabase();
@@ -129,14 +91,36 @@ export default function Sidebar({ role }: { role: Role }) {
 
   useEffect(() => {
     localStorage.setItem("refocus.sidebar.collapsed", collapsed ? "1" : "0");
-    document.documentElement.style.setProperty("--sidebar-width", collapsed ? "5rem" : "18rem");
+    document.documentElement.style.setProperty("--sidebar-width", collapsed ? "4.5rem" : "16rem");
   }, [collapsed]);
 
-  const avatarLetter = useMemo(() => {
-    if (!userEmail) return "G";
-    const ch = userEmail.trim()[0] ?? "U";
-    return ch.toUpperCase();
-  }, [userEmail]);
+  // Unread franchise messages
+  useEffect(() => {
+    const s = getBrowserSupabase();
+    (async () => {
+      const { count } = await s.from("franchise_messages").select("id", { count: "exact", head: true }).eq("sender", "franchise").eq("is_read", false);
+      setUnreadFranchise(count || 0);
+    })();
+    const ch = s.channel("crm-sidebar-unread")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "franchise_messages" }, (p: any) => {
+        if (p.new?.sender === "franchise") setUnreadFranchise((prev) => prev + 1);
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "franchise_messages" }, (p: any) => {
+        if (p.new?.is_read && p.old && !p.old.is_read && p.new?.sender === "franchise") setUnreadFranchise((prev) => Math.max(0, prev - 1));
+      })
+      .subscribe();
+    return () => { s.removeChannel(ch); };
+  }, []);
+
+  function isActive(href: string) {
+    if (pathname === href) return true;
+    if (href === "/settings/barcodes/overview" && pathname.startsWith("/settings/barcodes")) return true;
+    if (href === "/admin/notifications" && pathname.startsWith("/admin/notifications")) return true;
+    if (href === "/admin/ai-employee-messages" && pathname.startsWith("/admin/ai-employee-messages")) return true;
+    if (href === "/admin/franchise-map" && pathname.startsWith("/admin/franchise")) return true;
+    if (href === "/taxes" && pathname.startsWith("/taxes")) return true;
+    return false;
+  }
 
   async function handleLogout() {
     const supabase = getBrowserSupabase();
@@ -145,338 +129,110 @@ export default function Sidebar({ role }: { role: Role }) {
     router.push("/login");
   }
 
-  function isActiveHref(href: string) {
-    const isBarcodes = href === "/settings/barcodes/overview";
-    return pathname === href || (isBarcodes && pathname.startsWith("/settings/barcodes"));
-  }
-
-  // "NEW" авто-скрытие по TTL (с момента первого показа)
-  function shouldShowBadge(badgeKey?: string) {
-    if (!hydrated) return false;
-    if (!badgeKey) return false;
-
-    const firstSeenKey = `refocus.badge.${badgeKey}.firstSeenAt`;
-    const raw = localStorage.getItem(firstSeenKey);
-    let firstSeenAt = raw ? Number(raw) : 0;
-
-    if (!firstSeenAt || Number.isNaN(firstSeenAt)) {
-      firstSeenAt = Date.now();
-      localStorage.setItem(firstSeenKey, String(firstSeenAt));
-    }
-
-    const ttlMs = NEW_BADGE_TTL_DAYS * 24 * 60 * 60 * 1000;
-    return Date.now() - firstSeenAt < ttlMs;
-  }
+  const avatarLetter = useMemo(() => {
+    if (!userEmail) return "G";
+    return (userEmail.trim()[0] ?? "U").toUpperCase();
+  }, [userEmail]);
 
   return (
     <aside
-      className={[
-        // ✅ ФИКС: убрали "relative", оставили только fixed → сайдбар реально фиксированный при любом скролле
-        "fixed left-0 top-0 z-50 isolate h-screen",
-        collapsed ? "w-20" : "w-72",
-        "text-slate-100 shadow-2xl flex flex-col rounded-none rounded-r-2xl",
-        "border-r border-sky-500/20",
-      ].join(" ")}
+      className={`fixed top-0 left-0 z-30 flex h-full flex-col border-r transition-all duration-300 ${collapsed ? "w-[4.5rem]" : "w-64"}`}
       style={{
-        backgroundImage: `
-          radial-gradient(1100px 700px at -10% 0%, rgba(56,189,248,0.30), transparent 65%),
-          radial-gradient(900px 600px at 115% 110%, rgba(79,70,229,0.30), transparent 65%),
-          linear-gradient(180deg, #020617 0%, #02091f 45%, #020617 100%)
-        `,
-        backgroundRepeat: "no-repeat",
-        backgroundColor: "#020617",
+        background: "linear-gradient(180deg, #04070e, #030509)",
+        borderColor: "rgba(56,189,248,0.04)",
+        boxShadow: "4px 0 32px rgba(0,0,0,0.6)",
       }}
     >
-      {/* top highlight */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-
-      {/* ❌ УДАЛЕНО: именно это давало “боковую штучку/полоску” */}
-      {/*
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-white/14 via-white/6 to-transparent" />
-      */}
-
-      {/* grain */}
-      <div className="pointer-events-none absolute inset-0 opacity-[0.055] mix-blend-overlay [background-size:3px_3px] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.45)_1px,transparent_0)]" />
-
-      {/* Шапка */}
-      <div className="px-4 pt-4 pb-3">
-        <div className="flex items-center gap-3">
-          {/* Logo tile */}
-          <div className="relative h-10 w-10 rounded-2xl ring-1 ring-sky-200/65 bg-gradient-to-br from-sky-500/35 via-indigo-500/20 to-cyan-400/25 grid place-items-center shadow-[0_10px_30px_rgba(56,189,248,0.55)] overflow-hidden">
-            {/* glossy highlight */}
-            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/18 via-transparent to-transparent" />
-
-            {!logoError ? (
-              <Image
-                src={LOGO_SRC}
-                alt="Refocus"
-                fill
-                priority
-                onError={() => setLogoError(true)}
-                className="object-cover scale-[0.90]"
-                style={{ objectPosition: "32% 20%" }}
-              />
-            ) : (
-              <Store size={20} strokeWidth={1.8} className="relative text-slate-900" />
-            )}
-
-            {/* ❌ УДАЛЕНО: это “штучка” в углу плитки */}
-            {/*
-            <span
-              className={[
-                "absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-slate-950",
-                userEmail
-                  ? "bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.75)]"
-                  : "bg-slate-400/70",
-              ].join(" ")}
-            />
-            */}
+      {/* Brand */}
+      <div className="flex items-center gap-3.5 border-b px-4 py-5" style={{ borderColor: "rgba(56,189,248,0.06)" }}>
+        <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 shadow-[0_2px_10px_rgba(56,189,248,0.2)] overflow-hidden">
+          <Image src="/brand/refocus-logo.png" alt="Refocus" width={48} height={48} priority className="h-12 w-12 object-contain scale-110" />
+        </div>
+        {!collapsed && (
+          <div>
+            <div className="font-kiona text-[13px] uppercase tracking-[0.25em] text-cyan-400 leading-normal">
+              REFOCUS
+            </div>
+            <div className="text-[10px] uppercase tracking-[0.15em] font-medium text-slate-600 mt-0.5">
+              CRM · Управление
+            </div>
           </div>
+        )}
+      </div>
 
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto py-3 px-2">
+        {MENU_SECTIONS.map((section) => (
+          <div key={section.title} className="mb-3">
+            {!collapsed && (
+              <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                {section.title}
+              </div>
+            )}
+            {section.items.map((item) => {
+              const active = isActive(item.href);
+              const Icon = item.icon;
+              const showBadge = item.href === "/admin/franchise-map" && unreadFranchise > 0;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-150 ${
+                    active
+                      ? "bg-cyan-500/10 text-cyan-300 shadow-[inset_3px_0_0_rgb(34,211,238),0_2px_8px_rgba(56,189,248,0.08)]"
+                      : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                  }`}
+                >
+                  <Icon
+                    className={`h-[18px] w-[18px] shrink-0 ${active ? "text-cyan-400" : "text-slate-500 group-hover:text-slate-300"}`}
+                    strokeWidth={1.8}
+                  />
+                  {!collapsed && <span className="font-medium flex-1 truncate">{item.label}</span>}
+                  {showBadge && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white px-1.5 shadow-[0_0_8px_rgba(239,68,68,0.4)]">
+                      {unreadFranchise}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+
+      {/* User card + collapse */}
+      <div className="border-t p-3" style={{ borderColor: "rgba(56,189,248,0.08)" }}>
+        <div className={`mb-2 flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-xs font-bold text-white shadow-sm">
+            {avatarLetter}
+          </div>
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-semibold leading-tight font-[Kiona] text-slate-50 tracking-wide">
-                REFOCUS CRM
-              </div>
-              <div className="mt-0.5 text-[11px] text-sky-200/95 tracking-[0.22em] uppercase">
-                Центр управления сетью
-              </div>
+              <div className="truncate text-xs font-semibold text-slate-200">{userEmail || "Гость"}</div>
+              <div className="truncate text-[10px] text-slate-500">{userEmail ? "активен" : "войти"}</div>
             </div>
           )}
         </div>
 
-        {/* ✅ Новый “не страшный” разделитель: мягкий блик вместо тёмной линии */}
-        <div className="mt-4">
-          <div className="h-px bg-gradient-to-r from-transparent via-sky-200/20 to-transparent" />
-          <div className="-mt-px h-px bg-gradient-to-r from-transparent via-cyan-300/10 to-transparent blur-[0.6px]" />
+        <div className="flex items-center gap-1">
+          {userEmail ? (
+            <button onClick={handleLogout}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors">
+              <LogOut className="h-3.5 w-3.5" />
+              {!collapsed && "Выйти"}
+            </button>
+          ) : (
+            <Link href="/login"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-white/5 hover:text-slate-300 transition-colors">
+              <LogIn className="h-3.5 w-3.5" />
+              {!collapsed && "Войти"}
+            </Link>
+          )}
+          <button onClick={() => setCollapsed((v) => !v)}
+            className="flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300 transition-colors">
+            {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+          </button>
         </div>
-      </div>
-
-      {/* Навигация */}
-      <div className="relative flex-1">
-        {/* fade masks */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-slate-950/80 to-transparent z-10" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-slate-950/80 to-transparent z-10" />
-
-        <nav className="h-full px-3 py-4 overflow-y-auto">
-          {!hydrated ? (
-            <div className="space-y-2">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="h-11 rounded-2xl bg-white/10 animate-pulse" />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {MENU_SECTIONS.map((section, si) => (
-                <div key={section.title} className={si === 0 ? "" : "pt-1"}>
-                  {!collapsed && (
-                    <div className="px-3 pb-2">
-                      <div className="text-[11px] uppercase tracking-[0.24em] text-sky-200/70">
-                        {section.title}
-                      </div>
-                      <div className="mt-2 h-px bg-gradient-to-r from-white/10 via-white/5 to-transparent" />
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    {section.items.map((it) => {
-                      const Icon = it.icon;
-                      const active = isActiveHref(it.href);
-
-                      const base =
-                        "group relative flex items-center rounded-2xl ring-1 focus:outline-none transition-all duration-200 select-none";
-                      const pad = collapsed ? "h-11 px-0 justify-center" : "h-11 px-3";
-
-                      const normal =
-                        "bg-white/[0.02] hover:bg-white/[0.06] ring-white/6 hover:ring-sky-300/30 " +
-                        "hover:-translate-y-0.5 active:translate-y-0 " +
-                        "shadow-[0_0_0_rgba(0,0,0,0)] hover:shadow-[0_14px_30px_rgba(2,6,23,0.65)]";
-
-                      const activeCls =
-                        "ring-cyan-200/55 shadow-[0_16px_40px_rgba(2,6,23,0.80)] " +
-                        "bg-gradient-to-r from-cyan-400/18 via-sky-500/10 to-indigo-500/22 " +
-                        "before:content-[''] before:absolute before:inset-0 before:rounded-2xl before:pointer-events-none " +
-                        "before:bg-[radial-gradient(140px_70px_at_18%_50%,rgba(34,211,238,0.20),transparent_72%)]";
-
-                      const indicator =
-                        !collapsed && (
-                          <>
-                            <span
-                              className={[
-                                "absolute left-1.5 top-2.5 bottom-2.5 w-[3px] rounded-full transition-colors",
-                                active
-                                  ? "bg-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.70)]"
-                                  : "bg-slate-400/0 group-hover:bg-slate-200/70",
-                              ].join(" ")}
-                            />
-                            {active && (
-                              <span className="absolute left-1 top-2.5 bottom-2.5 w-[6px] rounded-full bg-cyan-300/20 blur-[7px]" />
-                            )}
-                          </>
-                        );
-
-                      const iconWrapBase =
-                        "relative grid place-items-center w-9 h-9 rounded-2xl ring-1 transition-all";
-                      const iconWrap = active
-                        ? `${iconWrapBase} bg-white/10 ring-cyan-200/25 shadow-[0_0_0_1px_rgba(34,211,238,0.10)]`
-                        : `${iconWrapBase} bg-white/5 ring-white/10 group-hover:bg-white/10 group-hover:ring-sky-200/20`;
-
-                      const iconClass = active ? "text-sky-50" : "text-sky-200";
-                      const labelClass = active ? "text-sky-50" : "text-slate-100/90";
-
-                      const showBadge = it.badgeText && shouldShowBadge(it.badgeKey);
-
-                      const rightDecor =
-                        !collapsed && (
-                          <div className="ml-auto flex items-center gap-2">
-                            {showBadge && (
-                              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] tracking-[0.18em] uppercase border border-sky-300/25 bg-white/5 text-sky-100/90">
-                                {it.badgeText}
-                              </span>
-                            )}
-                            {active && (
-                              <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.8)]" />
-                            )}
-                          </div>
-                        );
-
-                      const collapsedActiveDot =
-                        collapsed && active ? (
-                          <span className="absolute -bottom-0.5 h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.85)]" />
-                        ) : null;
-
-                      return (
-                        <Link
-                          key={it.href}
-                          href={it.href}
-                          aria-current={active ? "page" : undefined}
-                          title={collapsed ? it.label : undefined}
-                          className={[
-                            base,
-                            pad,
-                            active ? activeCls : normal,
-                            "focus-visible:ring-2 focus-visible:ring-cyan-300/45",
-                          ].join(" ")}
-                        >
-                          {indicator}
-
-                          <div className={collapsed ? iconWrap : `${iconWrap} mr-3`}>
-                            <Icon size={18} strokeWidth={1.7} className={iconClass} />
-                            {collapsedActiveDot}
-                          </div>
-
-                          {!collapsed && (
-                            <span className={`truncate text-[14px] font-medium ${labelClass}`}>
-                              {it.label}
-                            </span>
-                          )}
-
-                          {rightDecor}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </nav>
-      </div>
-
-      {/* Низ */}
-      <div className="px-3 py-3 border-t border-white/10 space-y-3 bg-gradient-to-t from-black/55 via-slate-900/0 to-transparent">
-        {/* Блок пользователя */}
-        <div className="rounded-2xl px-3 py-2 bg-white/5 ring-1 ring-sky-300/30 backdrop-blur-sm">
-          {!collapsed ? (
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0 flex items-center gap-2">
-                <div className="relative h-9 w-9 rounded-2xl grid place-items-center bg-gradient-to-br from-sky-500/25 via-indigo-600/20 to-cyan-400/25 ring-1 ring-white/10">
-                  <span className="text-[13px] font-semibold text-sky-50">{avatarLetter}</span>
-                  <span
-                    className={[
-                      "absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-slate-950",
-                      userEmail
-                        ? "bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.75)]"
-                        : "bg-slate-400/70",
-                    ].join(" ")}
-                  />
-                </div>
-
-                <div className="min-w-0">
-                  <div className="text-[13px] font-medium truncate text-sky-50">
-                    {userEmail || "Гость"}
-                  </div>
-                  <div className="text-[11px] text-slate-300/90">
-                    {userEmail ? "Аккаунт активен" : "Требуется вход"}
-                  </div>
-                </div>
-              </div>
-
-              {userEmail ? (
-                <button
-                  onClick={handleLogout}
-                  className={[
-                    "group inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px]",
-                    "border border-sky-300/30 bg-white/0 hover:bg-white/10 transition-all",
-                    "hover:-translate-y-0.5 active:translate-y-0",
-                  ].join(" ")}
-                >
-                  <LogOut size={12} className="text-sky-200" />
-                  <span className="text-sky-50 group-hover:text-white">Выйти</span>
-                </button>
-              ) : (
-                <Link
-                  href="/login"
-                  className={[
-                    "group inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px]",
-                    "border border-sky-300/30 bg-white/0 hover:bg-white/10 transition-all",
-                    "hover:-translate-y-0.5 active:translate-y-0",
-                  ].join(" ")}
-                >
-                  <LogIn size={12} className="text-sky-200" />
-                  <span className="text-sky-50 group-hover:text-white">Войти</span>
-                </Link>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center">
-              <div className="relative h-9 w-9 rounded-2xl grid place-items-center bg-gradient-to-br from-sky-500/25 via-indigo-600/20 to-cyan-400/25 ring-1 ring-white/10">
-                <span className="text-[13px] font-semibold text-sky-50">{avatarLetter}</span>
-                <span
-                  className={[
-                    "absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-slate-950",
-                    userEmail
-                      ? "bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.75)]"
-                      : "bg-slate-400/70",
-                  ].join(" ")}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Кнопка свернуть */}
-        <button
-          onClick={() => setCollapsed((v) => !v)}
-          className={[
-            "w-full inline-flex items-center justify-center gap-2 rounded-2xl",
-            "bg-white/5 hover:bg-white/10 ring-1 ring-sky-300/30 px-3 py-2",
-            "transition-all duration-200 text-sky-50 shadow-md shadow-sky-900/60",
-            "hover:-translate-y-0.5 active:translate-y-0",
-          ].join(" ")}
-          title={collapsed ? "Развернуть" : "Свернуть"}
-        >
-          {collapsed ? (
-            <ChevronsRight size={18} className="text-sky-50" />
-          ) : (
-            <ChevronsLeft size={18} className="text-sky-50" />
-          )}
-          {!collapsed && <span className="text-sky-50 text-[13px]">Свернуть</span>}
-        </button>
-
-        {!collapsed && (
-          <div className="pt-1 text-[11px] text-slate-300/90 text-center">Refocus</div>
-        )}
       </div>
     </aside>
   );

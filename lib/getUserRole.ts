@@ -4,12 +4,12 @@ import { getSupabaseServerClient } from "./supabaseServer";
 
 export type Role = "seller" | "manager" | "owner";
 
-/** Текущий пользователь (SSR) */
+/** Текущий пользователь (SSR) — использует getSession (без сетевого запроса) */
 export async function getCurrentUser(): Promise<User | null> {
   const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getSession();
   if (error) return null;
-  return data.user ?? null;
+  return data.session?.user ?? null;
 }
 
 /** Роль пользователя из app_metadata.role, по умолчанию "seller" */

@@ -132,6 +132,11 @@ export default function IntegrationsIndex() {
           href="/settings/integrations/messengers"
         />
         <Card
+          title="WhatsApp Business (Cloud API)"
+          desc="Сервисные сообщения через Meta Cloud API: креды, шаблоны, webhook."
+          href="/settings/integrations/whatsapp"
+        />
+        <Card
           title="Принтеры и чеки"
           desc="Настройка печати чеков/наклеек. Лого, QR статуса заказа."
           href="/settings/integrations/printers"

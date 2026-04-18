@@ -3,6 +3,9 @@
 /* === Nunito for prices (UI) === */
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');
 
+/* Шрифты для цены на ценнике подключаются через npm @fontsource в layout.tsx —
+   так шрифт реально попадает в document.fonts и доступен canvas. */
+
 /* Универсальный класс для цен */
 .font-nunito {
   font-family: 'Nunito', ui-sans-serif, system-ui, -apple-system, "Segoe UI",
@@ -13,36 +16,28 @@
   font-variant-numeric: tabular-nums; /* одинаковая ширина цифр */
 }
 
-/* === Kiona local font === */
+/* === Brand font (same as franchise portal) === */
 @font-face {
-  font-family: 'Kiona';
-  src: url('/fonts/Kiona.ttf') format('truetype');
+  font-family: "pavelt-jrjpm";
+  src: url("/fonts/pavelt-jrjpm.ttf") format("truetype");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 
 .font-kiona {
-  font-family: 'Kiona', ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-               Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
-  letter-spacing: .05em;
+  font-family: "pavelt-jrjpm", system-ui, sans-serif;
 }
 
 /* === БАЗА === */
 html, body { height: 100%; }
-html { color-scheme: light; }
+html, html * { color-scheme: dark; }
+html { background: #0f172a; }
 
-/* Статичный (лёгкий) фон: градиенты. Никаких canvas/скриптов. */
 body {
-  /* цвет не задаём, его задаёт Tailwind-класс text-slate-50 на <body> в layout.tsx */
-  background:
-    radial-gradient(1400px 900px at 20% 10%, rgba(var(--bg-spot) / 0.28), transparent 68%),
-    radial-gradient(1200px 800px at 80% 28%, rgba(var(--bg-spot) / 0.18), transparent 72%),
-    linear-gradient(180deg, rgb(var(--bg-top)) 0%, rgb(var(--bg-mid)) 52%, rgb(var(--bg-bot)) 100%);
-  background-attachment: fixed, fixed, fixed;
+  background: #0f172a !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  position: relative;
 }
 
 
@@ -50,20 +45,20 @@ body {
 
 /* === ЕДИНСТВЕННАЯ ТЕМА (светлая) === */
 :root {
-  --text-main: 17 24 39;         /* #111827 */
+  --text-main: 17 24 39;         /* #111827 — dark text for white cards */
   --text-muted: 100 116 139;     /* #64748B */
 
   --panel-bg: 255 255 255 / 0.95;
-  --panel-border: 17 24 39 / 0.06;
-  --panel-blur: 10px;
+  --panel-border: 56 189 248 / 0.12;
+  --panel-blur: 20px;
 
-  --bg-top: 245 248 255;         /* #f5f8ff */
-  --bg-mid: 232 239 251;         /* #e8effb */
-  --bg-bot: 245 248 255;         /* #f5f8ff */
-  --bg-spot: 179 207 255;        /* голубой акцент */
+  --bg-top: 10 15 30;
+  --bg-mid: 17 24 39;
+  --bg-bot: 15 23 42;
+  --bg-spot: 56 189 248;
 
-  --brand-grad: linear-gradient(90deg, #1A284E 0%, #2C4BA5 55%, #4F9DF6 100%);
-  --price-grad: linear-gradient(90deg, #2C4BA5 0%, #0BB783 55%, #00E3A1 100%);
+  --brand-grad: linear-gradient(90deg, #14b8a6 0%, #22d3ee 55%, #38bdf8 100%);
+  --price-grad: linear-gradient(90deg, #14b8a6 0%, #0BB783 55%, #00E3A1 100%);
 }
 
 /* === ПОВЕРХНОСТИ === */
@@ -75,49 +70,20 @@ body {
   color: rgb(var(--text-main));
   border-radius: 16px;
   box-shadow:
-    0 8px 20px rgba(15, 23, 42, 0.08),
-    0 1px 0 rgba(15, 23, 42, 0.04);
+    0 8px 20px rgba(0, 0, 0, 0.2),
+    0 1px 0 rgba(0, 0, 0, 0.1);
 }
 
-input, select, textarea, button { color: rgb(var(--text-main)); }
-::placeholder { color: rgb(var(--text-muted)); opacity: 0.95; }
-:disabled, [aria-disabled="true"] { color: rgb(var(--text-muted)); }
+/* Input colors handled by components */
+::placeholder { color: rgba(148,163,184,0.6); }
+:disabled, [aria-disabled="true"] { opacity: 0.5; }
 
-/* === Лёгкая виньетка + сетка (статично) === */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  mix-blend-mode: soft-light;
-  background:
-    radial-gradient(900px 650px at 3% 3%, rgba(255 255 255 / 0.10), transparent 60%),
-    radial-gradient(900px 650px at 97% 3%, rgba(255 255 255 / 0.06), transparent 60%),
-    radial-gradient(1100px 800px at 97% 97%, rgba(255 255 255 / 0.08), transparent 65%),
-    radial-gradient(1100px 800px at 3% 97%, rgba(255 255 255 / 0.05), transparent 65%);
-  z-index: 0;
-}
+/* Pseudo-elements disabled */
+body::before, body::after { display: none !important; }
 
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.05;
-  background-image:
-    repeating-linear-gradient(0deg,  rgba(255 255 255 / 0.03) 0, rgba(255 255 255 / 0.03) 1px, transparent 1px, transparent 2px),
-    repeating-linear-gradient(90deg, rgba(0 0 0 / 0.02) 0, rgba(0 0 0 / 0.02) 1px, transparent 1px, transparent 2px);
-  z-index: 0;
-}
+/* Colors handled by Tailwind classes on each page */
 
-/* === ЗОНЫ ИНТЕРФЕЙСА === */
-header, main, aside, .card, .panel, .prose, .sheet, .drawer { color: rgb(var(--text-main)); }
-
-/* === САЙДБАР (тёмный, белый текст) === */
-.sidebar { color: #fff; }
-.sidebar * { color: inherit; }
-.sidebar option { color: #000; }
-.sidebar input, .sidebar select, .sidebar textarea, .sidebar button, .sidebar a { color: #fff; }
+/* Sidebar colors handled by component classes */
 
 /* === Бренд-утилиты === */
 .brand-gradient { background: var(--brand-grad); color: #fff; }
@@ -154,7 +120,7 @@ body.pos-mode .app-root {
 body.pos-mode, body.pos-mode * { scrollbar-width: none; }
 body.pos-mode ::-webkit-scrollbar { width: 0; height: 0; }
 
-.card-gradient { background: linear-gradient(180deg, #ffffff 0%, #f5f8ff 45%, #eef4ff 100%); }
+.card-gradient { background: linear-gradient(180deg, rgba(15,23,42,0.6) 0%, rgba(10,15,30,0.4) 100%); }
 
 /* Небольшая анимация плашек (если нужно отключить — можно убрать класс .brand-anim из разметки) */
 .brand-anim {

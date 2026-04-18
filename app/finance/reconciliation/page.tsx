@@ -1,6 +1,7 @@
 // app/finance/reconciliation/page.tsx
 'use client';
 
+import Link from 'next/link';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import getSupabase from '@/lib/supabaseClient';
 import {
@@ -18,6 +19,7 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
+  ChevronRight,
   Clock,
   History,
   RefreshCw,
@@ -569,35 +571,66 @@ export default function Page() {
     <div className="min-h-screen text-slate-50">
       <div className="mx-auto max-w-7xl px-5 pt-8 pb-10">
         {/* header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_0_25px_rgba(34,211,238,0.9)]">
-              <PiggyBank className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-[28px] sm:text-[34px] font-semibold leading-tight text-slate-50 drop-shadow-[0_0_26px_rgba(56,189,248,0.8)]">
-                Сверка недельной выручки
-              </h1>
-              <div className="text-sm text-sky-200/90 mt-1">
-                Неделя: <span className="font-medium text-sky-50">{weekLabel}</span>
-              </div>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_0_25px_rgba(34,211,238,0.9)]">
+            <PiggyBank className="h-5 w-5" />
+          </div>
+          <h1 className="text-[28px] sm:text-[34px] font-semibold leading-tight text-slate-50 drop-shadow-[0_0_26px_rgba(56,189,248,0.8)]">
+            Сверка недельной выручки
+          </h1>
+        </div>
+
+        {/* Навигация по неделям */}
+        <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/90 ring-1 ring-sky-200/80 px-4 py-3 shadow-[0_16px_45px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+          <button
+            onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, -1))}
+            className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" /> Предыдущая
+          </button>
+
+          <div className="text-center">
+            <div className="text-[13px] font-semibold text-slate-800">{weekLabel}</div>
+            <button
+              onClick={() => setWeekStartDate(new Date(getWeekStartMonday(new Date())))}
+              className="mt-0.5 text-[11px] font-medium text-cyan-600 hover:text-cyan-800 transition-colors"
+            >
+              Текущая неделя
+            </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <SoftGhostBtn onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, -1))}>
-              <ArrowLeft className="h-4 w-4" /> Пред.
-            </SoftGhostBtn>
-            <SoftPrimaryBtn onClick={() => setWeekStartDate(new Date(getWeekStartMonday(new Date())))}>
-              Текущая
-            </SoftPrimaryBtn>
-            <SoftGhostBtn onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, +1))}>
-              След. <ArrowRight className="h-4 w-4" />
-            </SoftGhostBtn>
-            <SoftGhostBtn onClick={manualRefresh}>
-              <RefreshCw className="h-4 w-4" /> Обновить
-            </SoftGhostBtn>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, +1))}
+              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 transition-colors"
+            >
+              Следующая <ArrowRight className="h-4 w-4" />
+            </button>
+            <button
+              onClick={manualRefresh}
+              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 transition-colors"
+              title="Обновить"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
           </div>
+        </div>
+
+        {/* Переход на Бюджет расходов */}
+        <div className="mt-3">
+          <Link
+            href="/admin/budget"
+            className="group flex items-center gap-4 rounded-2xl px-5 py-5 bg-gradient-to-br from-white via-slate-50 to-amber-50/60 ring-1 ring-amber-200/80 shadow-[0_16px_45px_rgba(15,23,42,0.55)] hover:-translate-y-0.5 transition-all duration-150"
+          >
+            <div className="h-12 w-12 shrink-0 rounded-2xl grid place-items-center bg-gradient-to-br from-amber-400 to-orange-500 shadow-[0_12px_40px_rgba(251,146,60,0.40)]">
+              <PiggyBank className="h-6 w-6 text-white" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[16px] font-semibold text-slate-900">Бюджет расходов</div>
+              <div className="mt-0.5 text-[13px] text-slate-500">Планирование и контроль расходов по филиалам</div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-amber-500 transition-colors" />
+          </Link>
         </div>
 
         {/* поиск + легенда */}

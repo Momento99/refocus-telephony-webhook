@@ -7,9 +7,20 @@ let browserClient: SupabaseClient | null = null;
 
 /** Браузерный клиент. Использовать ТОЛЬКО в client-компонентах. */
 export function getBrowserSupabase(): SupabaseClient {
+  // During SSR of client components, return a safe proxy.
+  // No component should call methods during render — methods run inside effects/handlers,
+  // which only execute in the browser, where the real client is created on hydration.
   if (typeof window === "undefined") {
-    throw new Error('getBrowserSupabase() доступен только в client-компонентах ("use client").');
+    return new Proxy({} as SupabaseClient, {
+      get(_target, prop) {
+        throw new Error(
+          `Supabase client method "${String(prop)}" вызван во время SSR. ` +
+          `Используйте его внутри useEffect или обработчиков событий.`,
+        );
+      },
+    });
   }
+
   if (browserClient) return browserClient;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

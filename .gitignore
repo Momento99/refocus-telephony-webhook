@@ -2,6 +2,9 @@
 .env*
 *.env
 
+# Claude Code local state
+.claude/
+
 # node / next
 node_modules/
 .next/

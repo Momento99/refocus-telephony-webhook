@@ -40,13 +40,21 @@ const PLAN_DAYS = 60;
 const SPH_MIN = -10;
 const SPH_MAX = 10;
 const SPH_STEP = 0.25;
-// ✅ SPH limits per family (procurement scope)
-const SPH_LIMITS: Record<string, { min: number; max: number }> = {
-  bb: { min: -7, max: 5 },        // BlueCut HMC  –7 … +5
-  white: { min: -6, max: 6 },     // UC           –6 … +6
-  ar: { min: -6, max: 6 },        // HMC          –6 … +6
-};
 
+// ✅ SPH limits per family (procurement scope)
+// Добавили:
+// - chame* (хамелеоны): пока в закупе держим разумный диапазон
+// - pc_159_hmc: -6..+6 (49 SKU)
+// - myopia_control: -6..0 (25 SKU)
+const SPH_LIMITS: Record<string, { min: number; max: number }> = {
+  bb: { min: -7, max: 5 }, // BlueCut HMC  –7 … +5
+  white: { min: -6, max: 6 }, // UC           –6 … +6
+  ar: { min: -6, max: 6 }, // HMC          –6 … +6
+
+  chame: { min: -6, max: 3 }, // Chameleon (цветные) — пока закуп-диапазон
+  pc_159_hmc: { min: -6, max: 6 }, // Polycarbonate 1.59 HMC
+  myopia_control: { min: -6, max: 0 }, // Myopia Control (kids) — только минус и 0
+};
 
 // ✅ detect limits by selected family (uses your normalizeFamilyKey/lowerKey)
 function getSphLimitsForFamily(famRaw: string): { min: number; max: number } {
@@ -54,6 +62,17 @@ function getSphLimitsForFamily(famRaw: string): { min: number; max: number } {
 
   // exact keys first
   if (SPH_LIMITS[k]) return SPH_LIMITS[k];
+
+  // chameleon variants (CHAME_BLACK / CHAME_BROWN / CHAME_*)
+  if (k.startsWith('chame')) return SPH_LIMITS.chame;
+
+  // polycarbonate 1.59 HMC family
+  if (k === 'pc_159_hmc' || k.startsWith('pc_159_hmc') || (k.includes('pc') && k.includes('1.59') && k.includes('hmc'))) {
+    return SPH_LIMITS.pc_159_hmc;
+  }
+
+  // myopia control family
+  if (k.includes('myopia')) return SPH_LIMITS.myopia_control;
 
   // fallback heuristics (если прилетит что-то вроде "WHITE 1.56" и т.п.)
   if (k.includes('bb')) return SPH_LIMITS.bb;
@@ -205,18 +224,33 @@ function shouldHideFamily(family: string) {
   if (n.includes('жидк')) return true;
   return false;
 }
+
 // ================= Vendor naming (UI/Excel) =================
 // DB remains the same. We only change labels shown to humans.
 
 const VENDOR_FAMILY_LABELS: Record<string, string> = {
-  white: 'UC',             // Uncoated
-  ar: 'HMC',               // AR = HMC
-  bb: 'BlueCut HMC',       // BlueBlock = BlueCut HMC
+  white: 'UC', // Uncoated
+  ar: 'HMC', // AR = HMC
+  bb: 'BlueCut HMC', // BlueBlock = BlueCut HMC
+
+  // ✅ новые
+  chame: 'Chameleon',
+  pc_159_hmc: 'PC 1.59 HMC',
+  myopia_control: 'Myopia Control 1.56',
 };
 
+function chameColorSuffix(k: string) {
+  const s = String(k || '').toLowerCase();
+  if (s.includes('black')) return 'Black';
+  if (s.includes('brown')) return 'Brown';
+  if (s.includes('green')) return 'Green';
+  if (s.includes('purple')) return 'Purple';
+  if (s.includes('blue')) return 'Blue';
+  return '';
+}
 
 // Универсальная функция: на вход — как угодно (WHITE, WHITE [..], bb, AR_PLUS...)
-// на выход — как показывает поставщик (UC / HMC / BlueCut HMC / Chameleon)
+// на выход — как показывает поставщик (UC / HMC / BlueCut HMC / Chameleon / PC 1.59 HMC / Myopia Control)
 function vendorFamilyLabel(famRaw: string) {
   const k = lowerKey(famRaw);
 
@@ -233,7 +267,19 @@ function vendorFamilyLabel(famRaw: string) {
   // AR -> HMC
   if (k === 'ar' || k.includes(' ar')) return VENDOR_FAMILY_LABELS.ar;
 
+  // ✅ PC 1.59 HMC (не путать с обычным HMC/AR)
+  if (k === 'pc_159_hmc' || k.startsWith('pc_159_hmc') || (k.includes('pc') && k.includes('1.59') && k.includes('hmc'))) {
+    return VENDOR_FAMILY_LABELS.pc_159_hmc;
+  }
 
+  // ✅ Myopia Control
+  if (k.includes('myopia')) return VENDOR_FAMILY_LABELS.myopia_control;
+
+  // ✅ Chameleon colors (CHAME / CHAME_BLACK / CHAME_BROWN ...)
+  if (k.startsWith('chame')) {
+    const c = chameColorSuffix(k);
+    return c ? `${VENDOR_FAMILY_LABELS.chame} ${c}` : VENDOR_FAMILY_LABELS.chame;
+  }
 
   // Если появится новое семейство — покажем как есть (без переименования)
   return normalizeFamilyKey(famRaw) || '—';
@@ -285,11 +331,16 @@ function prettyLensFamilyName(fam: string) {
 
 /* ===================== ✅ FAMILY FILTER (keep only requested) ===================== */
 /**
- * Оставляем: Chameleon, AR, WHITE, BB
- * Убираем: BBH, WHITE 1.67, CLEAR, PHOTO (и всё остальное скрываем)
+ * Оставляем:
+ * - BB, AR, WHITE
+ * - CHAME* (CHAME_BLACK / CHAME_BROWN / ...)
+ * - PC_159_HMC (поликарбонат 1.59 HMC)
+ * - MYOPIA_CONTROL (детский контроль миопии)
+ *
+ * Убираем:
+ * - BBH, WHITE 1.67, CLEAR, PHOTO (и всё остальное скрываем)
  */
-const ALLOWED_FAMILY_KEYS = new Set(['bb', 'ar', 'white']);
-
+const ALLOWED_FAMILY_KEYS = new Set(['bb', 'ar', 'white', 'pc_159_hmc', 'myopia_control']);
 
 function isAllowedFamily(raw: string) {
   const key = lowerKey(raw);
@@ -301,6 +352,24 @@ function isAllowedFamily(raw: string) {
 
   // WHITE 1.67 (разные варианты написания)
   if (key.includes('white') && key.includes('1.67')) return false;
+
+  // ✅ Chameleon: показываем только цветные (убираем "просто CHAME")
+if (key === 'chame' || key === 'chameleon') return false;
+
+if (key.startsWith('chame')) {
+  const okColor =
+    key.includes('black') ||
+    key.includes('brown') ||
+    key.includes('blue') ||
+    key.includes('green') ||
+    key.includes('purple');
+
+  return okColor;
+}
+
+  // ✅ explicit new families
+  if (key === 'pc_159_hmc') return true;
+  if (key.includes('myopia')) return true;
 
   // allowlist
   return ALLOWED_FAMILY_KEYS.has(key);
@@ -366,7 +435,6 @@ function buildSphGrid(min = SPH_MIN, max = SPH_MAX, _step = SPH_STEP) {
 
   return uniq;
 }
-
 
 type ProcRow = {
   sph: number;
@@ -913,56 +981,56 @@ export default function LensProcurementPage() {
   const [gate, setGate] = React.useState<'pending' | 'ok' | 'denied'>('pending');
 
   // настройки закупа
-const [safetyFactor, setSafetyFactor] = React.useState<number>(1.35);
-const [minEach, setMinEach] = React.useState<number>(2);
-const [applyMinToAll, setApplyMinToAll] = React.useState<boolean>(true);
+  const [safetyFactor, setSafetyFactor] = React.useState<number>(1.35);
+  const [minEach, setMinEach] = React.useState<number>(2);
+  const [applyMinToAll, setApplyMinToAll] = React.useState<boolean>(true);
 
-// ✅ ВОТ СЮДА ПОДНИМАЕМ locationId (до useEffect где он используется)
-const [locationId, setLocationId] = React.useState<string>('');
+  // ✅ ВОТ СЮДА ПОДНИМАЕМ locationId (до useEffect где он используется)
+  const [locationId, setLocationId] = React.useState<string>('');
 
-// ✅ restore settings on mount
-React.useEffect(() => {
-  if (!mounted) return;
-  try {
-    const raw = localStorage.getItem(LS_PROC_SETTINGS_KEY);
-    if (!raw) return;
+  // ✅ restore settings on mount
+  React.useEffect(() => {
+    if (!mounted) return;
+    try {
+      const raw = localStorage.getItem(LS_PROC_SETTINGS_KEY);
+      if (!raw) return;
 
-    const s = JSON.parse(raw);
+      const s = JSON.parse(raw);
 
-    if (typeof s?.safetyFactor === 'number') {
-      setSafetyFactor(clampNum(Number(s.safetyFactor), 1, 10, 1.35));
+      if (typeof s?.safetyFactor === 'number') {
+        setSafetyFactor(clampNum(Number(s.safetyFactor), 1, 10, 1.35));
+      }
+      if (typeof s?.minEach === 'number') {
+        setMinEach(Math.max(0, Math.floor(Number(s.minEach))));
+      }
+      if (typeof s?.applyMinToAll === 'boolean') {
+        setApplyMinToAll(Boolean(s.applyMinToAll));
+      }
+      if (typeof s?.locationId === 'string' && s.locationId) {
+        setLocationId(String(s.locationId));
+      }
+    } catch {
+      // ignore
     }
-    if (typeof s?.minEach === 'number') {
-      setMinEach(Math.max(0, Math.floor(Number(s.minEach))));
-    }
-    if (typeof s?.applyMinToAll === 'boolean') {
-      setApplyMinToAll(Boolean(s.applyMinToAll));
-    }
-    if (typeof s?.locationId === 'string' && s.locationId) {
-      setLocationId(String(s.locationId));
-    }
-  } catch {
-    // ignore
-  }
-}, [mounted]);
+  }, [mounted]);
 
-// ✅ persist settings on change
-React.useEffect(() => {
-  if (!mounted) return;
-  try {
-    localStorage.setItem(
-      LS_PROC_SETTINGS_KEY,
-      JSON.stringify({
-        safetyFactor,
-        minEach,
-        applyMinToAll,
-        locationId, // ✅ теперь переменная уже объявлена выше
-      }),
-    );
-  } catch {
-    // ignore
-  }
-}, [mounted, safetyFactor, minEach, applyMinToAll, locationId]);
+  // ✅ persist settings on change
+  React.useEffect(() => {
+    if (!mounted) return;
+    try {
+      localStorage.setItem(
+        LS_PROC_SETTINGS_KEY,
+        JSON.stringify({
+          safetyFactor,
+          minEach,
+          applyMinToAll,
+          locationId, // ✅ теперь переменная уже объявлена выше
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [mounted, safetyFactor, minEach, applyMinToAll, locationId]);
 
   // Excel ship-to
   const [shipToAddress, setShipToAddress] = React.useState<string>(
@@ -1000,7 +1068,6 @@ React.useEffect(() => {
   // вкладка справа
   const [tab, setTab] = React.useState<'to_buy' | 'stock' | 'transit'>('to_buy');
 
-
   const [err, setErr] = React.useState<string | null>(null);
 
   // партии
@@ -1031,10 +1098,10 @@ React.useEffect(() => {
   const [deleteTyped, setDeleteTyped] = React.useState<string>('');
   const [deleteAlsoLots, setDeleteAlsoLots] = React.useState<boolean>(true);
   const [deletingBatch, setDeletingBatch] = React.useState<boolean>(false);
-// ✅ Clear stock modal
-const [clearStockOpen, setClearStockOpen] = React.useState(false);
-const [clearStockTyped, setClearStockTyped] = React.useState('');
-const [clearingStock, setClearingStock] = React.useState(false);
+  // ✅ Clear stock modal
+  const [clearStockOpen, setClearStockOpen] = React.useState(false);
+  const [clearStockTyped, setClearStockTyped] = React.useState('');
+  const [clearingStock, setClearingStock] = React.useState(false);
 
   // responsive chart height
   const [vw, setVw] = React.useState<number>(0);
@@ -1047,12 +1114,11 @@ const [clearingStock, setClearingStock] = React.useState(false);
   }, [mounted]);
 
   const chartHeight = React.useMemo(() => {
-  if (!vw) return 420;
-  if (vw >= 1024) return 460;
-  if (vw >= 768) return 380;
-  return 280;
-}, [vw]);
-
+    if (!vw) return 420;
+    if (vw >= 1024) return 460;
+    if (vw >= 768) return 380;
+    return 280;
+  }, [vw]);
 
   /* ---------- access gate ---------- */
 
@@ -1103,12 +1169,12 @@ const [clearingStock, setClearingStock] = React.useState(false);
 
     const parsedRaw = Array.isArray(data)
       ? data.map((r: any) => ({
-        raw: String(r.lens_family ?? r.family ?? '—'),
-        items_cnt: Number(r.items_cnt ?? r.qty_sum ?? r.count ?? 0),
-        first_day: (r.first_day ?? null) as string | null,
-        last_day: (r.last_day ?? null) as string | null,
-        days_span: r.days_span === undefined || r.days_span === null ? null : Number(r.days_span),
-      }))
+          raw: String(r.lens_family ?? r.family ?? '—'),
+          items_cnt: Number(r.items_cnt ?? r.qty_sum ?? r.count ?? 0),
+          first_day: (r.first_day ?? null) as string | null,
+          last_day: (r.last_day ?? null) as string | null,
+          days_span: r.days_span === undefined || r.days_span === null ? null : Number(r.days_span),
+        }))
       : [];
 
     // ✅ группируем историю по каноническому ключу + фильтр allowlist
@@ -1228,10 +1294,9 @@ const [clearingStock, setClearingStock] = React.useState(false);
           (prevKey && list.find((x) => x.rpc_family.toLowerCase() === prevKey.toLowerCase())) ?? list[0] ?? null;
 
         if (found) {
-  setSelectedRpc(found.rpc_family);
-  return vendorFamilyLabel(found.rpc_family);
-}
-
+          setSelectedRpc(found.rpc_family);
+          return vendorFamilyLabel(found.rpc_family);
+        }
 
         setSelectedRpc('');
         return '';
@@ -1270,21 +1335,21 @@ const [clearingStock, setClearingStock] = React.useState(false);
 
       const list: LocationRow[] = Array.isArray(data)
         ? data.map((r: any) => ({
-          id: String(r.id),
-          name: String(r.name ?? ''),
-          kind: String(r.kind ?? ''),
-        }))
+            id: String(r.id),
+            name: String(r.name ?? ''),
+            kind: String(r.kind ?? ''),
+          }))
         : [];
 
-            // 1) убираем “центральный склад” из выпадашки (и любые warehouse)
+      // 1) убираем “центральный склад” из выпадашки (и любые warehouse)
       const filtered = list.filter((x) => {
         const kind = String(x.kind || '').toLowerCase();
         const name = String(x.name || '').toLowerCase();
 
-        if (kind === 'warehouse') return false;                // убираем warehouse целиком
-        if (name.includes('централ')) return false;            // "центральный..."
-        if (name.includes('central')) return false;            // "central..."
-        if (name.includes('центральный склад')) return false;  // явное
+        if (kind === 'warehouse') return false; // убираем warehouse целиком
+        if (name.includes('централ')) return false; // "центральный..."
+        if (name.includes('central')) return false; // "central..."
+        if (name.includes('центральный склад')) return false; // явное
         return true;
       });
 
@@ -1300,7 +1365,6 @@ const [clearingStock, setClearingStock] = React.useState(false);
 
         return (sok ?? fallback)?.id ? String((sok ?? fallback)!.id) : '';
       });
-
     } catch (e: any) {
       setLocations([]);
       setErr(prettifyRpcError(e));
@@ -1401,34 +1465,33 @@ const [clearingStock, setClearingStock] = React.useState(false);
 
       const parsedRaw: ProcRow[] = Array.isArray(data)
         ? data
-          .map((r: any) => {
-            const sph0 = pickSph(r);
-            const sph = normSph(sph0);
-            return {
-              sph,
-              sign: r.sign ?? r.out_sign ?? null,
-              hist_qty: pickHistQty(r),
-              hist_days: pickHistDays(r),
-              daily_avg: pickDailyAvg(r),
-              plan_qty: pickPlanQty(r),
-              on_hand: pickOnHand(r),
-              in_transit: pickInTransit(r),
-              to_buy: pickToBuy(r),
-              lens_sku_id: pickSkuId(r),
-            };
-          })
-          .filter((r) => Number.isFinite(r.sph))
+            .map((r: any) => {
+              const sph0 = pickSph(r);
+              const sph = normSph(sph0);
+              return {
+                sph,
+                sign: r.sign ?? r.out_sign ?? null,
+                hist_qty: pickHistQty(r),
+                hist_days: pickHistDays(r),
+                daily_avg: pickDailyAvg(r),
+                plan_qty: pickPlanQty(r),
+                on_hand: pickOnHand(r),
+                in_transit: pickInTransit(r),
+                to_buy: pickToBuy(r),
+                lens_sku_id: pickSkuId(r),
+              };
+            })
+            .filter((r) => Number.isFinite(r.sph))
         : [];
 
       const parsed = aggregateBySph(parsedRaw);
-const adjusted = applyMinEachClient(parsed, minEach, applyMinToAll);
+      const adjusted = applyMinEachClient(parsed, minEach, applyMinToAll);
 
-// ✅ apply SPH range limit by family
-const lim = getSphLimitsForFamily(selectedRpc);
-const ranged = adjusted.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
+      // ✅ apply SPH range limit by family
+      const lim = getSphLimitsForFamily(selectedRpc);
+      const ranged = adjusted.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
 
-setRows(ranged);
-
+      setRows(ranged);
     } catch (e: any) {
       setRows([]);
       setErr(prettifyRpcError(e));
@@ -1486,36 +1549,34 @@ setRows(ranged);
 
           const rrRaw: ProcRow[] = Array.isArray(data)
             ? data
-              .map((r: any) => {
-                const sph = normSph(pickSph(r));
-                return {
-                  sph,
-                  sign: r.sign ?? r.out_sign ?? null,
-                  hist_qty: pickHistQty(r),
-                  hist_days: pickHistDays(r),
-                  daily_avg: pickDailyAvg(r),
-                  plan_qty: pickPlanQty(r),
-                  on_hand: pickOnHand(r),
-                  in_transit: pickInTransit(r),
-                  to_buy: pickToBuy(r),
-                  lens_sku_id: pickSkuId(r),
-                };
-              })
-              .filter((x) => Number.isFinite(x.sph))
+                .map((r: any) => {
+                  const sph = normSph(pickSph(r));
+                  return {
+                    sph,
+                    sign: r.sign ?? r.out_sign ?? null,
+                    hist_qty: pickHistQty(r),
+                    hist_days: pickHistDays(r),
+                    daily_avg: pickDailyAvg(r),
+                    plan_qty: pickPlanQty(r),
+                    on_hand: pickOnHand(r),
+                    in_transit: pickInTransit(r),
+                    to_buy: pickToBuy(r),
+                    lens_sku_id: pickSkuId(r),
+                  };
+                })
+                .filter((x) => Number.isFinite(x.sph))
             : [];
 
           const rrAgg = aggregateBySph(rrRaw);
-const adjusted = applyMinEachClient(rrAgg, minEach, applyMinToAll);
+          const adjusted = applyMinEachClient(rrAgg, minEach, applyMinToAll);
 
-// ✅ ВАЖНО: применяем тот же SPH-диапазон, что и справа (как в loadProcRows)
-const lim = getSphLimitsForFamily(fam);
-const ranged = adjusted.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
+          // ✅ ВАЖНО: применяем тот же SPH-диапазон, что и справа (как в loadProcRows)
+          const lim = getSphLimitsForFamily(fam);
+          const ranged = adjusted.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
 
-const totalToBuy = ranged.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
+          const totalToBuy = ranged.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
 
-// лучше хранить как целое (на всякий)
-out[lowerKey(fam)] = Math.round(totalToBuy);
-
+          out[lowerKey(fam)] = Math.round(totalToBuy);
         } catch {
           out[lowerKey(fam)] = out[lowerKey(fam)] ?? 0;
         }
@@ -1573,19 +1634,19 @@ out[lowerKey(fam)] = Math.round(totalToBuy);
 
       const base: BatchRow[] = Array.isArray(b)
         ? b.map((x: any) => ({
-          id: String(x.id),
-          created_at: String(x.created_at),
-          status: String(x.status ?? ''),
-          ordered_at: x.ordered_at ?? null,
-          received_at: x.received_at ?? null,
-          comment: x.comment ?? null,
-          to_location_id: String(x.to_location_id),
-          lens_family: String(x.lens_family),
-          plan_days: x.plan_days ?? null,
-          safety: x.safety ?? null,
-          min_each: x.min_each ?? null,
-          apply_min_to_all: x.apply_min_to_all ?? null,
-        }))
+            id: String(x.id),
+            created_at: String(x.created_at),
+            status: String(x.status ?? ''),
+            ordered_at: x.ordered_at ?? null,
+            received_at: x.received_at ?? null,
+            comment: x.comment ?? null,
+            to_location_id: String(x.to_location_id),
+            lens_family: String(x.lens_family),
+            plan_days: x.plan_days ?? null,
+            safety: x.safety ?? null,
+            min_each: x.min_each ?? null,
+            apply_min_to_all: x.apply_min_to_all ?? null,
+          }))
         : [];
 
       const ids = base.map((x) => x.id);
@@ -1627,7 +1688,11 @@ out[lowerKey(fam)] = Math.round(totalToBuy);
   const familiesFiltered = React.useMemo(() => {
     const qq = q.trim().toLowerCase();
     if (!qq) return families;
-    return families.filter((f) => String(f.lens_family || '').toLowerCase().includes(qq));
+    return families.filter((f) => {
+      const a = String(f.lens_family || '').toLowerCase();
+      const b = vendorFamilyLabel(f.rpc_family).toLowerCase();
+      return a.includes(qq) || b.includes(qq);
+    });
   }, [families, q]);
 
   const selectedMeta = React.useMemo(() => {
@@ -1643,26 +1708,25 @@ out[lowerKey(fam)] = Math.round(totalToBuy);
     return 1;
   }, [rows, selectedRpc]);
 
-
   const totals = React.useMemo(() => {
-  return {
-    on_hand: sumBy(rows, (r) => r.on_hand),
-    in_transit: sumBy(rows, (r) => r.in_transit),
-    to_buy: sumBy(rows, (r) => r.to_buy),
-  };
-}, [rows, selectedRpc]);
-
-
+    return {
+      on_hand: sumBy(rows, (r) => r.on_hand),
+      in_transit: sumBy(rows, (r) => r.in_transit),
+      to_buy: sumBy(rows, (r) => r.to_buy),
+    };
+  }, [rows, selectedRpc]);
 
   function metricOf(r: ProcRow) {
-  switch (tab) {
-    case 'stock': return r.on_hand;
-    case 'transit': return r.in_transit;
-    case 'to_buy':
-    default: return r.to_buy;
+    switch (tab) {
+      case 'stock':
+        return r.on_hand;
+      case 'transit':
+        return r.in_transit;
+      case 'to_buy':
+      default:
+        return r.to_buy;
+    }
   }
-}
-
 
   const table = React.useMemo(() => {
     const base = rows.map((r) => ({
@@ -1683,122 +1747,111 @@ out[lowerKey(fam)] = Math.round(totalToBuy);
   }, [rows, tab]);
 
   const chartDataFull = React.useMemo(() => {
-  // Берём все значения по rows, но рисуем полный диапазон -10..+10 с шагом 0.25
-  const lim = getSphLimitsForFamily(selectedRpc);
-const grid = buildSphGrid(lim.min, lim.max);
+    const lim = getSphLimitsForFamily(selectedRpc);
+    const grid = buildSphGrid(lim.min, lim.max);
 
+    // Мапа фактических строк из rows по sph
+    const by = new Map<string, ProcRow>();
+    for (const r of rows) {
+      const k = normSph(r.sph).toFixed(2);
+      by.set(k, r);
+    }
 
-  // Мапа фактических строк из rows по sph
-  const by = new Map<string, ProcRow>();
-  for (const r of rows) {
-    const k = normSph(r.sph).toFixed(2);
-    by.set(k, r);
-  }
+    // Собираем полный ряд: если какой-то SPH отсутствует в rows — показываем нули
+    return grid.map((sph) => {
+      const k = sph.toFixed(2);
+      const r = by.get(k);
 
-  // Собираем полный ряд: если какой-то SPH отсутствует в rows — показываем нули
-  return grid.map((sph) => {
-    const k = sph.toFixed(2);
-    const r = by.get(k);
+      const stock = Number(r?.on_hand ?? 0) || 0;
+      const transit = Number(r?.in_transit ?? 0) || 0;
+      const buy = Number(r?.to_buy ?? 0) || 0;
 
-    const stock = Number(r?.on_hand ?? 0) || 0;
-    const transit = Number(r?.in_transit ?? 0) || 0;
-    const buy = Number(r?.to_buy ?? 0) || 0;
-
-    return {
-  sph,
-  sphLabel: fmtSph(sph),
-  stock,
-  transit,
-  buy,
-};
-
-  });
-}, [rows, selectedRpc]);
-
-
+      return {
+        sph,
+        sphLabel: fmtSph(sph),
+        stock,
+        transit,
+        buy,
+      };
+    });
+  }, [rows, selectedRpc]);
 
   const chartKey = React.useMemo(() => {
-  // Подпись для перерендера: достаточно tab + суммы/сигнатуры
-  const sig = chartDataFull.map((x) => `${x.sph.toFixed(2)}:${x.buy}:${x.stock}:${x.transit}`).join('|');
-  return `${selectedRpc}|${locationId}|${tab}|${hashStr(sig)}`;
-}, [selectedRpc, locationId, tab, chartDataFull]);
-
+    const sig = chartDataFull.map((x) => `${x.sph.toFixed(2)}:${x.buy}:${x.stock}:${x.transit}`).join('|');
+    return `${selectedRpc}|${locationId}|${tab}|${hashStr(sig)}`;
+  }, [selectedRpc, locationId, tab, chartDataFull]);
 
   const optionFull: EChartsOption = React.useMemo(() => {
-  // Что рисуем на текущей вкладке
-  const pick = (x: any) => {
-    switch (tab) {
-      case 'stock':
-        return x.stock;
-      case 'transit':
-        return x.transit;
-      case 'to_buy':
-      default:
-        return x.buy;
-    }
-  };
+    // Что рисуем на текущей вкладке
+    const pick = (x: any) => {
+      switch (tab) {
+        case 'stock':
+          return x.stock;
+        case 'transit':
+          return x.transit;
+        case 'to_buy':
+        default:
+          return x.buy;
+      }
+    };
 
-  const cats = chartDataFull.map((x) => x.sphLabel);
-  const vals = chartDataFull.map((x) => pick(x));
+    const cats = chartDataFull.map((x) => x.sphLabel);
+    const vals = chartDataFull.map((x) => pick(x));
 
-  const title =
-    tab === 'to_buy' ? 'Купить' :
-    tab === 'stock' ? 'Склад' :
-    'В пути';
+    const title = tab === 'to_buy' ? 'Купить' : tab === 'stock' ? 'Склад' : 'В пути';
 
-  return {
-    animation: false,
-    grid: { top: 18, right: 14, bottom: 70, left: 54 },
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      confine: true,
-      formatter: (params: any) => {
-        const p = Array.isArray(params) ? params[0] : params;
-        const idx = p?.dataIndex ?? 0;
-        const x = chartDataFull[idx];
-        if (!x) return '';
+    return {
+      animation: false,
+      grid: { top: 18, right: 14, bottom: 70, left: 54 },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        confine: true,
+        formatter: (params: any) => {
+          const p = Array.isArray(params) ? params[0] : params;
+          const idx = p?.dataIndex ?? 0;
+          const x = chartDataFull[idx];
+          if (!x) return '';
 
-        // Показываем ВСЕ метрики для выбранной диоптрии
-        return (
-          `<div style="min-width:180px">` +
-          `<div><b>SPH ${x.sphLabel}</b></div>` +
-          `<div style="margin-top:6px">` +
-          `Купить: <b>${nf(x.buy)} шт</b><br/>` +
-          `Склад: <b>${nf(x.stock)} шт</b><br/>` +
-          `В пути: <b>${nf(x.transit)} шт</b><br/>` +
-          `</div>` +
-          `</div>`
-        );
+          // Показываем ВСЕ метрики для выбранной диоптрии
+          return (
+            `<div style="min-width:180px">` +
+            `<div><b>SPH ${x.sphLabel}</b></div>` +
+            `<div style="margin-top:6px">` +
+            `Купить: <b>${nf(x.buy)} шт</b><br/>` +
+            `Склад: <b>${nf(x.stock)} шт</b><br/>` +
+            `В пути: <b>${nf(x.transit)} шт</b><br/>` +
+            `</div>` +
+            `</div>`
+          );
+        },
       },
-    },
-    xAxis: {
-      type: 'category',
-      data: cats,
-      axisLabel: {
-        interval: 3, // показываем не каждую подпись, чтобы не было каши
-        rotate: 0,
+      xAxis: {
+        type: 'category',
+        data: cats,
+        axisLabel: {
+          interval: 3, // показываем не каждую подпись, чтобы не было каши
+          rotate: 0,
+        },
       },
-    },
-    yAxis: {
-      type: 'value',
-      name: title,
-      nameGap: 12,
-      axisLabel: {
-        formatter: (v: any) => nf(Number(v) || 0),
-      },
-    },
-    series: [
-      {
-        type: 'bar',
+      yAxis: {
+        type: 'value',
         name: title,
-        data: vals,
-        barMaxWidth: 14,
+        nameGap: 12,
+        axisLabel: {
+          formatter: (v: any) => nf(Number(v) || 0),
+        },
       },
-    ],
-  };
-}, [tab, chartDataFull]);
-
+      series: [
+        {
+          type: 'bar',
+          name: title,
+          data: vals,
+          barMaxWidth: 14,
+        },
+      ],
+    };
+  }, [tab, chartDataFull]);
 
   const skuMissingCnt = React.useMemo(() => rows.filter((r) => (r.to_buy || 0) > 0 && !r.lens_sku_id).length, [rows]);
   const anyToBuy = React.useMemo(() => rows.some((r) => (r.to_buy || 0) > 0), [rows]);
@@ -1811,7 +1864,6 @@ const grid = buildSphGrid(lim.min, lim.max);
       .sort((a, b) => a - b);
   }, [rows, selectedRpc]);
 
-
   const missingSkuText = React.useMemo(() => missingSkuSph.map((s) => fmtSph(s)).join('\n'), [missingSkuSph]);
 
   const toBuyLines = React.useMemo(() => rows.filter((r) => (r.to_buy || 0) > 0), [rows]);
@@ -1822,14 +1874,12 @@ const grid = buildSphGrid(lim.min, lim.max);
   );
 
   const createSummary = React.useMemo(() => {
-  const lines = rows.filter((r) => (r.to_buy || 0) > 0);
-  return {
-    lines: lines.length,
-    pcs: sumBy(lines, (r) => r.to_buy || 0),
-  };
-}, [rows, selectedRpc]);
-
-
+    const lines = rows.filter((r) => (r.to_buy || 0) > 0);
+    return {
+      lines: lines.length,
+      pcs: sumBy(lines, (r) => r.to_buy || 0),
+    };
+  }, [rows, selectedRpc]);
 
   const createDisabledReason = React.useMemo(() => {
     if (!selectedRpc) return 'Выбери семейство';
@@ -1982,14 +2032,14 @@ const grid = buildSphGrid(lim.min, lim.max);
     } catch (e: any) {
       setErr(
         prettifyRpcError(e) +
-        `\n\nЕсли вставка запрещена RLS, сделай это через SQL Editor (как мы делали ранее) или разреши insert для owner.`,
+          `\n\nЕсли вставка запрещена RLS, сделай это через SQL Editor (как мы делали ранее) или разреши insert для owner.`,
       );
     } finally {
       setAutoFixingSku(false);
     }
   }
 
-    // ================= Excel export (FIXED: apply family SPH limits everywhere) =================
+  // ================= Excel export (FIXED: apply family SPH limits everywhere) =================
 
   async function exportExcelFromRowsSingle(famRpc: string, rr: ProcRow[], fileSuffix?: string) {
     setErr(null);
@@ -1999,9 +2049,7 @@ const grid = buildSphGrid(lim.min, lim.max);
       XLSX = (await import('xlsx-js-style')) as any;
     } catch {
       setErr(
-        `Для цветного Excel нужен пакет "xlsx-js-style".\n` +
-          `Установи: npm i xlsx-js-style\n\n` +
-          `Если оставить обычный "xlsx" — файл будет без цветов.`,
+        `Для цветного Excel нужен пакет "xlsx-js-style".\n` + `Установи: npm i xlsx-js-style\n\n` + `Если оставить обычный "xlsx" — файл будет без цветов.`,
       );
       return;
     }
@@ -2024,13 +2072,8 @@ const grid = buildSphGrid(lim.min, lim.max);
     const dataRows = dataRows0.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
 
     // ✅ 3) в Excel показываем только строки, где реально есть TO_BUY
-    const minus = dataRows
-      .filter((r) => r.sph < 0 && (r.to_buy || 0) > 0)
-      .sort((a, b) => b.sph - a.sph);
-
-    const plus = dataRows
-      .filter((r) => r.sph >= 0 && (r.to_buy || 0) > 0)
-      .sort((a, b) => a.sph - b.sph);
+    const minus = dataRows.filter((r) => r.sph < 0 && (r.to_buy || 0) > 0).sort((a, b) => b.sph - a.sph);
+    const plus = dataRows.filter((r) => r.sph >= 0 && (r.to_buy || 0) > 0).sort((a, b) => a.sph - b.sph);
 
     const lensType = prettyLensFamilyName(rpcFam);
     const blueBlock = isBlueBlockFamily(rpcFam);
@@ -2046,13 +2089,12 @@ const grid = buildSphGrid(lim.min, lim.max);
     aoa.push(['', '', '', '', '']);
 
     aoa.push([
-  blueBlock ? 'SPH (−) BlueBlock' : 'SPH (−)',
-  'QTY (pcs)',
-  '',
-  blueBlock ? 'SPH (+) BlueBlock' : 'SPH (+)',
-  'QTY (pcs)',
-]);
-
+      blueBlock ? 'SPH (−) BlueBlock' : 'SPH (−)',
+      'QTY (pcs)',
+      '',
+      blueBlock ? 'SPH (+) BlueBlock' : 'SPH (+)',
+      'QTY (pcs)',
+    ]);
 
     const maxLen = Math.max(minus.length, plus.length);
 
@@ -2060,7 +2102,7 @@ const grid = buildSphGrid(lim.min, lim.max);
       const m = minus[i];
       const p = plus[i];
 
-      // ✅ qty в Excel лучше как число (иногда приходит float) -> округлим до целого
+      // ✅ qty в Excel лучше как число -> округлим
       const mQty = m ? Math.round(Number(m.to_buy) || 0) : '';
       const pQty = p ? Math.round(Number(p.to_buy) || 0) : '';
 
@@ -2071,9 +2113,7 @@ const grid = buildSphGrid(lim.min, lim.max);
     const totalMinus = minus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
     const totalPlus = plus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
     aoa.push(['Total (−) (pcs)', Math.round(totalMinus), '', 'Total (+) (pcs)', Math.round(totalPlus)]);
-aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
-
-
+    aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
@@ -2151,9 +2191,7 @@ aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
       XLSX = (await import('xlsx-js-style')) as any;
     } catch {
       setErr(
-        `Для цветного Excel нужен пакет "xlsx-js-style".\n` +
-          `Установи: npm i xlsx-js-style\n\n` +
-          `Если оставить обычный "xlsx" — файл будет без цветов.`,
+        `Для цветного Excel нужен пакет "xlsx-js-style".\n` + `Установи: npm i xlsx-js-style\n\n` + `Если оставить обычный "xlsx" — файл будет без цветов.`,
       );
       return;
     }
@@ -2225,13 +2263,12 @@ aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
       aoa.push(['', '', '', '', '']);
 
       aoa.push([
-  blueBlock ? 'SPH (−) BlueBlock' : 'SPH (−)',
-  'QTY (pcs)',
-  '',
-  blueBlock ? 'SPH (+) BlueBlock' : 'SPH (+)',
-  'QTY (pcs)',
-]);
-
+        blueBlock ? 'SPH (−) BlueBlock' : 'SPH (−)',
+        'QTY (pcs)',
+        '',
+        blueBlock ? 'SPH (+) BlueBlock' : 'SPH (+)',
+        'QTY (pcs)',
+      ]);
 
       const maxLen = Math.max(minus.length, plus.length);
 
@@ -2250,7 +2287,6 @@ aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
       const totalPlus = plus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
       aoa.push(['Total (−)', Math.round(totalMinus), '', 'Total (+)', Math.round(totalPlus)]);
       aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
-
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
 
@@ -2321,7 +2357,6 @@ aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
     await exportExcelInternal(families.map((f) => f.rpc_family));
   }
 
-
   async function createBatchFromToBuy() {
     if (!selectedRpc || !locationId) return;
     if (loadingRows) return;
@@ -2353,7 +2388,6 @@ aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
 
       if (error) throw new Error(error.message);
 
-      // eslint-disable-next-line no-console
       console.log('Created batch id:', data);
 
       setCreateComment('');
@@ -2481,84 +2515,83 @@ aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
   }
 
   async function confirmDeleteBatch() {
-  if (!deleteBatchId) return;
+    if (!deleteBatchId) return;
 
-  if (deleteTyped.trim() !== 'DELETE') {
-    setErr('Для удаления введи подтверждение: DELETE');
-    return;
+    if (deleteTyped.trim() !== 'DELETE') {
+      setErr('Для удаления введи подтверждение: DELETE');
+      return;
+    }
+
+    setDeletingBatch(true);
+    setBusyBatchId(deleteBatchId);
+    setErr(null);
+
+    try {
+      const sb = getBrowserSupabase();
+      const { error } = await sb.rpc(RPC_DELETE_BATCH_HARD_FN, {
+        p_batch_id: deleteBatchId,
+        p_delete_lots: deleteAlsoLots,
+        p_confirm: 'DELETE',
+      });
+
+      if (error) throw new Error(error.message);
+
+      setDeleteOpen(false);
+      setDeleteBatchId('');
+      setDeleteTyped('');
+
+      await loadBatches();
+      await loadProcRows();
+      void loadToBuyTotalsForFamilies();
+    } catch (e: any) {
+      setErr(prettifyRpcError(e));
+    } finally {
+      setDeletingBatch(false);
+      setBusyBatchId('');
+    }
   }
 
-  setDeletingBatch(true);
-  setBusyBatchId(deleteBatchId);
-  setErr(null);
-
-  try {
-    const sb = getBrowserSupabase();
-    const { error } = await sb.rpc(RPC_DELETE_BATCH_HARD_FN, {
-      p_batch_id: deleteBatchId,
-      p_delete_lots: deleteAlsoLots,
-      p_confirm: 'DELETE',
-    });
-
-    if (error) throw new Error(error.message);
-
-    setDeleteOpen(false);
-    setDeleteBatchId('');
-    setDeleteTyped('');
-
-    await loadBatches();
-    await loadProcRows();
-    void loadToBuyTotalsForFamilies();
-  } catch (e: any) {
-    setErr(prettifyRpcError(e));
-  } finally {
-    setDeletingBatch(false);
-    setBusyBatchId('');
-  }
-}
-
-// ✅ clear stock (hard) for current location
-function openClearStockModal() {
-  setClearStockTyped('');
-  setClearStockOpen(true);
-}
-
-async function confirmClearStock() {
-  if (!locationId) {
-    setErr('Не выбрана локация.');
-    return;
-  }
-  if (clearStockTyped.trim() !== 'DELETE') {
-    setErr('Для очистки склада введи подтверждение: DELETE');
-    return;
-  }
-
-  setClearingStock(true);
-  setErr(null);
-
-  try {
-    const sb = getBrowserSupabase();
-
-    const { error } = await sb.rpc(RPC_CLEAR_STOCK_HARD_FN, {
-      p_location_id: locationId,
-      p_confirm: 'DELETE',
-    });
-
-    if (error) throw new Error(error.message);
-
-    setClearStockOpen(false);
+  // ✅ clear stock (hard) for current location
+  function openClearStockModal() {
     setClearStockTyped('');
-
-    await loadProcRows();
-    await loadBatches();
-    void loadToBuyTotalsForFamilies();
-  } catch (e: any) {
-    setErr(prettifyRpcError(e));
-  } finally {
-    setClearingStock(false);
+    setClearStockOpen(true);
   }
-}
 
+  async function confirmClearStock() {
+    if (!locationId) {
+      setErr('Не выбрана локация.');
+      return;
+    }
+    if (clearStockTyped.trim() !== 'DELETE') {
+      setErr('Для очистки склада введи подтверждение: DELETE');
+      return;
+    }
+
+    setClearingStock(true);
+    setErr(null);
+
+    try {
+      const sb = getBrowserSupabase();
+
+      const { error } = await sb.rpc(RPC_CLEAR_STOCK_HARD_FN, {
+        p_location_id: locationId,
+        p_confirm: 'DELETE',
+      });
+
+      if (error) throw new Error(error.message);
+
+      setClearStockOpen(false);
+      setClearStockTyped('');
+
+      await loadProcRows();
+      await loadBatches();
+      void loadToBuyTotalsForFamilies();
+    } catch (e: any) {
+      setErr(prettifyRpcError(e));
+    } finally {
+      setClearingStock(false);
+    }
+  }
 
   /* ===================== render ===================== */
 
@@ -2627,8 +2660,8 @@ async function confirmClearStock() {
                   {!loadingLocations &&
                     locations.map((l) => (
                       <option key={l.id} value={l.id}>
-  {l.name} ({locationKindLabel(l)})
-</option>
+                        {l.name} ({locationKindLabel(l)})
+                      </option>
                     ))}
                 </select>
                 {selectedLocation?.name && (
@@ -2636,10 +2669,9 @@ async function confirmClearStock() {
                     <MapPin className="h-3.5 w-3.5" />
                     <span className="truncate max-w-[320px]">
                       Назначение:{' '}
-<span className="font-medium text-slate-700">
-  {selectedLocation.name} · {locationKindLabel(selectedLocation)}
-</span>
-
+                      <span className="font-medium text-slate-700">
+                        {selectedLocation.name} · {locationKindLabel(selectedLocation)}
+                      </span>
                     </span>
                   </div>
                 )}
@@ -2707,7 +2739,6 @@ async function confirmClearStock() {
             <div className="lg:ml-auto flex flex-wrap gap-2">
               <div className="rounded-2xl bg-slate-900/5 px-3 py-2 text-[12px] ring-1 ring-slate-200">
                 Купить: <span className="font-semibold">{nf(totals.to_buy)}</span> шт
-
               </div>
               <div className="rounded-2xl bg-slate-900/5 px-3 py-2 text-[12px] ring-1 ring-slate-200">
                 Склад: <span className="font-semibold">{nf(totals.on_hand)}</span> шт
@@ -2761,14 +2792,13 @@ async function confirmClearStock() {
                     <div className="mt-1">
                       <span className="font-medium text-slate-700">AR_PLUS/AR_MINUS → AR</span>
                       <br />
-                      
                       <span className="font-medium text-slate-700">WHITE [0–2.75] → WHITE</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-3 text-[11px] text-slate-600">
-                  Семейства в этой странице ограничены: <b>BB, AR, WHITE</b>.
+                  Семейства на этой странице: <b>BB, AR, WHITE, CHAME*</b> + <b>PC 1.59 HMC</b> + <b>Myopia Control</b>.
                 </div>
               </div>
             )}
@@ -2810,11 +2840,10 @@ async function confirmClearStock() {
                     key={f.rpc_family}
                     type="button"
                     onClick={() => {
-  setSelected(vendorFamilyLabel(f.rpc_family)); // показываем UC/HMC/BlueCut HMC
-  setSelectedRpc(f.rpc_family);                 // в БД/ RPC остаётся WHITE/AR/BB
-  setTab('to_buy');
-}}
-
+                      setSelected(vendorFamilyLabel(f.rpc_family)); // UI label
+                      setSelectedRpc(f.rpc_family); // canonical for RPC/DB
+                      setTab('to_buy');
+                    }}
                     className={[
                       'w-full rounded-2xl border px-3 py-2 text-left transition',
                       active ? 'border-cyan-300 bg-cyan-50/70 shadow-sm' : 'border-slate-200 bg-white/80 hover:bg-white',
@@ -2899,13 +2928,12 @@ async function confirmClearStock() {
 
                     <div className="flex flex-wrap items-center gap-2">
                       {(
-  [
-    ['to_buy', 'Купить'],
-    ['stock', 'Склад'],
-    ['transit', 'В пути'],
-  ] as const
-).map(([k, label]) => (
-
+                        [
+                          ['to_buy', 'Купить'],
+                          ['stock', 'Склад'],
+                          ['transit', 'В пути'],
+                        ] as const
+                      ).map(([k, label]) => (
                         <button
                           key={k}
                           type="button"
@@ -3038,20 +3066,21 @@ async function confirmClearStock() {
                     Обновить партии
                   </SoftGhostButton>
                 </div>
-  <button
-    type="button"
-    onClick={openClearStockModal}
-    disabled={!locationId || clearingStock}
-    className={[
-      'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ring-1 transition',
-      'bg-rose-600 text-white ring-rose-700 hover:opacity-95',
-      (!locationId || clearingStock) ? 'opacity-50 cursor-not-allowed' : '',
-    ].join(' ')}
-    title="Жёстко очистить склад по выбранной локации (удалит движения/остатки)"
-  >
-    <Trash2 className="h-4 w-4" />
-    {clearingStock ? 'Очищаю склад…' : 'Очистить склад'}
-  </button>
+
+                <button
+                  type="button"
+                  onClick={openClearStockModal}
+                  disabled={!locationId || clearingStock}
+                  className={[
+                    'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ring-1 transition',
+                    'bg-rose-600 text-white ring-rose-700 hover:opacity-95',
+                    !locationId || clearingStock ? 'opacity-50 cursor-not-allowed' : '',
+                  ].join(' ')}
+                  title="Жёстко очистить склад по выбранной локации (удалит движения/остатки)"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {clearingStock ? 'Очищаю склад…' : 'Очистить склад'}
+                </button>
 
                 <div className="flex items-center gap-2">
                   <div className="inline-flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 ring-1 ring-slate-200 shadow-[0_12px_35px_rgba(15,23,42,0.10)]">
@@ -3069,68 +3098,64 @@ async function confirmClearStock() {
                   </div>
                 </div>
               </div>
-{/* ✅ create panel */}
-{createOpen && (
-  <div className="mt-3 rounded-2xl bg-sky-500/5 ring-1 ring-sky-200/70 p-4">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="flex-1 min-w-0">
-        <div className="text-[12px] text-slate-700 font-semibold">Создание партии из TO_BUY</div>
-        <div className="mt-1 text-[11px] text-slate-600 whitespace-pre-line leading-relaxed">
-          Семейство: <b>{selectedRpc || '—'}</b>
-          {'\n'}
-          Локация: <b>{selectedLocation?.name || '—'}</b>
-          {'\n'}
-          Строк: <strong>{nf(createSummary.lines)}</strong> · Шт: <strong>{nf(createSummary.pcs)}</strong>
 
+              {/* ✅ create panel */}
+              {createOpen && (
+                <div className="mt-3 rounded-2xl bg-sky-500/5 ring-1 ring-sky-200/70 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[12px] text-slate-700 font-semibold">Создание партии из TO_BUY</div>
+                      <div className="mt-1 text-[11px] text-slate-600 whitespace-pre-line leading-relaxed">
+                        Семейство: <b>{selectedRpc || '—'}</b>
+                        {'\n'}
+                        Локация: <b>{selectedLocation?.name || '—'}</b>
+                        {'\n'}
+                        Строк: <strong>{nf(createSummary.lines)}</strong> · Шт: <strong>{nf(createSummary.pcs)}</strong>
+                        {'\n'}
+                        Параметры: <b>{PLAN_DAYS}</b> д · запас <b>x{safetyFactor}</b> · мин/диоптрия <b>{minEach}</b> · режим{' '}
+                        <b>{applyMinToAll ? 'мин. ко всем' : 'мин. только при спросе'}</b>
+                      </div>
 
-          {'\n'}
-          Параметры: <b>{PLAN_DAYS}</b> д · запас <b>x{safetyFactor}</b> · мин/диоптрия <b>{minEach}</b> · режим{' '}
-          <b>{applyMinToAll ? 'мин. ко всем' : 'мин. только при спросе'}</b>
-        </div>
+                      {createDisabledReason && (
+                        <div className="mt-2 rounded-xl bg-rose-500/10 px-3 py-2 text-[11px] text-rose-700 ring-1 ring-rose-300/40">
+                          Нельзя создать: <b>{createDisabledReason}</b>
+                        </div>
+                      )}
+                    </div>
 
-        {createDisabledReason && (
-          <div className="mt-2 rounded-xl bg-rose-500/10 px-3 py-2 text-[11px] text-rose-700 ring-1 ring-rose-300/40">
-            Нельзя создать: <b>{createDisabledReason}</b>
-          </div>
-        )}
-      </div>
+                    <div className="flex flex-col gap-2 sm:w-[320px]">
+                      <Label>Комментарий (необязательно)</Label>
+                      <textarea
+                        value={createComment}
+                        onChange={(e) => setCreateComment(e.target.value)}
+                        placeholder="Taobao # / продавец / ссылка / примечание…"
+                        className={[
+                          'min-h-[84px] w-full rounded-2xl bg-white px-3 py-2 text-sm text-slate-900',
+                          'ring-1 ring-sky-200/80 shadow-[0_18px_45px_rgba(15,23,42,0.10)]',
+                          'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
+                        ].join(' ')}
+                      />
 
-      <div className="flex flex-col gap-2 sm:w-[320px]">
-        <Label>Комментарий (необязательно)</Label>
-        <textarea
-          value={createComment}
-          onChange={(e) => setCreateComment(e.target.value)}
-          placeholder="Taobao # / продавец / ссылка / примечание…"
-          className={[
-            'min-h-[84px] w-full rounded-2xl bg-white px-3 py-2 text-sm text-slate-900',
-            'ring-1 ring-sky-200/80 shadow-[0_18px_45px_rgba(15,23,42,0.10)]',
-            'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
-          ].join(' ')}
-        />
+                      <div className="flex items-center justify-end gap-2">
+                        <SoftGhostButton
+                          onClick={() => {
+                            setCreateOpen(false);
+                            setCreateComment('');
+                            setCreateExtraOpen(false);
+                          }}
+                          disabled={creatingBatch}
+                        >
+                          Закрыть
+                        </SoftGhostButton>
 
-        <div className="flex items-center justify-end gap-2">
-          <SoftGhostButton
-            onClick={() => {
-              setCreateOpen(false);
-              setCreateComment('');
-              setCreateExtraOpen(false);
-            }}
-            disabled={creatingBatch}
-          >
-            Закрыть
-          </SoftGhostButton>
-
-          <SoftPrimaryButton
-            onClick={createBatchFromToBuy}
-            disabled={creatingBatch || !!createDisabledReason}
-          >
-            {creatingBatch ? 'Создаю…' : 'Создать'}
-          </SoftPrimaryButton>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+                        <SoftPrimaryButton onClick={createBatchFromToBuy} disabled={creatingBatch || !!createDisabledReason}>
+                          {creatingBatch ? 'Создаю…' : 'Создать'}
+                        </SoftPrimaryButton>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* list */}
               <div className="mt-3 space-y-2">
@@ -3335,12 +3360,7 @@ async function confirmClearStock() {
 
         <div className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
           <label className="flex items-start gap-3">
-            <input
-              type="checkbox"
-              checked={deleteAlsoLots}
-              onChange={(e) => setDeleteAlsoLots(e.target.checked)}
-              className="mt-1"
-            />
+            <input type="checkbox" checked={deleteAlsoLots} onChange={(e) => setDeleteAlsoLots(e.target.checked)} className="mt-1" />
             <span className="text-[12px] text-slate-700">
               Также удалить из <b>lens_lots</b> строки, где <b>comment</b> содержит id партии (обнуление склада)
             </span>
@@ -3353,7 +3373,8 @@ async function confirmClearStock() {
           <div className="mt-2 text-[11px] text-slate-500">Без этого подтверждения удаление не выполнится.</div>
         </div>
       </Modal>
-            {/* ✅ clear stock modal */}
+
+      {/* ✅ clear stock modal */}
       <Modal
         open={clearStockOpen}
         title={
@@ -3395,9 +3416,7 @@ async function confirmClearStock() {
         }
       >
         <div className="rounded-2xl bg-rose-500/10 px-4 py-3 ring-1 ring-rose-300/40">
-          <div className="text-[12px] text-rose-800 font-medium">
-            Это жёсткая очистка склада по выбранной локации.
-          </div>
+          <div className="text-[12px] text-rose-800 font-medium">Это жёсткая очистка склада по выбранной локации.</div>
           <div className="mt-1 text-[11px] text-rose-800/80 leading-relaxed">
             Будут удалены складские движения/остатки (по реализации твоей RPC) для локации:
             <br />
@@ -3411,7 +3430,6 @@ async function confirmClearStock() {
           <div className="mt-2 text-[11px] text-slate-500">Без этого подтверждения очистка не выполнится.</div>
         </div>
       </Modal>
-
     </div>
   );
 }

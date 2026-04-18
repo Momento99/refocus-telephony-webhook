@@ -8,7 +8,8 @@ import {
   type RoleT,
 } from "./usePayrollMonthly";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { Wallet, Building2 } from "lucide-react";
+import { Wallet, Building2, KeyRound, User2, Plus, X, BarChart2 } from "lucide-react";
+import PenaltiesTab from "./PenaltiesTab";
 
 /* ---------- Supabase клиент (для модалки + профили) ---------- */
 const sb: SupabaseClient = createClient(
@@ -17,18 +18,35 @@ const sb: SupabaseClient = createClient(
   { auth: { persistSession: false } }
 );
 
+/* ---------- типы для PIN + логинов ---------- */
+type BranchPinMap = Record<number, string>;
+
+type CredRow = {
+  cred_id: number;
+  employee_id: number;
+  full_name: string;
+  branch_id: number | null;
+  login: string | null;
+  is_active: boolean;
+  pin_plain: string | null;
+};
+
 /* ---------- утилы ---------- */
 function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
 }
 function fmt(n?: number) {
-  return (n ?? 0).toLocaleString("ru-RU");
+  return Math.round(n ?? 0).toLocaleString("ru-RU");
 }
 function fmtHM(hours?: number) {
   const totalMin = Math.max(0, Math.round((hours ?? 0) * 60));
   const h = Math.trunc(totalMin / 60);
   const m = totalMin % 60;
   return `${h} ч ${m} мин`;
+}
+function num(x: any): number {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : 0;
 }
 /* Считаем сотрудника активным, если нет явного false в is_active/active */
 function isEmpActive(e: any) {
@@ -97,6 +115,16 @@ function getMonthRange(month: string): { start: string; end: string } {
   return { start, end };
 }
 
+function shiftYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 type WeekRange = {
   key: string;
   label: string;
@@ -104,7 +132,7 @@ type WeekRange = {
   endExclusive: string; // НЕ включительно
 };
 
-/** Недели месяца как календарные недели ПН–ВС, но внутри границ месяца (обрезаем по месяцу) */
+/** Недели месяца как сегменты внутри месяца */
 function getWeeksForMonth(month: string): WeekRange[] {
   const { year, monthIndex } = parseMonthStr(month);
 
@@ -161,17 +189,78 @@ function getWeeksForMonth(month: string): WeekRange[] {
   return weeks;
 }
 
+/** Возвращает ключ недели, содержащей сегодняшний день, или "__full__" */
+function getCurrentWeekKey(month: string): string {
+  const today = new Date();
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const todayYMD = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const weeks = getWeeksForMonth(month);
+  const found = weeks.find((w) => w.start <= todayYMD && todayYMD < w.endExclusive);
+  return found?.key ?? "__full__";
+}
+
 /* ---------- общий стиль контролов ---------- */
 const inputCls = cx(
-  "h-9 w-full rounded-2xl bg-white/90 px-3 text-sm text-slate-900 placeholder:text-slate-400",
-  "ring-1 ring-sky-200/80 shadow-[0_14px_40px_rgba(15,23,42,0.18)] backdrop-blur",
-  "focus:outline-none focus:ring-2 focus:ring-cyan-400/80"
+  "h-9 w-full rounded-2xl bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400",
+  "ring-1 ring-sky-200 shadow-sm",
+  "focus:outline-none focus:ring-2 focus:ring-cyan-400/70"
 );
 const selectCls = cx(
-  "h-9 rounded-2xl bg-white/90 px-2 text-sm text-slate-900",
-  "ring-1 ring-sky-200/80 shadow-[0_14px_40px_rgba(15,23,42,0.18)] backdrop-blur",
-  "focus:outline-none focus:ring-2 focus:ring-cyan-400/80"
+  "h-9 rounded-2xl bg-white px-2 text-sm text-slate-900",
+  "ring-1 ring-sky-200 shadow-sm",
+  "focus:outline-none focus:ring-2 focus:ring-cyan-400/70"
 );
+
+/* ---------- типы канонических RPC ---------- */
+type PeriodCanonicalRow = {
+  employee_id: number;
+  full_name: string;
+  branch_id: number;
+  days_count: number;
+  total_hours: number;
+  total_hour_pay: number;
+  total_paid_sum: number;
+  total_bonus: number;
+  total_penalties: number;
+  total_social_fund: number;
+  total_income_tax: number;
+  net_total: number;
+};
+
+type DailyCanonicalRow = {
+  employee_id: number;
+  full_name: string;
+  branch_id: number;
+  day: string;
+  hours: number;
+  hourly_rate: number;
+  hour_pay: number;
+  paid_sum: number;
+  bonus_percent: number;
+  bonus: number;
+  penalties: number;
+  social_fund_day: number;
+  income_tax_day: number;
+  net_day: number;
+};
+
+function rowsToNetMap(rows: PeriodCanonicalRow[] | null | undefined) {
+  const m = new Map<string, number>();
+  for (const r of rows ?? []) {
+    const key = `${Number(r.employee_id)}:${Number(r.branch_id)}`;
+    m.set(key, num(r.net_total));
+  }
+  return m;
+}
+
+function rowsToAdjMap(rows: any[] | null | undefined) {
+  const m = new Map<string, number>();
+  for (const r of rows ?? []) {
+    const key = `${Number(r.employee_id)}:${Number(r.branch_id)}`;
+    m.set(key, num(r.adjustments_sum));
+  }
+  return m;
+}
 
 /* ---------- элементы управления ---------- */
 function TextCell({
@@ -331,22 +420,23 @@ function Switch({
       type="button"
       onClick={toggle}
       className={cx(
-        "relative h-6 w-10 rounded-full transition-colors ring-1 ring-white/30 shadow-[0_10px_30px_rgba(15,23,42,0.18)]",
-        v
-          ? "bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400"
-          : "bg-slate-300"
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200",
+        v ? "bg-gradient-to-r from-teal-400 to-sky-400" : "bg-slate-300"
       )}
       aria-pressed={v}
       title={v ? "Бонусы включены" : "Бонусы выключены"}
     >
-      <span
-        className={cx(
-          "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all",
-          v ? "left-[18px]" : "left-0.5"
-        )}
-      />
-      {busy && (
-        <span className="absolute -right-6 top-0.5 h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-cyan-400" />
+      {busy ? (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+        </span>
+      ) : (
+        <span
+          className={cx(
+            "h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200",
+            v ? "translate-x-[17px]" : "translate-x-[1px]"
+          )}
+        />
       )}
     </button>
   );
@@ -380,8 +470,9 @@ function HeaderCard({ children }: { children: React.ReactNode }) {
     <div
       className={cx(
         "rounded-3xl p-5 sm:p-6",
-        "bg-white/5 ring-1 ring-white/10 backdrop-blur-2xl",
-        "shadow-[0_22px_70px_rgba(0,0,0,0.55)]"
+        "bg-gradient-to-br from-white via-slate-50 to-sky-50/85",
+        "ring-1 ring-sky-200/80 backdrop-blur-xl",
+        "shadow-[0_22px_70px_rgba(15,23,42,0.60)] text-slate-900"
       )}
     >
       {children}
@@ -442,52 +533,40 @@ function DangerBtn(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
 /* ---------- Авто-план по филиалам ---------- */
 const BRANCH_PLAN_TABLE = "payroll_branch_plans";
 
-/**
- * ВАЖНО:
- * - Округление порога и премии — ДО 1000 (порог округляем ВВЕРХ, премию — до ближайшей 1000)
- * - Порог берём не “тупо прошлый месяц”, а из истории + тренд + защита от сезонных провалов
- * - Премия растёт вместе с порогом и также имеет “ускорение” (чуть растущий % по мере роста порога)
- */
 const AUTO_PLAN = {
   version: "monthly-plan-v2",
-  historyMonths: 6, // история (без текущего месяца): -6..-1
-  quantile: 0.7, // “нормально хороший” уровень
-  // рост порога: базовые рамки + динамика от тренда, затем защита от волатильности
+  historyMonths: 6,
+  quantile: 0.7,
   gMinBase: 0.06,
   gMaxBase: 0.18,
   gMinFloor: 0.03,
-  gMinCeil: 0.10,
-  gMaxFloor: 0.10,
+  gMinCeil: 0.1,
+  gMaxFloor: 0.1,
   gMaxCeil: 0.25,
   trendWeightMin: 0.25,
   trendWeightMax: 0.35,
   trendClampMin: -0.15,
-  trendClampMax: 0.20,
-  // если прошлый месяц сильно просел от “типичного”, подтягиваем якорь к типичному
-  anchorTypicalWeightLow: 0.70, // когда prev <= 80% typical
-  anchorTypicalWeightMid: 0.55, // когда prev между 80..100% typical
-  typicalFloorFactor: 0.25, // часть gMin, чтобы не “уронить” план далеко ниже typical
-  // волатильность: если месяцы сильно скачут — режем gMax
+  trendClampMax: 0.2,
+  anchorTypicalWeightLow: 0.7,
+  anchorTypicalWeightMid: 0.55,
+  typicalFloorFactor: 0.25,
   volatilitySoftCap: 0.25,
-  volatilityHardCap: 0.50,
-  // округления
-  roundStep: 1000, // порог округление вверх до 1000
-  bonusStep: 1000, // премия округление до 1000
-  // премия: динамический “ускоряющийся” процент (по порогу)
+  volatilityHardCap: 0.5,
+  roundStep: 1000,
+  bonusStep: 1000,
   bonusMinAbs: 2000,
-  bonusMinRate: 0.008, // минимум ~0.8% (для маленьких планов не стало “копейки”)
-  bonusMaxRate: 0.020, // максимум 2.0% (защита от разгона)
+  bonusMinRate: 0.008,
+  bonusMaxRate: 0.02,
 };
 
-// чем больше порог — тем выше % премии (плавно)
 const BONUS_TIERS: Array<{ upTo: number; rate: number }> = [
-  { upTo: 300_000, rate: 0.0120 },
+  { upTo: 300_000, rate: 0.012 },
   { upTo: 600_000, rate: 0.0125 },
-  { upTo: 1_000_000, rate: 0.0130 },
+  { upTo: 1_000_000, rate: 0.013 },
   { upTo: 2_000_000, rate: 0.0135 },
-  { upTo: 3_000_000, rate: 0.0140 },
+  { upTo: 3_000_000, rate: 0.014 },
   { upTo: 5_000_000, rate: 0.0145 },
-  { upTo: Infinity, rate: 0.0150 },
+  { upTo: Infinity, rate: 0.015 },
 ];
 
 function clamp(n: number, a: number, b: number) {
@@ -510,7 +589,6 @@ function shiftMonthKey(month: string, delta: number): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
 function shiftMonthStart(monthStart: string, delta: number): string {
-  // monthStart: YYYY-MM-01
   const [y, m] = monthStart.split("-").map((x) => Number(x));
   const d = new Date(y, (m || 1) - 1 + delta, 1);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`;
@@ -557,6 +635,8 @@ function bonusRateForTarget(target: number) {
    СТРАНИЦА
 =========================================== */
 export default function Page() {
+  const [tab, setTab] = useState<"payroll" | "penalties">("payroll");
+
   const [month, setMonth] = useState<string>(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -574,8 +654,12 @@ export default function Page() {
     setWeekKey("__full__");
   }
 
-  // выбор недели
-  const [weekKey, setWeekKey] = useState<string>("__full__");
+  // выбор недели — по умолчанию текущая неделя
+  const [weekKey, setWeekKey] = useState<string>(() => {
+    const d = new Date();
+    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return getCurrentWeekKey(m);
+  });
   const weeks = useMemo(() => getWeeksForMonth(month), [month]);
   const activeWeek = useMemo(
     () => weeks.find((w) => w.key === weekKey) ?? null,
@@ -600,140 +684,24 @@ export default function Page() {
   const employees = data?.employees ?? [];
   const cfg = data?.cfg;
 
-  /* показываем актуальные значения конфигурации */
+  /* показываем актуальные значения конфигурации (только payroll_config id=1) */
   const [cfgLocal, setCfgLocal] = useState<typeof cfg | null>(null);
-
-  // 1) сначала — то, что дал хук
   useEffect(() => {
     setCfgLocal(cfg ?? null);
   }, [cfg]);
-
-  // 2) затем — дополнительный "probe" из payroll_config: select('*') автоматически подтянет новые поля после миграции
-  useEffect(() => {
-    let cancelled = false;
-
-    async function probePayrollConfig() {
-      try {
-        const { start: monthStart } = getMonthRange(month);
-
-        const { data: row, error } = await sb
-          .from("payroll_config")
-          .select("*")
-          .eq("month", monthStart)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (!cancelled && row) {
-          setCfgLocal((prev) => {
-            const p: any = prev ?? {};
-            const r: any = row ?? {};
-            return { ...p, ...r } as any;
-          });
-        }
-      } catch (e) {
-        console.warn("probe payroll_config failed:", e);
-      }
-    }
-
-    probePayrollConfig();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [month]);
 
   /* ===== Переход на месячную премию СТРОГО с 2026-02 ===== */
   const SWITCH_MONTH = "2026-02";
   const isMonthlyPlanMode = useMemo(() => month >= SWITCH_MONTH, [month]);
 
-  const hasMonthlyCfgFields = useMemo(() => {
-    const c: any = cfgLocal ?? null;
-    if (!c) return false;
-    return (
-      Object.prototype.hasOwnProperty.call(c, "monthly_turnover_target") ||
-      Object.prototype.hasOwnProperty.call(c, "monthly_bonus_each")
-    );
-  }, [cfgLocal]);
-
-  /* ===== Weekly data from v_payroll_daily_fixed ===== */
-  const [weekNetMap, setWeekNetMap] = useState<Map<string, number> | null>(null);
-  const [weekLoading, setWeekLoading] = useState(false);
-
-  useEffect(() => {
-    if (!activeWeek) {
-      setWeekNetMap(null);
-      setWeekLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadWeek() {
-      setWeekLoading(true);
-      try {
-        const { data, error } = await sb
-          .from("v_payroll_daily_fixed")
-          .select("employee_id,branch_id,day,net_day")
-          .gte("day", activeWeek.start)
-          .lt("day", activeWeek.endExclusive);
-
-        if (error) throw error;
-
-        const m = new Map<string, number>();
-        for (const r of (data ?? []) as any[]) {
-          const key = `${r.employee_id}:${r.branch_id}`;
-          const v = r.net_day == null ? 0 : Number(r.net_day);
-          m.set(key, (m.get(key) ?? 0) + v);
-        }
-
-        if (!cancelled) setWeekNetMap(m);
-      } catch (err: any) {
-        console.error("loadWeek error", err);
-        if (!cancelled) {
-          alert(
-            `Не удалось загрузить данные за неделю: ${
-              err?.message || err?.error_description || String(err)
-            }`
-          );
-          setWeekNetMap(new Map());
-        }
-      } finally {
-        if (!cancelled) setWeekLoading(false);
-      }
-    }
-
-    loadWeek();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeWeek]);
+  const monthStart = useMemo(() => getMonthRange(month).start, [month]);
+  const monthEndExcl = useMemo(() => getMonthRange(month).end, [month]);
+  const monthEndInclusive = useMemo(() => shiftYmd(monthEndExcl, -1), [monthEndExcl]);
 
   /* Показываем только активных */
   const visibleEmployees = useMemo(
     () => employees.filter(isEmpActive),
     [employees]
-  );
-
-  /* Итоги «к выплате»: по месяцу e.net (уже с месячными корректировками), по неделе — сумма net_day (без месячных корректировок) */
-  const getNet = (e: any) => {
-    if (activeWeek && weekNetMap) {
-      const key = `${e.id}:${e.branchId}`;
-      const v = weekNetMap.get(key);
-      return v ?? 0;
-    }
-    return e.net ?? 0;
-  };
-
-  const totalNet = useMemo(
-    () => visibleEmployees.reduce((s, e) => s + getNet(e), 0),
-    [visibleEmployees, weekNetMap, activeWeek]
-  );
-
-  const totalNetMonth = useMemo(
-    () => visibleEmployees.reduce((s, e) => s + (e.net ?? 0), 0),
-    [visibleEmployees]
   );
 
   /* Сотрудники по филиалам */
@@ -747,6 +715,241 @@ export default function Page() {
     return m;
   }, [visibleEmployees, employees]);
 
+  /* ===== PIN'ы филиалов + логины сотрудников ===== */
+  const [branchPins, setBranchPins] = useState<BranchPinMap>({});
+  const [pinInputs, setPinInputs] = useState<BranchPinMap>({});
+  const [creds, setCreds] = useState<CredRow[]>([]);
+  const [pinBusy, setPinBusy] = useState<number | null>(null);
+  // которые строки с кредами раскрыты (employee_id)
+  const [openCredEmpId, setOpenCredEmpId] = useState<number | null>(null);
+  // форма создания логина: per-employee
+  const [credForm, setCredForm] = useState<Record<number, { login: string; pin: string }>>({});
+
+  function genPin4() {
+    let s = "";
+    for (let i = 0; i < 4; i++) s += Math.floor(Math.random() * 10);
+    return s;
+  }
+
+  useEffect(() => {
+    void loadBranchPins();
+    void loadCreds();
+  }, []);
+
+  async function loadBranchPins() {
+    const { data, error } = await sb.from("branches").select("id,pos_pin").order("id");
+    if (error) return;
+    const map: BranchPinMap = {};
+    const inputs: BranchPinMap = {};
+    for (const r of data ?? []) {
+      map[r.id] = (r.pos_pin ?? "").toString();
+      inputs[r.id] = (r.pos_pin ?? "").toString();
+    }
+    setBranchPins(map);
+    setPinInputs(inputs);
+  }
+
+  async function loadCreds() {
+    const { data, error } = await sb
+      .from("v_employee_credentials_admin")
+      .select("cred_id,employee_id,full_name,branch_id,login,is_active,pin_plain")
+      .order("employee_id");
+    if (!error) setCreds((data ?? []) as CredRow[]);
+  }
+
+  async function saveBranchPin(branchId: number) {
+    const val = (pinInputs[branchId] ?? "").trim();
+    if (!/^\d{4,8}$/.test(val)) {
+      alert("PIN должен быть 4–8 цифр");
+      return;
+    }
+    setPinBusy(branchId);
+    const { error } = await sb.from("branches").update({ pos_pin: val }).eq("id", branchId);
+    setPinBusy(null);
+    if (error) { alert(error.message); return; }
+    setBranchPins((p) => ({ ...p, [branchId]: val }));
+  }
+
+  async function clearBranchPin(branchId: number) {
+    if (!confirm("Очистить PIN этого филиала?")) return;
+    setPinBusy(branchId);
+    const { error } = await sb.from("branches").update({ pos_pin: null }).eq("id", branchId);
+    setPinBusy(null);
+    if (error) { alert(error.message); return; }
+    setBranchPins((p) => ({ ...p, [branchId]: "" }));
+    setPinInputs((p) => ({ ...p, [branchId]: "" }));
+  }
+
+  async function createEmpCred(employeeId: number) {
+    const form = credForm[employeeId] ?? { login: "", pin: "" };
+    const l = form.login.trim().toLowerCase();
+    if (l.length < 2 || l.length > 40) { alert("Логин 2–40 символов"); return; }
+    const p = form.pin.trim();
+    if (!/^\d{4}$/.test(p)) { alert("PIN строго 4 цифры"); return; }
+
+    const res = await sb.rpc("app_set_employee_login_pin", {
+      p_employee_id: employeeId,
+      p_login: l,
+      p_pin: p,
+    });
+    if (res.error) { alert(res.error.message); return; }
+    const r = Array.isArray(res.data) ? res.data[0] : res.data;
+    if (r?.error) {
+      const map: Record<string, string> = { employee_not_found: "Сотрудник не найден", login_taken: "Такой логин занят" };
+      alert(map[r.error] ?? r.error);
+      return;
+    }
+    setCredForm((f) => ({ ...f, [employeeId]: { login: "", pin: "" } }));
+    await loadCreds();
+  }
+
+  async function removeEmpCred(row: CredRow) {
+    if (!confirm(`Удалить логин и PIN для «${row.full_name}»?`)) return;
+    const now = new Date().toISOString();
+    const { error: e1 } = await sb.from("employees").update({ login: null, pin_hash: null, updated_at: now } as any).eq("id", row.employee_id);
+    if (e1) { alert(e1.message); return; }
+    const { error: e2 } = await sb.from("employee_credentials").update({ login: null, pin_plain: null, pin_sha256: null, is_active: false, updated_at: now } as any).eq("id", row.cred_id);
+    if (e2) { alert(e2.message); return; }
+    await loadCreds();
+  }
+
+  /* ===== Канонические карты по периоду ===== */
+  const [weekPeriodMap, setWeekPeriodMap] = useState<Map<string, number> | null>(null);
+  const [weekLoading, setWeekLoading] = useState(false);
+
+  const [monthPeriodMap, setMonthPeriodMap] = useState<Map<string, number> | null>(null);
+  const [monthAdjMap, setMonthAdjMap] = useState<Map<string, number>>(new Map());
+  const [monthLoading, setMonthLoading] = useState(false);
+
+  useEffect(() => {
+    if (visibleEmployees.length === 0) {
+      setMonthPeriodMap(new Map());
+      setMonthAdjMap(new Map());
+      setMonthLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadMonthCanonical() {
+      setMonthLoading(true);
+      try {
+        const { data: periodRows, error: periodErr } = await sb.rpc(
+          "payroll_period_canonical",
+          {
+            p_from: monthStart,
+            p_to: monthEndInclusive,
+            p_branch_id: null,
+            p_employee_id: null,
+          }
+        );
+
+        if (periodErr) throw periodErr;
+
+        const { data: adjRows, error: adjErr } = await sb
+          .from("v_payroll_adjustments_monthly_with_plan")
+          .select("employee_id,branch_id,adjustments_sum")
+          .eq("month", monthStart);
+
+        if (adjErr) throw adjErr;
+
+        if (cancelled) return;
+
+        setMonthPeriodMap(rowsToNetMap((periodRows ?? []) as PeriodCanonicalRow[]));
+        setMonthAdjMap(rowsToAdjMap(adjRows ?? []));
+      } catch (err: any) {
+        console.error("loadMonthCanonical error", err);
+        if (!cancelled) {
+          setMonthPeriodMap(new Map());
+          setMonthAdjMap(new Map());
+        }
+      } finally {
+        if (!cancelled) setMonthLoading(false);
+      }
+    }
+
+    loadMonthCanonical();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [monthStart, monthEndInclusive, visibleEmployees]);
+
+  useEffect(() => {
+    if (!activeWeek) {
+      setWeekPeriodMap(null);
+      setWeekLoading(false);
+      return;
+    }
+    if (visibleEmployees.length === 0) {
+      setWeekPeriodMap(new Map());
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadWeekCanonical() {
+      setWeekLoading(true);
+      try {
+        const weekEndInclusive = shiftYmd(activeWeek.endExclusive, -1);
+
+        const { data, error } = await sb.rpc("payroll_period_canonical", {
+          p_from: activeWeek.start,
+          p_to: weekEndInclusive,
+          p_branch_id: null,
+          p_employee_id: null,
+        });
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        setWeekPeriodMap(rowsToNetMap((data ?? []) as PeriodCanonicalRow[]));
+      } catch (err: any) {
+        console.error("loadWeekCanonical error", err);
+        if (!cancelled) {
+          alert(
+            `Не удалось загрузить данные за неделю: ${
+              err?.message || err?.error_description || String(err)
+            }`
+          );
+          setWeekPeriodMap(new Map());
+        }
+      } finally {
+        if (!cancelled) setWeekLoading(false);
+      }
+    }
+
+    loadWeekCanonical();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWeek, visibleEmployees]);
+
+  const getMonthNet = (e: any) => {
+    const key = `${e.id}:${e.branchId}`;
+    return (monthPeriodMap?.get(key) ?? 0) + (monthAdjMap.get(key) ?? 0);
+  };
+
+  const getWeekNet = (e: any) => {
+    const key = `${e.id}:${e.branchId}`;
+    return weekPeriodMap?.get(key) ?? 0;
+  };
+
+  const getNet = (e: any) => {
+    if (activeWeek) return getWeekNet(e);
+    return getMonthNet(e);
+  };
+
+  const totalNet = useMemo(
+    () => visibleEmployees.reduce((s, e) => s + getNet(e), 0),
+    [visibleEmployees, weekPeriodMap, monthPeriodMap, monthAdjMap, activeWeek]
+  );
+
+  const totalNetMonth = useMemo(() => {
+    return visibleEmployees.reduce((s, e) => s + getMonthNet(e), 0);
+  }, [visibleEmployees, monthPeriodMap, monthAdjMap]);
+
   /* Итог к выплате по каждому филиалу */
   const branchTotals = useMemo(() => {
     const m = new Map<number, number>();
@@ -755,15 +958,15 @@ export default function Page() {
       m.set(e.branchId, (m.get(e.branchId) ?? 0) + getNet(e));
     }
     return m;
-  }, [branches, visibleEmployees, weekNetMap, activeWeek]);
+  }, [branches, visibleEmployees, weekPeriodMap, monthPeriodMap, monthAdjMap, activeWeek]);
 
   /* ===== Детализация по дням (модалка) ===== */
   const [dailyMeta, setDailyMeta] = useState<null | {
     id: number;
     name: string;
     branchId: number;
-    netPeriod: number; // как в списке (неделя/месяц)
-    netMonth: number; // всегда месячный итог (как в списке при "весь месяц")
+    netPeriod: number;
+    netMonth: number;
   }>(null);
   const [dailyRows, setDailyRows] = useState<any[] | null>(null);
   const [dailyBusy, setDailyBusy] = useState(false);
@@ -778,15 +981,8 @@ export default function Page() {
     [dailyRows]
   );
 
-  // корректировки месяца применяются к итогу МЕСЯЦА; если выбранная неделя — не добавляем их к итогу за неделю
-  const adjForThisView = useMemo(
-    () => (activeWeek ? 0 : dailyAdj),
-    [activeWeek, dailyAdj]
-  );
-  const dailyNetWithAdj = useMemo(
-    () => dailyNetSum + adjForThisView,
-    [dailyNetSum, adjForThisView]
-  );
+  const adjForThisView = useMemo(() => (activeWeek ? 0 : dailyAdj), [activeWeek, dailyAdj]);
+  const dailyNetWithAdj = useMemo(() => dailyNetSum + adjForThisView, [dailyNetSum, adjForThisView]);
 
   async function openDaily(e: {
     id: number;
@@ -807,26 +1003,28 @@ export default function Page() {
     setDailyBusy(true);
 
     try {
-      const { start: monthStart, end: monthEnd } = getMonthRange(month);
-
       const rangeStart = activeWeek ? activeWeek.start : monthStart;
-      const rangeEnd = activeWeek ? activeWeek.endExclusive : monthEnd;
+      const rangeEndInclusive = activeWeek
+        ? shiftYmd(activeWeek.endExclusive, -1)
+        : monthEndInclusive;
 
-      const { data: days, error: errDays } = await sb
-        .from("v_payroll_daily_fixed")
-        .select(
-          "day,hours,hour_pay,turnover,bonus,penalties,social_fund_day,income_tax_day,plan_premium,net_day"
-        )
-        .eq("employee_id", e.id)
-        .eq("branch_id", e.branchId)
-        .gte("day", rangeStart)
-        .lt("day", rangeEnd)
-        .order("day", { ascending: true });
+      const { data: rows, error } = await sb.rpc("payroll_daily_canonical", {
+        p_from: rangeStart,
+        p_to: rangeEndInclusive,
+        p_branch_id: e.branchId,
+        p_employee_id: e.id,
+      });
 
-      if (errDays) throw errDays;
-      const rawDays = (days ?? []) as any[];
+      if (error) throw error;
 
-      // корректировки за МЕСЯЦ (включая месячную премию с 2026-02)
+      const daily = ((rows ?? []) as DailyCanonicalRow[])
+        .slice()
+        .sort((a, b) => String(a.day).localeCompare(String(b.day)))
+        .map((r) => ({
+          ...r,
+          plan_premium: 0,
+        }));
+
       const { data: adjRow, error: errAdj } = await sb
         .from("v_payroll_adjustments_monthly_with_plan")
         .select("adjustments_sum")
@@ -842,7 +1040,7 @@ export default function Page() {
           ? Number((adjRow as any).adjustments_sum)
           : 0;
 
-      setDailyRows(rawDays);
+      setDailyRows(daily);
       setDailyAdj(adj);
     } catch (err: any) {
       console.error("openDaily error", err);
@@ -922,7 +1120,6 @@ export default function Page() {
   const rowTdFirst = cx(rowTdBase, "border-l rounded-l-2xl");
   const rowTdLast = cx(rowTdBase, "border-r rounded-r-2xl");
 
-  // модалка: показывать футер даже если дней нет, но есть корректировки
   const hasDailyRows = (dailyRows?.length ?? 0) > 0;
   const hasAdj = Math.round(dailyAdj) !== 0;
   const showDailyFooter = dailyRows !== null && (hasDailyRows || hasAdj);
@@ -936,33 +1133,17 @@ export default function Page() {
     updated_at?: string;
   };
 
+  type BranchPremium = {
+    turnover_sum: number;
+    plan_premium_each: number;
+  };
+
   const [branchPlans, setBranchPlans] = useState<Map<number, BranchPlan>>(new Map());
-  const [prevTurnoverMap, setPrevTurnoverMap] = useState<Map<number, number>>(new Map());
-  const [histTurnoverByBranch, setHistTurnoverByBranch] = useState<Map<number, number[]>>(
-    new Map()
-  );
+  const [branchPremiumMap, setBranchPremiumMap] = useState<Map<number, BranchPremium>>(new Map());
+  const [histTurnoverByBranch, setHistTurnoverByBranch] = useState<Map<number, number[]>>(new Map());
   const [histMonthsKeys, setHistMonthsKeys] = useState<string[]>([]);
   const [histLoaded, setHistLoaded] = useState(false);
   const [planBusyBranchId, setPlanBusyBranchId] = useState<number | null>(null);
-
-  const monthStart = useMemo(() => getMonthRange(month).start, [month]);
-
-  async function selectBranchPlansWithFallback(monthStartDate: string) {
-    const monthCols = ["month", "plan_month", "month_start"];
-    for (const col of monthCols) {
-      const { data, error } = await sb
-        .from(BRANCH_PLAN_TABLE)
-        .select("*")
-        // @ts-ignore
-        .eq(col, monthStartDate);
-
-      if (!error) return { data: data ?? [], monthCol: col };
-      if (String((error as any)?.code) === "42703") continue;
-      // другие ошибки — выходим сразу
-      throw error;
-    }
-    return { data: [], monthCol: "month" };
-  }
 
   async function upsertBranchPlanWithFallback(payloadBase: any) {
     const monthCols = ["month", "plan_month", "month_start"];
@@ -988,21 +1169,34 @@ export default function Page() {
     }
   }
 
-  // “умная” формула плана и премии (не сохраняет — только предлагает)
-  function suggestPlan(branchId: number) {
-    const fallbackTarget = Number((cfgLocal as any)?.monthly_turnover_target ?? 0);
-    const fallbackBonus = Number((cfgLocal as any)?.monthly_bonus_each ?? 0);
+  async function selectBranchPlansWithFallback(monthStartDate: string) {
+    const monthCols = ["month", "plan_month", "month_start"];
 
+    for (const col of monthCols) {
+      const { data, error } = await sb
+        .from(BRANCH_PLAN_TABLE)
+        .select("*")
+        // @ts-ignore
+        .eq(col, monthStartDate);
+
+      if (!error) return { rows: data ?? [], monthCol: col };
+      if (String((error as any)?.code) === "42703") continue;
+      throw error;
+    }
+
+    return { rows: [], monthCol: "month" };
+  }
+
+  function suggestPlan(branchId: number) {
     const hist = histTurnoverByBranch.get(branchId) ?? [];
+    const histPos = hist.filter((x) => x > 0);
     const prev = hist.length ? hist[hist.length - 1] : 0;
 
-    // если данных нет — показываем fallback
-    const histPos = hist.filter((x) => x > 0);
-    if (prev <= 0 || histPos.length < 1) {
+    if (histPos.length < 1) {
       return {
-        target: Math.max(0, Math.trunc(fallbackTarget)),
-        bonus: Math.max(0, Math.trunc(fallbackBonus)),
-        debug: { usedFallback: true, prev, hist },
+        target: 0,
+        bonus: 0,
+        debug: { usedFallback: false, reason: "no_history", prev, hist },
       };
     }
 
@@ -1010,15 +1204,13 @@ export default function Page() {
     const q70 = quantile(histPos, AUTO_PLAN.quantile);
     const typical = Math.max(med, q70);
 
-    // тренд: сравним prev с средним 1–2 месяцев перед ним (если есть)
     const prev2 = histPos.length >= 3 ? histPos.slice(-3, -1) : histPos.slice(-2, -1);
     const prevAvg = prev2.length ? mean(prev2) : typical || prev;
 
     let trendPct = prevAvg > 0 ? (prev - prevAvg) / prevAvg : 0;
     trendPct = clamp(trendPct, AUTO_PLAN.trendClampMin, AUTO_PLAN.trendClampMax);
 
-    const vol =
-      mean(histPos) > 0 ? stdev(histPos) / Math.max(1, mean(histPos)) : 0;
+    const vol = mean(histPos) > 0 ? stdev(histPos) / Math.max(1, mean(histPos)) : 0;
     const volClamped = clamp(vol, 0, 1);
 
     let gMin = clamp(
@@ -1032,50 +1224,44 @@ export default function Page() {
       AUTO_PLAN.gMaxCeil
     );
 
-    // волатильность: если сильно скачет — режем gMax (и чуть gMin)
     if (volClamped > AUTO_PLAN.volatilitySoftCap) {
-      const denom = Math.max(
-        1e-9,
-        AUTO_PLAN.volatilityHardCap - AUTO_PLAN.volatilitySoftCap
-      );
-      const k = clamp(
-        1 - (volClamped - AUTO_PLAN.volatilitySoftCap) / denom,
-        0.6,
-        1
-      );
+      const denom = Math.max(1e-9, AUTO_PLAN.volatilityHardCap - AUTO_PLAN.volatilitySoftCap);
+      const k = clamp(1 - (volClamped - AUTO_PLAN.volatilitySoftCap) / denom, 0.6, 1);
       gMax = gMax * k;
       gMin = gMin * clamp(k + 0.1, 0.75, 1);
     }
     gMin = clamp(gMin, AUTO_PLAN.gMinFloor, AUTO_PLAN.gMinCeil);
     gMax = clamp(gMax, Math.max(gMin, AUTO_PLAN.gMaxFloor), AUTO_PLAN.gMaxCeil);
 
-    // якорь: если prev сильно ниже typical — тянем ближе к typical (защита от сезонных/разовых провалов)
     let anchor = prev;
     if (typical > 0) {
       if (prev <= typical * 0.8) {
-        anchor = AUTO_PLAN.anchorTypicalWeightLow * typical + (1 - AUTO_PLAN.anchorTypicalWeightLow) * prev;
+        anchor =
+          AUTO_PLAN.anchorTypicalWeightLow * typical +
+          (1 - AUTO_PLAN.anchorTypicalWeightLow) * prev;
       } else if (prev < typical) {
-        anchor = AUTO_PLAN.anchorTypicalWeightMid * typical + (1 - AUTO_PLAN.anchorTypicalWeightMid) * prev;
+        anchor =
+          AUTO_PLAN.anchorTypicalWeightMid * typical +
+          (1 - AUTO_PLAN.anchorTypicalWeightMid) * prev;
       } else {
         anchor = prev;
       }
     }
 
-    // целевой порог: anchor + рост, но с рамками относительно max(prev, typical)
     const targetRaw = anchor * (1 + gMin);
     const upperRef = Math.max(prev, typical);
     let capUpper = upperRef * (1 + gMax);
 
-    // нижняя граница: не ниже prev*(1+gMin) и не сильно ниже “типичного”
-    let capLower = Math.max(prev * (1 + gMin), typical * (1 + gMin * AUTO_PLAN.typicalFloorFactor));
+    let capLower = Math.max(
+      prev * (1 + gMin),
+      typical * (1 + gMin * AUTO_PLAN.typicalFloorFactor)
+    );
     if (capLower > capUpper) capUpper = capLower;
 
     const targetCapped = clamp(targetRaw, capLower, capUpper);
 
-    // округление порога: ВВЕРХ до 1000
     const target = Math.max(0, Math.trunc(roundUpTo(targetCapped, AUTO_PLAN.roundStep)));
 
-    // премия: % зависит от порога (ускорение) + границы по min/maxRate
     const rateTier = bonusRateForTarget(target);
     const bonusRaw = target * rateTier;
     const bonusMin = Math.max(AUTO_PLAN.bonusMinAbs, target * AUTO_PLAN.bonusMinRate);
@@ -1123,24 +1309,20 @@ export default function Page() {
     }
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMonthlyPlanMode, histLoaded, branches, histTurnoverByBranch, cfgLocal, month]);
+  }, [isMonthlyPlanMode, histLoaded, branches, histTurnoverByBranch, month]);
 
   function getBranchPlanEffective(branchId: number): BranchPlan {
     const bp = branchPlans.get(branchId);
-    const fallbackTarget = Number((cfgLocal as any)?.monthly_turnover_target ?? 0);
-    const fallbackBonus = Number((cfgLocal as any)?.monthly_bonus_each ?? 0);
-
     if (bp) {
       return {
-        monthly_turnover_target: bp.monthly_turnover_target ?? fallbackTarget,
-        monthly_bonus_each: bp.monthly_bonus_each ?? fallbackBonus,
+        monthly_turnover_target: Math.max(0, Math.trunc(bp.monthly_turnover_target ?? 0)),
+        monthly_bonus_each: Math.max(0, Math.trunc(bp.monthly_bonus_each ?? 0)),
         mode: bp.mode ?? "manual",
         auto_params: bp.auto_params ?? null,
         updated_at: bp.updated_at,
       };
     }
 
-    // если план не задан — показываем “умную рекомендацию” (не сохраняем)
     const s = suggestedByBranch.get(branchId);
     if (s && s.target > 0) {
       return {
@@ -1153,19 +1335,18 @@ export default function Page() {
     }
 
     return {
-      monthly_turnover_target: Math.max(0, Math.trunc(fallbackTarget)),
-      monthly_bonus_each: Math.max(0, Math.trunc(fallbackBonus)),
-      mode: "fallback",
+      monthly_turnover_target: 0,
+      monthly_bonus_each: 0,
+      mode: "not_set",
       auto_params: null,
       updated_at: undefined,
     };
   }
 
-  // загрузка планов по филиалам за выбранный месяц + история выручек (-6..-1) по филиалам
   useEffect(() => {
     if (!isMonthlyPlanMode) {
       setBranchPlans(new Map());
-      setPrevTurnoverMap(new Map());
+      setBranchPremiumMap(new Map());
       setHistTurnoverByBranch(new Map());
       setHistMonthsKeys([]);
       setHistLoaded(false);
@@ -1175,47 +1356,69 @@ export default function Page() {
 
     let cancelled = false;
 
-    async function loadPlansAndHistory() {
+    async function loadPlansPremiumsAndHistory() {
+      const keys: string[] = [];
+      for (let i = AUTO_PLAN.historyMonths; i >= 1; i--) {
+        keys.push(shiftMonthKey(month, -i));
+      }
+
+      let planMap = new Map<number, BranchPlan>();
       try {
-        // 0) ключи месяцев истории
-        const keys: string[] = [];
-        for (let i = AUTO_PLAN.historyMonths; i >= 1; i--) {
-          keys.push(shiftMonthKey(month, -i));
-        }
-
-        // 1) планы
-        const { data: planRows } = await selectBranchPlansWithFallback(monthStart);
-
-        const planMap = new Map<number, BranchPlan>();
-        for (const r of (planRows ?? []) as any[]) {
+        const { rows } = await selectBranchPlansWithFallback(monthStart);
+        for (const r of (rows ?? []) as any[]) {
           const branchId = Number(r.branch_id ?? r.branchId ?? 0);
           if (!branchId) continue;
+
           planMap.set(branchId, {
-            monthly_turnover_target: Number(
-              r.monthly_turnover_target ?? r.turnover_target ?? r.target ?? 0
-            ),
-            monthly_bonus_each: Number(
-              r.monthly_bonus_each ?? r.bonus_each ?? r.bonus ?? 0
-            ),
+            monthly_turnover_target: Number(r.monthly_turnover_target ?? 0),
+            monthly_bonus_each: Number(r.monthly_bonus_each ?? 0),
             mode: r.mode ?? "manual",
             auto_params: r.auto_params ?? null,
             updated_at: r.updated_at ?? null,
           });
         }
+      } catch (e: any) {
+        console.error("load branch plans error:", extractErrMsg(e));
+        planMap = new Map();
+      }
 
-        // 2) история выручки: суммируем turnover из v_payroll_daily_fixed за диапазон (-H..-1)
+      let premMap = new Map<number, BranchPremium>();
+      try {
+        const { data: premRows, error: premErr } = await sb
+          .from("v_payroll_plan_premium_monthly_branch")
+          .select("branch_id,turnover_sum,plan_premium_each")
+          .eq("month", monthStart);
+
+        if (premErr) throw premErr;
+
+        for (const r of (premRows ?? []) as any[]) {
+          const bid = Number(r.branch_id ?? 0);
+          if (!bid) continue;
+          premMap.set(bid, {
+            turnover_sum: Number(r.turnover_sum ?? 0),
+            plan_premium_each: Number(r.plan_premium_each ?? 0),
+          });
+        }
+      } catch (e: any) {
+        console.error("load branch premium error:", extractErrMsg(e));
+        premMap = new Map();
+      }
+
+      // ИСТОРИЯ: берём именно дневную выручку филиала
+      let histOk = false;
+      let histMap = new Map<number, number[]>();
+      try {
         const histStart = shiftMonthStart(monthStart, -AUTO_PLAN.historyMonths);
         const histEnd = monthStart;
 
         const { data: days, error: errDays } = await sb
-          .from("v_payroll_daily_fixed")
+          .from("v_payroll_branch_turnover_daily")
           .select("branch_id,day,turnover")
           .gte("day", histStart)
           .lt("day", histEnd);
 
         if (errDays) throw errDays;
 
-        // суммируем по (branch, YYYY-MM)
         const sumByBranchMonth = new Map<string, number>();
         const branchIdsSeen = new Set<number>();
 
@@ -1223,16 +1426,15 @@ export default function Page() {
           const bid = Number(r.branch_id ?? 0);
           if (!bid) continue;
           branchIdsSeen.add(bid);
-          const dayStr = String(r.day ?? "");
+
+          const dayStr = String(r.day ?? "").slice(0, 10);
           const mk = dayStr.length >= 7 ? dayStr.slice(0, 7) : "";
           if (!mk) continue;
-          const t = r.turnover == null ? 0 : Number(r.turnover);
+
+          const t = num(r.turnover);
           const k = `${bid}:${mk}`;
           sumByBranchMonth.set(k, (sumByBranchMonth.get(k) ?? 0) + t);
         }
-
-        const histMap = new Map<number, number[]>();
-        const prevMap = new Map<number, number>();
 
         const branchIds = branches.length
           ? branches.map((b) => b.id)
@@ -1241,29 +1443,25 @@ export default function Page() {
         for (const bid of branchIds) {
           const arr = keys.map((k) => sumByBranchMonth.get(`${bid}:${k}`) ?? 0);
           histMap.set(bid, arr);
-          prevMap.set(bid, arr.length ? arr[arr.length - 1] : 0);
         }
 
-        if (!cancelled) {
-          setBranchPlans(planMap);
-          setHistMonthsKeys(keys);
-          setHistTurnoverByBranch(histMap);
-          setPrevTurnoverMap(prevMap);
-          setHistLoaded(true);
-        }
+        histOk = true;
       } catch (e: any) {
-        console.error("loadPlansAndHistory error", e);
-        if (!cancelled) {
-          setBranchPlans(new Map());
-          setPrevTurnoverMap(new Map());
-          setHistTurnoverByBranch(new Map());
-          setHistMonthsKeys([]);
-          setHistLoaded(false);
-        }
+        console.error("load history error:", extractErrMsg(e));
+        histOk = false;
+        histMap = new Map();
       }
+
+      if (cancelled) return;
+
+      setBranchPlans(planMap);
+      setBranchPremiumMap(premMap);
+      setHistMonthsKeys(keys);
+      setHistTurnoverByBranch(histMap);
+      setHistLoaded(histOk);
     }
 
-    loadPlansAndHistory();
+    loadPlansPremiumsAndHistory();
 
     return () => {
       cancelled = true;
@@ -1278,7 +1476,6 @@ export default function Page() {
       ...patch,
     };
 
-    // локально
     setBranchPlans((m) => {
       const nm = new Map(m);
       nm.set(branchId, next);
@@ -1302,6 +1499,10 @@ export default function Page() {
     setPlanBusyBranchId(branchId);
     try {
       const s = suggestPlan(branchId);
+      if (!s.target || s.target <= 0) {
+        alert("Недостаточно истории по выручке, чтобы посчитать авто-план. Поставь план вручную.");
+        return;
+      }
 
       await saveBranchPlan(branchId, {
         monthly_turnover_target: s.target,
@@ -1320,8 +1521,6 @@ export default function Page() {
     }
   }
 
-  const periodLabel2 = activeWeek ? activeWeek.label : formatMonthRu(month);
-
   return (
     <div className="relative min-h-[100dvh] bg-transparent text-slate-50">
       {/* фоновые свечения */}
@@ -1332,7 +1531,6 @@ export default function Page() {
       </div>
 
       <div className="relative mx-auto max-w-7xl px-5 pt-8 pb-10">
-        {/* БАННЕР ОШИБКИ */}
         {errorText ? (
           <div
             className={cx(
@@ -1355,7 +1553,6 @@ export default function Page() {
           </div>
         ) : null}
 
-        {/* Header */}
         <div className="mb-4">
           <HeaderCard>
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1364,19 +1561,19 @@ export default function Page() {
                   <Wallet className="h-5 w-5 text-white" />
                 </div>
                 <div className="space-y-1">
-                  <div className="text-[30px] leading-none font-semibold tracking-tight text-slate-50 drop-shadow-[0_10px_30px_rgba(34,211,238,0.20)]">
-                    Зарплаты
+                  <div className="text-[30px] leading-none font-semibold tracking-tight text-slate-900">
+                    Зарплаты и посещаемость
                   </div>
-                  <div className="text-[12px] text-sky-200/90">
-                    Еженедельные выплаты по филиалам •{" "}
-                    <span className="font-medium text-sky-50">{periodLabel2}</span>
+                  <div className="text-[12px] text-slate-500">
+                    Выплаты по филиалам •{" "}
+                    <span className="font-medium text-slate-700">{periodLabel}</span>
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2 text-sm text-slate-200">
-                  <span className="text-sky-200/90">Месяц</span>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <span className="text-slate-500">Месяц</span>
                   <select
                     value={monthIndex}
                     onChange={(e) => handleMonthChange(year, Number(e.target.value))}
@@ -1401,8 +1598,8 @@ export default function Page() {
                   </select>
                 </label>
 
-                <label className="flex items-center gap-2 text-sm text-slate-200">
-                  <span className="text-sky-200/90">Неделя</span>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <span className="text-slate-500">Неделя</span>
                   <select
                     value={weekKey}
                     onChange={(e) => setWeekKey(e.target.value)}
@@ -1417,8 +1614,8 @@ export default function Page() {
                   </select>
                 </label>
 
-                {weekLoading && (
-                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-cyan-300" />
+                {(weekLoading || monthLoading) && (
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-cyan-400" />
                 )}
 
                 <PrimaryBtn
@@ -1440,9 +1637,39 @@ export default function Page() {
           </HeaderCard>
         </div>
 
-        {/* KPI + Конфигурация */}
+        {/* ===== Tab switcher ===== */}
+        <div className="mb-5 flex gap-1 rounded-2xl bg-white/90 p-1 ring-1 ring-sky-200/80 shadow-[0_8px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl w-fit">
+          <button
+            onClick={() => setTab("payroll")}
+            className={cx(
+              "rounded-xl px-5 py-2 text-sm font-medium transition-all",
+              tab === "payroll"
+                ? "bg-gradient-to-r from-cyan-400 to-sky-400 text-slate-900 shadow-[0_4px_16px_rgba(34,211,238,0.30)]"
+                : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/70"
+            )}
+          >
+            Зарплаты
+          </button>
+          <button
+            onClick={() => setTab("penalties")}
+            className={cx(
+              "rounded-xl px-5 py-2 text-sm font-medium transition-all",
+              tab === "penalties"
+                ? "bg-gradient-to-r from-cyan-400 to-sky-400 text-slate-900 shadow-[0_4px_16px_rgba(34,211,238,0.30)]"
+                : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/70"
+            )}
+          >
+            Штрафы и графики
+          </button>
+        </div>
+
+        {/* ===== Вкладка «Штрафы и графики» ===== */}
+        {tab === "penalties" && <PenaltiesTab />}
+
+        {/* ===== Вкладка «Зарплаты» (всё что было ниже) ===== */}
+        {tab === "payroll" && (
+        <>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {/* Карточка «К выплате» + список филиалов */}
           <Card>
             <div className="flex items-center justify-between gap-3">
               <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
@@ -1486,7 +1713,6 @@ export default function Page() {
             </div>
           </Card>
 
-          {/* Настройки расчёта */}
           <Card>
             <div className="mb-2 text-sm font-semibold text-slate-900">Настройки расчёта</div>
 
@@ -1515,74 +1741,44 @@ export default function Page() {
                 suffix="сом"
               />
 
-              <div className="text-slate-700">
-                {isMonthlyPlanMode ? "Порог выручки/месяц (глобальный fallback)" : "Порог выручки/день"}
-              </div>
-              <NumberCell
-                value={
-                  isMonthlyPlanMode
-                    ? ((cfgLocal as any)?.monthly_turnover_target ?? 0)
-                    : (cfgLocal?.daily_turnover_target ?? 0)
-                }
-                readOnly={isMonthlyPlanMode && !hasMonthlyCfgFields}
-                onCommit={async (v) => {
-                  const vv = Math.max(0, Math.trunc(v));
+              {!isMonthlyPlanMode ? (
+                <>
+                  <div className="text-slate-700">Порог выручки/день</div>
+                  <NumberCell
+                    value={cfgLocal?.daily_turnover_target ?? 0}
+                    onCommit={async (v) => {
+                      const vv = Math.max(0, Math.trunc(v));
+                      setCfgLocal((c) => (c ? ({ ...c, daily_turnover_target: vv } as any) : c));
+                      await updateConfig({ daily_turnover_target: vv } as any);
+                      await mutate();
+                    }}
+                    suffix="сом"
+                  />
 
-                  if (isMonthlyPlanMode) {
-                    setCfgLocal((c) =>
-                      c ? ({ ...(c as any), monthly_turnover_target: vv } as any) : c
-                    );
-                    await updateConfig({ monthly_turnover_target: vv } as any);
-                  } else {
-                    setCfgLocal((c) => (c ? ({ ...c, daily_turnover_target: vv } as any) : c));
-                    await updateConfig({ daily_turnover_target: vv } as any);
-                  }
-
-                  await mutate();
-                }}
-                suffix="сом"
-              />
-
-              <div className="text-slate-700">
-                {isMonthlyPlanMode ? "Премия за месяц (глобальный fallback)" : "Премия за день"}
-              </div>
-              <NumberCell
-                value={
-                  isMonthlyPlanMode
-                    ? ((cfgLocal as any)?.monthly_bonus_each ?? 0)
-                    : (cfgLocal?.daily_bonus_each ?? 0)
-                }
-                readOnly={isMonthlyPlanMode && !hasMonthlyCfgFields}
-                onCommit={async (v) => {
-                  const vv = Math.max(0, Math.trunc(v));
-
-                  if (isMonthlyPlanMode) {
-                    setCfgLocal((c) =>
-                      c ? ({ ...(c as any), monthly_bonus_each: vv } as any) : c
-                    );
-                    await updateConfig({ monthly_bonus_each: vv } as any);
-                  } else {
-                    setCfgLocal((c) => (c ? ({ ...c, daily_bonus_each: vv } as any) : c));
-                    await updateConfig({ daily_bonus_each: vv } as any);
-                  }
-
-                  await mutate();
-                }}
-                suffix="сом"
-              />
-
-              {isMonthlyPlanMode && !hasMonthlyCfgFields ? (
-                <div className="col-span-2 -mt-1 text-[11px] text-amber-700">
-                  Поля «месячного плана» появятся после миграции БД
-                  (payroll_config.monthly_*). Сейчас режим только чтение.
+                  <div className="text-slate-700">Премия за день</div>
+                  <NumberCell
+                    value={cfgLocal?.daily_bonus_each ?? 0}
+                    onCommit={async (v) => {
+                      const vv = Math.max(0, Math.trunc(v));
+                      setCfgLocal((c) => (c ? ({ ...c, daily_bonus_each: vv } as any) : c));
+                      await updateConfig({ daily_bonus_each: vv } as any);
+                      await mutate();
+                    }}
+                    suffix="сом"
+                  />
+                </>
+              ) : (
+                <div className="col-span-2 mt-1 text-[12px] text-slate-600">
+                  С <span className="font-semibold text-slate-900">2026-02</span> план и премия задаются{" "}
+                  <span className="font-semibold text-slate-900">по каждому филиалу</span> ниже.
+                  Глобальный месячный fallback убран из этой страницы.
                 </div>
-              ) : null}
+              )}
             </div>
 
             <p className="mt-3 text-xs text-slate-500">
-              {!isMonthlyPlanMode
-                ? "До 2026-02 действует дневной план (порог/премия за день)."
-                : "С 2026-02 план — месячный. В этой странице можно задать план по каждому филиалу (таблица payroll_branch_plans)."}
+              Бонус считается от <span className="font-semibold">ОПЛАЧЕННЫХ</span> заказов сотрудника
+              по данным <span className="font-semibold">payments</span>.
             </p>
           </Card>
         </div>
@@ -1601,10 +1797,19 @@ export default function Page() {
             const effectivePlan = isMonthlyPlanMode ? getBranchPlanEffective(b.id) : null;
 
             const histArr = histTurnoverByBranch.get(b.id) ?? [];
-            const prevTurnover = histArr.length ? histArr[histArr.length - 1] : (prevTurnoverMap.get(b.id) ?? 0);
-            const med6 = histArr.filter((x) => x > 0).length ? Math.trunc(median(histArr.filter((x) => x > 0))) : 0;
+            const prevTurnover = histArr.length ? histArr[histArr.length - 1] : 0;
+            const med6 = histArr.filter((x) => x > 0).length
+              ? Math.trunc(median(histArr.filter((x) => x > 0)))
+              : 0;
 
             const canAuto = isMonthlyPlanMode && histLoaded && prevTurnover > 0;
+
+            const prem = branchPremiumMap.get(b.id);
+            const turnover = prem?.turnover_sum ?? 0;
+            const planTarget = effectivePlan?.monthly_turnover_target ?? 0;
+            const pct = planTarget > 0 ? Math.min(100, Math.round((turnover / planTarget) * 100)) : 0;
+            const premiumEach = prem?.plan_premium_each ?? 0;
+            const leftToHit = Math.max(0, planTarget - turnover);
 
             return (
               <Card key={b.id} className="mt-6">
@@ -1661,52 +1866,207 @@ export default function Page() {
                   </div>
                 </div>
 
+                {/* PIN кассы + доступ сотрудников */}
+                <div className="mb-4 rounded-2xl bg-slate-50/80 ring-1 ring-slate-200 px-4 py-3">
+                  {/* Строка: PIN кассы */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <KeyRound className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                    <span className="text-[12px] font-semibold text-slate-700">PIN кассы:</span>
+                    <input
+                      value={pinInputs[b.id] ?? ""}
+                      onChange={(e) => setPinInputs((p) => ({ ...p, [b.id]: e.target.value.replace(/\D/g, "") }))}
+                      inputMode="numeric"
+                      maxLength={8}
+                      placeholder="не задан"
+                      className="h-7 w-24 rounded-lg border border-sky-200 bg-white px-2.5 text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+                    />
+                    <button
+                      className="h-7 rounded-lg px-2.5 text-[11px] font-medium text-teal-700 bg-white ring-1 ring-teal-200 hover:bg-teal-50"
+                      onClick={() => setPinInputs((p) => ({ ...p, [b.id]: genPin4() }))}
+                    >
+                      Генерировать
+                    </button>
+                    {(pinInputs[b.id] ?? "") && (
+                      <button
+                        className="h-7 rounded-lg px-2.5 text-[11px] font-medium text-white bg-gradient-to-r from-teal-400 to-sky-400 hover:brightness-110 disabled:opacity-60"
+                        disabled={pinBusy === b.id}
+                        onClick={() => saveBranchPin(b.id)}
+                      >
+                        {pinBusy === b.id ? "…" : "Сохранить"}
+                      </button>
+                    )}
+                    {(branchPins[b.id] ?? "") && (
+                      <button
+                        className="h-7 rounded-lg px-2.5 text-[11px] font-medium text-rose-700 bg-white ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-60"
+                        disabled={pinBusy === b.id}
+                        onClick={() => clearBranchPin(b.id)}
+                      >
+                        Очистить
+                      </button>
+                    )}
+                    <span className="ml-auto text-[11px] text-slate-500">
+                      {(branchPins[b.id] ?? "")
+                        ? <>текущий: <span className="font-mono font-semibold text-slate-700">{branchPins[b.id]}</span></>
+                        : <span className="text-slate-400">не задан</span>
+                      }
+                    </span>
+                  </div>
+
+                  {/* Разделитель + доступ сотрудников */}
+                  <div className="mt-2.5 pt-2.5 border-t border-slate-200 flex flex-wrap items-center gap-2">
+                    <User2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    <span className="text-[11px] font-semibold text-slate-600">Доступ в смену:</span>
+
+                    {list.map((emp: any) => {
+                      const empCred = creds.find((c) => c.employee_id === emp.id && c.is_active);
+                      const credOpen = openCredEmpId === emp.id;
+                      const form = credForm[emp.id] ?? { login: "", pin: "" };
+                      const firstName = String(emp.fullName ?? "").split(" ")[0];
+
+                      if (empCred) {
+                        return (
+                          <span key={emp.id} className="inline-flex items-center gap-1.5 rounded-xl bg-white ring-1 ring-slate-200 px-2.5 py-1 text-[11px]">
+                            <span className="font-semibold text-slate-800">{firstName}</span>
+                            <span className="text-slate-300">·</span>
+                            <span className="font-mono text-slate-500">{empCred.login}</span>
+                            <span className="text-slate-300">/</span>
+                            <span className="font-mono font-bold text-sky-700">{empCred.pin_plain ?? "—"}</span>
+                            <button
+                              onClick={() => removeEmpCred(empCred)}
+                              title="Удалить доступ"
+                              className="ml-0.5 text-slate-300 hover:text-rose-500 transition-colors"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <div key={emp.id} className="inline-flex items-center gap-1">
+                          {credOpen ? (
+                            <>
+                              <span className="text-[11px] text-slate-500 shrink-0">{firstName}:</span>
+                              <input
+                                value={form.login}
+                                onChange={(ev) => setCredForm((f) => ({ ...f, [emp.id]: { ...form, login: ev.target.value } }))}
+                                placeholder="логин"
+                                className="h-7 w-24 rounded-lg border border-sky-200 bg-white px-2 text-[11px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/60"
+                              />
+                              <input
+                                value={form.pin}
+                                onChange={(ev) => setCredForm((f) => ({ ...f, [emp.id]: { ...form, pin: ev.target.value.replace(/\D/g, "").slice(0, 4) } }))}
+                                placeholder="PIN"
+                                inputMode="numeric"
+                                maxLength={4}
+                                className="h-7 w-14 rounded-lg border border-sky-200 bg-white px-2 text-[11px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/60"
+                              />
+                              <button
+                                className="h-7 rounded-lg px-1.5 text-[10px] text-teal-700 ring-1 ring-teal-200 hover:bg-teal-50"
+                                onClick={() => setCredForm((f) => ({ ...f, [emp.id]: { ...form, pin: genPin4() } }))}
+                              >PIN</button>
+                              <button
+                                className="h-7 inline-flex items-center gap-0.5 rounded-lg bg-gradient-to-r from-cyan-400 to-sky-400 px-2 text-[11px] font-medium text-slate-900 hover:brightness-110"
+                                onClick={() => createEmpCred(emp.id)}
+                              >
+                                <Plus className="h-3 w-3" /> Создать
+                              </button>
+                              <button
+                                className="h-7 px-1 text-slate-400 hover:text-slate-600"
+                                onClick={() => setOpenCredEmpId(null)}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => setOpenCredEmpId((prev) => prev === emp.id ? null : emp.id)}
+                              title={`Добавить доступ для ${emp.fullName}`}
+                              className="inline-flex items-center gap-1 rounded-xl border border-dashed border-slate-300 px-2.5 py-1 text-[11px] text-slate-400 hover:border-sky-400 hover:text-sky-600 transition-colors"
+                            >
+                              <Plus className="h-3 w-3" />
+                              <span>{firstName}</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* План месяца по филиалу */}
                 {isMonthlyPlanMode ? (
-                  <div className="mb-4 rounded-3xl bg-white/90 ring-1 ring-sky-200/80 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
-                    <div className="flex flex-wrap items-end justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-semibold text-slate-800">
-                          План месяца (филиал)
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-slate-500">
-                          Прошлый месяц:{" "}
-                          <span className="font-semibold text-teal-700 tabular-nums">
-                            {fmt(prevTurnover)} сом
-                          </span>
-                          {med6 > 0 ? (
-                            <span className="ml-2 text-[10px] text-slate-400">
-                              • медиана(6м): {fmt(med6)}
-                            </span>
-                          ) : null}
-                          {effectivePlan?.mode ? (
-                            <span className="ml-2 text-[10px] text-slate-400">
-                              • mode: {effectivePlan.mode}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {planBusyBranchId === b.id ? (
-                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-cyan-400" />
-                        ) : null}
-
+                  <div className="mb-4 rounded-2xl bg-sky-50/60 ring-1 ring-sky-200/60 px-4 py-3">
+                    {/* Строка 1: статистика + кнопка Авто */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        План
+                      </span>
+                      {prevTurnover > 0 && (
+                        <span className="text-[11px] text-slate-500">
+                          прошл.:{" "}
+                          <span className="font-semibold tabular-nums text-slate-700">
+                            {fmt(prevTurnover)}
+                          </span>{" "}сом
+                        </span>
+                      )}
+                      <span className="text-[11px] text-slate-500">
+                        факт:{" "}
+                        <span className="font-semibold tabular-nums text-slate-800">
+                          {fmt(turnover)}
+                        </span>{" "}сом
+                      </span>
+                      {planTarget > 0 && (
+                        <span className={cx(
+                          "inline-flex items-center rounded-lg px-2 py-0.5 text-[11px] font-bold tabular-nums",
+                          pct >= 100
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-sky-100 text-sky-700"
+                        )}>
+                          {pct}%
+                        </span>
+                      )}
+                      {premiumEach > 0 ? (
+                        <span className="text-[11px] font-semibold text-emerald-600">
+                          +{fmt(premiumEach)} сом/чел
+                        </span>
+                      ) : planTarget > 0 ? (
+                        <span className="text-[11px] text-slate-400">
+                          до плана: {fmt(leftToHit)} сом
+                        </span>
+                      ) : null}
+                      {med6 > 0 && (
+                        <span className="text-[10px] text-slate-400 ml-1">
+                          • медиана 6м: {fmt(med6)}
+                        </span>
+                      )}
+                      <div className="ml-auto flex items-center gap-2">
+                        {planBusyBranchId === b.id && (
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-cyan-400" />
+                        )}
                         <GhostBtn
                           disabled={!canAuto || planBusyBranchId === b.id}
                           onClick={() => applyAutoPlan(b.id)}
-                          title="Рассчитать и сохранить порог + премию по умной формуле (история 6 мес, тренд, округление до 1000)"
                         >
                           Авто
                         </GhostBtn>
                       </div>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Порог выручки / месяц
-                        </div>
+                    {/* Прогресс-бар */}
+                    {planTarget > 0 && (
+                      <div className="mb-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Строка 2: редактируемые поля */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-slate-500 shrink-0">Порог</span>
                         <NumberCell
                           value={effectivePlan?.monthly_turnover_target ?? 0}
                           onCommit={async (v) => {
@@ -1721,13 +2081,11 @@ export default function Page() {
                             }
                           }}
                           suffix="сом"
+                          className="w-[130px]"
                         />
                       </div>
-
-                      <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Премия / месяц
-                        </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-slate-500 shrink-0">Бонус/чел</span>
                         <NumberCell
                           value={effectivePlan?.monthly_bonus_each ?? 0}
                           onCommit={async (v) => {
@@ -1742,12 +2100,9 @@ export default function Page() {
                             }
                           }}
                           suffix="сом"
+                          className="w-[110px]"
                         />
                       </div>
-                    </div>
-
-                    <div className="mt-2 text-[11px] text-slate-500">
-                      Формула (v2): история {AUTO_PLAN.historyMonths} мес → typical (median/q{Math.round(AUTO_PLAN.quantile * 100)}), тренд, защита от просадок, порог округление ↑ до 1 000; премия = target × % (ступени {Math.round(BONUS_TIERS[0].rate * 1000) / 10}%…{Math.round(BONUS_TIERS[BONUS_TIERS.length - 1].rate * 1000) / 10}%), округление до 1 000.
                     </div>
                   </div>
                 ) : null}
@@ -1756,13 +2111,12 @@ export default function Page() {
                 <div className="overflow-x-auto">
                   <table className="w-full table-auto border-separate border-spacing-y-3">
                     <colgroup>
-                      <col className="w-[280px]" />
+                      <col className="w-[190px]" />
+                      <col className="w-[120px]" />
+                      <col className="w-[100px]" />
+                      <col className="w-[150px]" />
+                      <col className="w-[120px]" />
                       <col className="w-[160px]" />
-                      <col className="w-[120px]" />
-                      <col className="w-[110px]" />
-                      <col className="w-[120px]" />
-                      <col className="w-[140px]" />
-                      <col className="w-[220px]" />
                     </colgroup>
 
                     <thead>
@@ -1771,16 +2125,15 @@ export default function Page() {
                         <th className="text-left px-2">Роль</th>
                         <th className="text-right px-2">Ставка/ч</th>
                         <th className="text-center px-2">Бонус</th>
-                        <th className="text-right px-2">Бонус %</th>
                         <th className="text-right px-2">
                           К выплате{" "}
                           {activeWeek ? (
-                            <span className="text-[10px] text-slate-400">(неделя)</span>
+                            <span className="text-[10px] text-slate-400">(нед)</span>
                           ) : (
-                            <span className="text-[10px] text-slate-400">(месяц)</span>
+                            <span className="text-[10px] text-slate-400">(мес)</span>
                           )}
                         </th>
-                        <th className="text-right px-2">Действия</th>
+                        <th className="text-right px-2"></th>
                       </tr>
                     </thead>
 
@@ -1788,7 +2141,7 @@ export default function Page() {
                       {list.map((e: any) => {
                         const roleUi = dbRoleToUi(e.role) as Exclude<RoleT, "owner">;
                         const netPeriod = getNet(e);
-                        const netMonth = e.net ?? 0;
+                        const netMonth = getMonthNet(e);
 
                         return (
                           <tr key={e.id} className="align-middle">
@@ -1799,7 +2152,7 @@ export default function Page() {
                                   await updateEmployee(e.id, { fullName: v });
                                   await mutate();
                                 }}
-                                className="w-[270px]"
+                                className="w-[180px]"
                               />
                             </td>
 
@@ -1811,7 +2164,7 @@ export default function Page() {
                                   await updateEmployee(e.id, { role: uiRoleToDb(val) });
                                   await mutate();
                                 }}
-                                className={cx(selectCls, "h-9 w-[150px]")}
+                                className={cx(selectCls, "h-9 w-[112px]")}
                               >
                                 <option value="seller">Продавец</option>
                                 <option value="promoter">Промоутер</option>
@@ -1833,14 +2186,15 @@ export default function Page() {
                                   });
                                   await mutate();
                                 }}
-                                className="w-[120px]"
+                                className="w-[88px]"
                                 step={5}
                                 suffix="сом"
                               />
                             </td>
 
+                            {/* Бонус: toggle + % в одной ячейке */}
                             <td className={cx(rowTdBase, "text-center")}>
-                              <div className="flex items-center justify-center">
+                              <div className="flex items-center justify-center gap-2">
                                 <Switch
                                   checked={!!e.hasBonus}
                                   onCommit={async (v) => {
@@ -1855,27 +2209,24 @@ export default function Page() {
                                     await mutate();
                                   }}
                                 />
+                                <NumberCell
+                                  value={e.bonusPercent ?? 0}
+                                  onCommit={async (v) => {
+                                    await updateEmployee(e.id, { bonusPercent: v });
+                                    await persistProfileChange({
+                                      employeeId: e.id,
+                                      branchId: b.id,
+                                      hourlyRate: e.hourlyRate ?? 0,
+                                      hasBonus: e.hasBonus ?? false,
+                                      bonusPercent: v,
+                                    });
+                                    await mutate();
+                                  }}
+                                  className="w-[68px]"
+                                  step={1}
+                                  suffix="%"
+                                />
                               </div>
-                            </td>
-
-                            <td className={cx(rowTdBase, "text-right")}>
-                              <NumberCell
-                                value={e.bonusPercent ?? 0}
-                                onCommit={async (v) => {
-                                  await updateEmployee(e.id, { bonusPercent: v });
-                                  await persistProfileChange({
-                                    employeeId: e.id,
-                                    branchId: b.id,
-                                    hourlyRate: e.hourlyRate ?? 0,
-                                    hasBonus: e.hasBonus ?? false,
-                                    bonusPercent: v,
-                                  });
-                                  await mutate();
-                                }}
-                                className="w-[120px]"
-                                step={1}
-                                suffix="%"
-                              />
                             </td>
 
                             <td
@@ -1888,42 +2239,30 @@ export default function Page() {
                             </td>
 
                             <td className={cx(rowTdLast, "text-right")}>
-                              <div className="flex justify-end gap-2">
-                                <GhostBtn
-                                  onClick={() =>
-                                    openDaily({
-                                      id: e.id,
-                                      fullName: e.fullName,
-                                      branchId: b.id,
-                                      netPeriod,
-                                      netMonth,
-                                    })
-                                  }
-                                  title="Показать детализацию по дням за период"
+                              <div className="flex justify-end items-center gap-1.5">
+                                <button
+                                  title="Детали по дням"
+                                  onClick={() => openDaily({ id: e.id, fullName: e.fullName, branchId: b.id, netPeriod, netMonth })}
+                                  className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-medium text-teal-700 bg-white ring-1 ring-teal-200 hover:bg-teal-50 transition-colors"
                                 >
-                                  Детали
-                                </GhostBtn>
-
-                                <DangerBtn
+                                  <BarChart2 className="h-3.5 w-3.5" />
+                                  <span>Детали</span>
+                                </button>
+                                <button
+                                  title={`Удалить ${e.fullName}`}
                                   onClick={async () => {
-                                    if (!confirm(`Удалить сотрудника «${e.fullName}»?`))
-                                      return;
+                                    if (!confirm(`Удалить сотрудника «${e.fullName}»?`)) return;
                                     try {
                                       await removeEmployee(e.id);
                                       await mutate();
                                     } catch (err: any) {
-                                      alert(
-                                        `Не удалось удалить: ${
-                                          err?.message ||
-                                          err?.error_description ||
-                                          String(err)
-                                        }`
-                                      );
+                                      alert(`Не удалось удалить: ${err?.message || err?.error_description || String(err)}`);
                                     }
                                   }}
+                                  className="inline-flex items-center rounded-xl p-2 text-rose-400 bg-white ring-1 ring-rose-200 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                                 >
-                                  Удалить
-                                </DangerBtn>
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1933,18 +2272,11 @@ export default function Page() {
                   </table>
                 </div>
 
-                {/* Итого по филиалу */}
                 <div className="mt-4 flex items-center justify-end">
                   <div className="text-sm text-slate-700">
                     Итого по филиалу:{" "}
                     <span className="font-semibold text-teal-700 tabular-nums">
-                      {fmt(
-                        (byBranch.get(b.id) ?? []).reduce(
-                          (s, e: any) => s + getNet(e),
-                          0
-                        )
-                      )}{" "}
-                      сом
+                      {fmt((byBranch.get(b.id) ?? []).reduce((s, e: any) => s + getNet(e), 0))} сом
                     </span>
                   </div>
                 </div>
@@ -1978,22 +2310,19 @@ export default function Page() {
 
               <div className="max-h-[70vh] overflow-auto px-4 py-3">
                 {dailyRows === null ? (
-                  <div className="py-10 text-center text-sm text-slate-600">
-                    Загрузка…
-                  </div>
+                  <div className="py-10 text-center text-sm text-slate-600">Загрузка…</div>
                 ) : !hasDailyRows ? (
                   <div className="py-10 text-center text-sm text-slate-600">
                     Данных по дням за выбранный период нет.
                     {hasAdj ? (
                       <div className="mt-2 text-xs text-slate-500">
-                        Есть корректировки месяца (включая месячную премию с 2026-02).
+                        Есть корректировки месяца (включая премию за план).
                       </div>
                     ) : null}
                   </div>
                 ) : (
                   <table className="min-w-full table-fixed border-separate border-spacing-y-3">
                     <colgroup>
-                      <col className="w-[110px]" />
                       <col className="w-[110px]" />
                       <col className="w-[110px]" />
                       <col className="w-[110px]" />
@@ -2009,11 +2338,10 @@ export default function Page() {
                         <th className="text-left px-2">День</th>
                         <th className="text-right px-2">Часы</th>
                         <th className="text-right px-2">Часовка</th>
+                        <th className="text-right px-2">Оплачено</th>
                         <th className="text-right px-2">Бонус</th>
                         <th className="text-right px-2">Штрафы</th>
-                        <th className="text-right px-2">Соцфонд</th>
-                        <th className="text-right px-2">Подоходный</th>
-                        <th className="text-right px-2">Премия (день)</th>
+                        <th className="text-right px-2">Налоги</th>
                         <th className="text-right px-2">Итог дня</th>
                       </tr>
                     </thead>
@@ -2031,19 +2359,16 @@ export default function Page() {
                             {fmt(r.hour_pay)}
                           </td>
                           <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
+                            {fmt(r.paid_sum)}
+                          </td>
+                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
                             {fmt(r.bonus)}
                           </td>
                           <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
                             {fmt(r.penalties)}
                           </td>
                           <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmt(r.social_fund_day)}
-                          </td>
-                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmt(r.income_tax_day)}
-                          </td>
-                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmt(r.plan_premium)}
+                            {fmt(num(r.social_fund_day) + num(r.income_tax_day))}
                           </td>
                           <td
                             className={cx(
@@ -2065,9 +2390,7 @@ export default function Page() {
                 <div className="border-t border-sky-200 px-4 py-3 text-right text-sm space-y-1 bg-gradient-to-r from-sky-50 via-white to-sky-50/80">
                   <div>
                     <span className="text-slate-600">
-                      {activeWeek
-                        ? "Итого по дням за неделю: "
-                        : "Итого по дням (без корректировок): "}
+                      {activeWeek ? "Итого по дням за неделю: " : "Итого по дням (без корректировок): "}
                     </span>
                     <span className="font-semibold text-teal-700 tabular-nums">
                       {fmt(dailyNetSum)} сом
@@ -2075,40 +2398,30 @@ export default function Page() {
                   </div>
 
                   <div>
-                    <span className="text-slate-600">
-                      Корректировки месяца (включая премию за месяц):{" "}
-                    </span>
+                    <span className="text-slate-600">Корректировки месяца (включая премию за план): </span>
                     <span className="font-semibold text-teal-700 tabular-nums">
                       {fmt(dailyAdj)} сом
                     </span>
                     {activeWeek ? (
-                      <span className="ml-2 text-xs text-slate-500">
-                        (не добавляются к итогу недели)
-                      </span>
+                      <span className="ml-2 text-xs text-slate-500">(не добавляются к итогу недели)</span>
                     ) : null}
                   </div>
 
                   <div>
                     <span className="text-slate-600">
-                      {activeWeek
-                        ? "К выплате за неделю (как в списке): "
-                        : "Итого за месяц (как в списке): "}
+                      {activeWeek ? "К выплате за неделю (как в списке): " : "Итого за месяц (как в списке): "}
                     </span>
                     <span className="font-semibold text-teal-700 tabular-nums">
                       {fmt(dailyMeta.netPeriod)} сом
                     </span>
                     {activeWeek ? (
-                      <span className="ml-2 text-xs text-slate-500">
-                        • За месяц: {fmt(dailyMeta.netMonth)} сом
-                      </span>
+                      <span className="ml-2 text-xs text-slate-500">• За месяц: {fmt(dailyMeta.netMonth)} сом</span>
                     ) : null}
                   </div>
 
                   {!activeWeek ? (
                     <div>
-                      <span className="text-slate-600">
-                        Итого по дням + корректировки (для сверки):{" "}
-                      </span>
+                      <span className="text-slate-600">Итого по дням + корректировки (для сверки): </span>
                       <span className="font-semibold text-teal-700 tabular-nums">
                         {fmt(dailyNetWithAdj)} сом
                       </span>
@@ -2117,7 +2430,7 @@ export default function Page() {
 
                   {isMonthlyPlanMode ? (
                     <div className="pt-1 text-xs text-slate-500">
-                      С 2026-02 месячная премия приходит через «корректировки месяца», дневная премия по дням = 0.
+                      С 2026-02 месячная премия приходит через «корректировки месяца», в недельный итог не добавляется.
                     </div>
                   ) : null}
                 </div>
@@ -2126,8 +2439,12 @@ export default function Page() {
           </div>
         )}
 
+        {/* закрываем фрагмент и условие вкладки «Зарплаты» */}
+        </>
+        )}
+
         <footer className="mt-8 text-center text-xs text-sky-200/80">
-          Редактор зарплат REFOCUS. Данные тянутся из Supabase, расчёт по дням и неделям.
+          Редактор зарплат REFOCUS. Источник расчёта: payroll_daily_canonical / payroll_period_canonical.
         </footer>
       </div>
     </div>

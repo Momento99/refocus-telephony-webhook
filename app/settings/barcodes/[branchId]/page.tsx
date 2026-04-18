@@ -4,6 +4,24 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import getSupabase from '@/lib/supabaseClient';
+import { ArrowLeft, Barcode, Printer } from 'lucide-react';
+import {
+  BUCKET_STEP,
+  COUNTRIES,
+  computeBranchTotalCount,
+  computeSectionPrices,
+  computeSectionSlotCount,
+  getBranchCountry,
+  getBranchCurrency,
+  getBranchCurrencySymbol,
+  getBranchPremiumShare,
+  getBranchTotalSlots,
+  setBranchTotalSlots,
+  getCityIndex,
+  isBranchUsingFormula,
+  type FrameTypeCode as FormulaFrameType,
+  type GenderCode as FormulaGenderCode,
+} from '@/lib/framePricingFormula';
 
 /* ────────── корзины и настройки ────────── */
 
@@ -20,13 +38,17 @@ const BUCKETS = [
 /** проценты по ценовым корзинам (по слотам): 16 / 38 / 28 / 12 / 6 */
 const PCT = { b1: 16, b2: 38, b3: 28, b4: 12, b5: 6 } as const;
 
-/** Дефолтная ёмкость витрин по названию филиала */
+/**
+ * Дефолтная ёмкость витрин по названию филиала — для legacy-логики
+ * (филиалы без формулы: Кант, Сокулук, Беловодск, Кара-Балта).
+ * Филиалы с формулой (Токмок и новые) — ёмкость берётся из BRANCH_TOTAL_SLOTS
+ * в lib/framePricingFormula.ts.
+ */
 const BRANCH_CAPACITY: Record<string, number> = {
   Сокулук: 120,
   Беловодск: 100,
   'Кара-Балта': 168,
   Кант: 120,
-  Токмок: 100,
 };
 
 /** Филиалы, где не используем автоматическую «допечатку по продажам» */
@@ -169,7 +191,7 @@ async function ensureQZSecurity() {
   });
 }
 
-/* ────────── barcode inference (для диагностики “тип/пол читаются неверно”) ────────── */
+/* ────────── barcode inference (для диагностики "тип/пол читаются неверно") ────────── */
 
 const KNOWN_TYPES: FrameTypeCode[] = ['RP', 'RM', 'KD', 'PA', 'MA'];
 
@@ -317,8 +339,34 @@ const LABEL_H_MM = 12;
 
 async function ensureCanvasFonts() {
   try {
-    await (document as any).fonts.load('22px "Kiona"');
-    await (document as any).fonts.load('30px "Nunito"');
+    await (document as any).fonts?.ready?.catch?.(() => undefined);
+
+    // Явно подгружаем Onest 400 через FontFace API с jsDelivr —
+    // надёжнее любых @import / @fontsource, т.к. минует CSS-кэш браузера.
+    if (!(window as any).__priceFontForCanvasLoaded) {
+      try {
+        const ff = new FontFace(
+          'Onest',
+          "url('https://cdn.jsdelivr.net/npm/@fontsource/onest@5/files/onest-cyrillic-400-normal.woff2') format('woff2'),url('https://cdn.jsdelivr.net/npm/@fontsource/onest@5/files/onest-latin-400-normal.woff2') format('woff2')",
+          { weight: '400', style: 'normal' },
+        );
+        await ff.load();
+        (document as any).fonts.add(ff);
+        (window as any).__priceFontForCanvasLoaded = true;
+        console.log('[pricelabel] Onest 400 loaded via FontFace API');
+      } catch (e) {
+        console.warn('[pricelabel] Onest FontFace load failed:', e);
+      }
+    }
+
+    await Promise.all([
+      (document as any).fonts.load('24px "pavelt-jrjpm"'),
+      (document as any).fonts.load('400 46px "Onest"'),
+    ]);
+
+    // Диагностика: реально ли шрифт доступен canvas
+    const ok = (document as any).fonts.check('400 46px "Onest"');
+    console.log('[pricelabel] document.fonts.check("400 46px Onest") =', ok);
   } catch {
     /* ignore */
   }
@@ -396,7 +444,7 @@ async function fetchDbNextSerial(
 
 /* ────────── bitmap этикетки ────────── */
 
-function buildBitmapJobBase64(priceText: string, barcode: string): string {
+function buildBitmapJobBase64(priceText: string, barcode: string, currencySymbol: string = ''): string {
   const labelWmm = LABEL_W_MM;
   const labelHmm = LABEL_H_MM;
   const labelW = mmToDots(labelWmm);
@@ -413,19 +461,54 @@ function buildBitmapJobBase64(priceText: string, barcode: string): string {
   ctx.fillRect(0, 0, blockW, blockH);
 
   ctx.fillStyle = '#000';
-  ctx.font = '22px "Kiona"';
   ctx.textBaseline = 'top';
-  ctx.fillText('REFOCUS+', 3, 0);
 
-  ctx.font = '46px "Nunito"';
-  ctx.textBaseline = 'top';
-  ctx.fillText(priceText, 10, 26);
+  // Логотип — фирменный шрифт Refocus (pavelt-jrjpm)
+  const LOGO_X = 3;
+  ctx.font = '24px "pavelt-jrjpm"';
+  const logoWidth = ctx.measureText('Refocus').width;
+  ctx.fillText('Refocus', LOGO_X, 0);
+  const logoCenterX = LOGO_X + logoWidth / 2;
+
+  // Цена — Onest 400 Regular. Центрируется ПОД логотипом «Refocus».
+  const PRICE_FONT = '400 46px "Onest"';
+  ctx.font = PRICE_FONT;
+  const priceWidth = ctx.measureText(priceText).width;
+
+  // Валюта — маленькими буквами справа от цены, того же шрифта.
+  const CURRENCY_GAP = 4;
+  const CURRENCY_FONT = '400 22px "Onest"';
+  ctx.font = CURRENCY_FONT;
+  const currWidth = currencySymbol ? ctx.measureText(currencySymbol).width : 0;
+
+  // Считаем полную ширину (цена + промежуток + валюта) и центрируем под логотипом
+  const totalWidth = priceWidth + (currencySymbol ? CURRENCY_GAP + currWidth : 0);
+  const priceX = Math.max(0, Math.round(logoCenterX - totalWidth / 2));
+  const priceY = 26;
+
+  ctx.font = PRICE_FONT;
+  ctx.fillText(priceText, priceX, priceY);
+
+  if (currencySymbol) {
+    ctx.font = CURRENCY_FONT;
+    // baseline top. Выравниваем валюту по нижней кромке цены: низ 46px цены = priceY + 46,
+    // низ 22px символа = y_curr + 22, отсюда y_curr = priceY + 46 - 22 = priceY + 24.
+    // Приподнимем на 2 пикселя для оптического баланса.
+    ctx.fillText(currencySymbol, priceX + priceWidth + CURRENCY_GAP, priceY + 24 - 2);
+  }
 
   const mono = canvasToMonoBytes(ctx, blockW, blockH, 200, true);
   const wBytes = Math.ceil(blockW / 8);
 
-  const SHIFT_TEXT_LEFT = mmToDots(15);
-  const SHIFT_BC_LEFT = mmToDots(7);
+  // Глобальные сдвиги всей композиции (логотип + цена + штрихкод)
+  const GLOBAL_SHIFT_LEFT = mmToDots(1.5); // сдвиг влево от исходных координат
+  // ⚠️ GLOBAL_SHIFT_UP = 0. Нельзя поднимать Y ближе чем на ~1.5 мм к верхнему
+  // краю этикетки: у TSPL-принтеров там «мёртвая зона», и каждое задание делает
+  // микро-backfeed ~0.2–0.3 мм. На 6-й этикетке накапливается 1.5–2 мм смещения вверх.
+  const GLOBAL_SHIFT_UP = 0;
+
+  const SHIFT_TEXT_LEFT = mmToDots(15) + GLOBAL_SHIFT_LEFT;
+  const SHIFT_BC_LEFT = mmToDots(7) + GLOBAL_SHIFT_LEFT;
   const SHIFT_BC_DOWN = mmToDots(2);
 
   const BASE_LEFT_X = 160;
@@ -437,11 +520,12 @@ function buildBitmapJobBase64(priceText: string, barcode: string): string {
   const BC_NARROW = 1;
   const BC_WIDE = 2;
 
+  // Итоговые координаты. Глобальные сдвиги применяются и к тексту, и к штрихкоду.
   const LEFT_X = Math.max(0, BASE_LEFT_X - SHIFT_TEXT_LEFT);
-  const LEFT_Y = BASE_LEFT_Y;
+  const LEFT_Y = Math.max(0, BASE_LEFT_Y - GLOBAL_SHIFT_UP);
 
   const BC_X = Math.max(0, BASE_BC_X - SHIFT_BC_LEFT);
-  const BC_Y = BASE_BC_Y + SHIFT_BC_DOWN;
+  const BC_Y = Math.max(0, BASE_BC_Y + SHIFT_BC_DOWN - GLOBAL_SHIFT_UP);
 
   const before = ascii(
     `SIZE ${labelWmm} mm,${labelHmm} mm\r\n` +
@@ -466,7 +550,7 @@ function buildBitmapJobBase64(priceText: string, barcode: string): string {
 
 /* ────────── типы данных ────────── */
 
-type Branch = { id: number; name: string; code: string | null };
+type Branch = { id: number; name: string; code: string | null; country_id?: string | null; currency_symbol?: string | null };
 type TypeActiveMap = Record<string, Record<number, number>>;
 
 type BucketCounts = {
@@ -524,30 +608,17 @@ const TYPE_SLOT_SHARE: Record<TypeSectionId, number> = {
   MA_M: 28 / 168,
 };
 
-type SectionVariant =
-  | 'default'
-  | 'reading'
-  | 'kidsGirls'
-  | 'kidsBoys'
-  | 'plasticF'
-  | 'plasticM'
-  | 'metalF'
-  | 'metalM';
+type SectionVariant = 'default' | 'female' | 'male';
 
 function getSectionVariant(sec: TypeSection): SectionVariant {
-  if (sec.typeCode === 'RP' || sec.typeCode === 'RM') return 'reading';
-  if (sec.typeCode === 'KD' && sec.gender === 'F') return 'kidsGirls';
-  if (sec.typeCode === 'KD' && sec.gender === 'M') return 'kidsBoys';
-  if (sec.typeCode === 'PA' && sec.gender === 'F') return 'plasticF';
-  if (sec.typeCode === 'PA' && sec.gender === 'M') return 'plasticM';
-  if (sec.typeCode === 'MA' && sec.gender === 'F') return 'metalF';
-  if (sec.typeCode === 'MA' && sec.gender === 'M') return 'metalM';
+  if (sec.gender === 'F') return 'female';
+  if (sec.gender === 'M') return 'male';
   return 'default';
 }
 
 /* ────────── страница ────────── */
 
-type YearMode = 'current' | 'current_plus_prev';
+
 
 export default function BranchBarcodesPage() {
   const params = useParams<{ branchId: string }>();
@@ -565,46 +636,40 @@ export default function BranchBarcodesPage() {
   );
 
   const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
-  const [printers, setPrinters] = useState<string[]>([]);
+  const [, setPrinters] = useState<string[]>([]);
   const [printer, setPrinter] = useState<string>('');
   const connecting = useRef(false);
 
-  const [price, setPrice] = useState<string>('2500');
 
   // текущий YY (2 цифры)
   const yy = useMemo(() => String(new Date().getFullYear()).slice(2), []);
   const yearNumCurrent = useMemo(() => Number(yy) || (new Date().getFullYear() % 100), [yy]);
-  const yearNumPrev = useMemo(() => (yearNumCurrent + 99) % 100, [yearNumCurrent]);
 
-  // ВАЖНО: по умолчанию учитываем текущий+прошлый (чтобы январь не ломал дефициты)
-  const [yearMode, setYearMode] = useState<YearMode>('current_plus_prev');
 
+  // Всегда учитываем текущий + все предыдущие года
   const yearsForShelf = useMemo(() => {
-    return yearMode === 'current' ? [yearNumCurrent] : [yearNumCurrent, yearNumPrev];
-  }, [yearMode, yearNumCurrent, yearNumPrev]);
-
-  const yearsForShelfLabel = useMemo(() => yearsForShelf.map((x) => String(x).padStart(2, '0')).join(' + '), [yearsForShelf]);
+    const years: number[] = [];
+    for (let y = yearNumCurrent; y >= 24; y--) years.push(y);
+    return years;
+  }, [yearNumCurrent]);
 
   const branchCode = useMemo(() => branch?.code || 'RF', [branch?.code]);
 
-  const [frameType, setFrameType] = useState<FrameTypeCode>('PA');
+  const [frameType] = useState<FrameTypeCode>('PA');
   const [gender, setGender] = useState<GenderCode>('F');
 
   const [printedByType, setPrintedByType] = useState<Record<string, number>>({});
   const [typeActive, setTypeActive] = useState<TypeActiveMap>({});
   const [typeSuggest, setTypeSuggest] = useState<Record<string, number[]>>({});
 
-  // Диагностика “тип/пол не совпадает с barcode”
-  const [barcodeIssues, setBarcodeIssues] = useState<{ total: number; mismatched: number; unparsable: number }>({
+  // Диагностика "тип/пол не совпадает с barcode"
+  const [, setBarcodeIssues] = useState<{ total: number; mismatched: number; unparsable: number }>({
     total: 0,
     mismatched: 0,
     unparsable: 0,
   });
 
-  const barcodePrefix = useMemo(() => `${branchCode}${frameType}${gender}${yy}`, [branchCode, frameType, gender, yy]);
-
   const [serial, setSerial] = useState<number>(DEFAULT_SERIAL);
-  const nextBarcode = useMemo(() => `${barcodePrefix}${String(serial).padStart(SERIAL_LEN, '0')}`, [barcodePrefix, serial]);
 
   const [totalSlots, setTotalSlots] = useState<number>(0);
 
@@ -626,10 +691,27 @@ export default function BranchBarcodesPage() {
     (async () => {
       try {
         const sb = getSupabase();
-        const { data, error } = await sb.from('branches').select('id, name, code').eq('id', branchId).maybeSingle();
+        const { data, error } = await sb.from('branches').select('id, name, code, country_id').eq('id', branchId).maybeSingle();
         if (error) throw error;
         if (!data) setBranchError('Филиал не найден');
-        else setBranch(data as Branch);
+        else {
+          // Подтягиваем символ валюты по стране филиала (KG → «с», RU → «₽», KZ → «₸», UZ → «сўм»)
+          let currency_symbol: string | null = null;
+          const cid = (data as any).country_id;
+          if (cid) {
+            try {
+              const { data: cRow } = await sb
+                .from('franchise_countries')
+                .select('currency_symbol')
+                .eq('id', cid)
+                .maybeSingle();
+              currency_symbol = (cRow as any)?.currency_symbol ?? null;
+            } catch {
+              /* ignore */
+            }
+          }
+          setBranch({ ...(data as any), currency_symbol } as Branch);
+        }
       } catch (e: any) {
         setBranchError(e?.message || 'Ошибка загрузки филиала');
       } finally {
@@ -642,38 +724,83 @@ export default function BranchBarcodesPage() {
     if (frameType === 'RP' || frameType === 'RM') setGender('F');
   }, [frameType]);
 
+  // Источник истины для ёмкости витрины — БД (branches.frame_total_slots).
+  // Для формульных филиалов читаем из API, для legacy — остаётся localStorage.
   useEffect(() => {
     if (!branchId) return;
+    let cancelled = false;
 
-    try {
-      const saved = localStorage.getItem(`ui.branchSlots.${branchId}`);
-
-      if (saved != null) {
-        const parsed = Number(JSON.parse(saved));
-        if (Number.isFinite(parsed) && parsed > 0) {
-          setTotalSlots(parsed);
-          return;
+    (async () => {
+      // 1) Для формульных филиалов приоритет — БД
+      if (branch?.name && isBranchUsingFormula(branch.name)) {
+        try {
+          const r = await fetch(`/api/frame-config?branch_id=${branchId}`, { cache: 'no-store' });
+          const j = await r.json();
+          if (!cancelled && j?.ok && Number.isFinite(j.frame_total_slots) && j.frame_total_slots > 0) {
+            setTotalSlots(j.frame_total_slots);
+            setBranchTotalSlots(branch.name, j.frame_total_slots);
+            return;
+          }
+        } catch {
+          /* падаем на fallback ниже */
         }
+        // Fallback: константа из формулы
+        const fallback = getBranchTotalSlots(branch.name);
+        if (!cancelled && fallback > 0) setTotalSlots(fallback);
+        return;
       }
 
-      if (branch?.name) {
-        const def = BRANCH_CAPACITY[branch.name] ?? 0;
-        if (def > 0) setTotalSlots(def);
+      // 2) Legacy-филиалы: localStorage → BRANCH_CAPACITY
+      try {
+        const saved = localStorage.getItem(`ui.branchSlots.${branchId}`);
+        if (saved != null) {
+          const parsed = Number(JSON.parse(saved));
+          if (Number.isFinite(parsed) && parsed > 0) {
+            if (!cancelled) setTotalSlots(parsed);
+            return;
+          }
+        }
+        if (branch?.name) {
+          const def = BRANCH_CAPACITY[branch.name] ?? 0;
+          if (!cancelled && def > 0) setTotalSlots(def);
+        }
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
-    }
+    })();
+
+    return () => { cancelled = true; };
   }, [branchId, branch?.name]);
 
+  // Сохранение изменений ёмкости:
+  //  • формульные филиалы — в БД (debounced), runtime override обновляем сразу
+  //  • legacy — в localStorage, как было
   useEffect(() => {
     if (!branchId) return;
     if (!Number.isFinite(totalSlots) || totalSlots <= 0) return;
+
+    const isFormula = !!(branch?.name && isBranchUsingFormula(branch.name));
+
+    if (isFormula && branch?.name) {
+      // обновляем формулу сразу, чтобы UI не прыгал
+      setBranchTotalSlots(branch.name, totalSlots);
+      // debounce на запись в БД — чтобы не дёргать API на каждый тап
+      const h = window.setTimeout(() => {
+        fetch('/api/frame-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ branch_id: branchId, frame_total_slots: totalSlots }),
+        }).catch((e) => console.warn('save frame-config failed:', e));
+      }, 600);
+      return () => window.clearTimeout(h);
+    }
+
     try {
       localStorage.setItem(`ui.branchSlots.${branchId}`, JSON.stringify(totalSlots));
     } catch {
       /* ignore */
     }
-  }, [branchId, totalSlots]);
+  }, [branchId, totalSlots, branch?.name]);
 
   // next serial — ТОЛЬКО по текущему году
   useEffect(() => {
@@ -728,7 +855,7 @@ export default function BranchBarcodesPage() {
           let t: FrameTypeCode | null = tStored ?? null;
           let g: GenderCode | null = gStored ?? null;
 
-          // если barcode парсится — считаем его “истиной” и ловим расхождения
+          // если barcode парсится — считаем его "истиной" и ловим расхождения
           if (inferred) {
             if (tStored && tStored !== inferred.typeCode) mismatched += 1;
             if (gStored && gStored !== inferred.gender) mismatched += 1;
@@ -818,7 +945,7 @@ export default function BranchBarcodesPage() {
       }
 
       setCounts({ totalByBucket, totalOverall, perHundred });
-      setHundredShortages([]); // после reset “проданные диапазоны” не нужны
+      setHundredShortages([]); // после reset "проданные диапазоны" не нужны
     } catch (e: any) {
       console.error(e);
       log(`Ошибка загрузки баланса: ${e?.message || String(e)}`);
@@ -869,7 +996,7 @@ export default function BranchBarcodesPage() {
           if (tStored && tStored !== inferred.typeCode) mismatched += 1;
           if (gStored && gStored !== inferred.gender) mismatched += 1;
 
-          // используем то, что зашито в barcode — для “истинного” вида
+          // используем то, что зашито в barcode — для "истинного" вида
           t = inferred.typeCode;
           g = inferred.gender;
         }
@@ -989,20 +1116,47 @@ export default function BranchBarcodesPage() {
   }, [bucketTargets, counts, disableAutoSuggest]);
 
   const shortagesTotal = useMemo(
-    () => bucketShortages.reduce((sum, b) => sum + Math.max(0, b.needBucket), 0),
-    [bucketShortages],
+    () => Math.max(0, totalSlots - counts.totalOverall),
+    [totalSlots, counts.totalOverall],
   );
 
+  const isFormulaBranch = branch?.name ? isBranchUsingFormula(branch.name) : false;
+  const branchName = branch?.name ?? '';
+  const formulaBranchTotal = isFormulaBranch
+    ? computeBranchTotalCount(branchName)
+    : 0;
+
+  /*
+   * Как подключить AI-формулу к новому филиалу:
+   * 1) В lib/framePricingFormula.ts → CITY_INDEX добавь филиал со страной и индексом
+   * 2) В BRANCH_TOTAL_SLOTS укажи физическую ёмкость витрины
+   * 3) В FORMULA_ENABLED_BRANCHES добавь название
+   * Всё — формула заработает сразу, UI покажет план и цены автоматически.
+   */
   const typePlans = useMemo(() => {
     const res: Record<TypeSectionId, { slots: number; pct: number }> = {} as any;
     TYPE_SECTIONS.forEach((sec) => {
+      // Филиалы с формулой: слоты вычисляются формулой в lib/framePricingFormula.ts
+      if (isFormulaBranch) {
+        const fixedSlots = computeSectionSlotCount(
+          sec.typeCode as FormulaFrameType,
+          sec.gender as FormulaGenderCode,
+          branchName,
+        );
+        const pct = formulaBranchTotal > 0
+          ? Math.round((fixedSlots / formulaBranchTotal) * 1000) / 10
+          : 0;
+        res[sec.id] = { slots: fixedSlots, pct };
+        return;
+      }
+      // Legacy-филиалы: стандартное пропорциональное распределение
       const share = TYPE_SLOT_SHARE[sec.id] ?? 0;
       const slots = Math.round(totalSlots * share);
       const pct = Math.round(share * 1000) / 10;
       res[sec.id] = { slots, pct };
     });
     return res;
-  }, [totalSlots]);
+  }, [totalSlots, isFormulaBranch, branchName, formulaBranchTotal]);
 
   const connectQZ = useCallback(async () => {
     if (connecting.current) return;
@@ -1094,6 +1248,34 @@ export default function BranchBarcodesPage() {
 
       const sb = getSupabase();
 
+      /* ===================== NEW: жесткое правило 1 цена = 1 ценник (на витрине) ===================== */
+      {
+        const { data: existing, error: exErr } = await sb
+          .from('frame_barcodes')
+          .select('barcode, year, serial')
+          .eq('branch_id', branchId)
+          .eq('type_code', actualType)
+          .eq('gender', actualGender)
+          .eq('price', p as any)
+          .is('sold_at', null)
+          .is('voided_at', null)
+          .limit(5);
+
+        if (exErr) throw exErr;
+
+        if ((existing || []).length > 0) {
+          const list = (existing || [])
+            .map((r: any) => `${r.barcode} (yy=${String(r.year).padStart(2, '0')}, serial=${r.serial})`)
+            .join(', ');
+          throw new Error(
+            `Нельзя печатать дубль цены.\n` +
+              `В этом филиале уже есть активный ценник для ${actualType}/${actualGender} по цене ${p} сом: ${list}.\n` +
+              `Если ценник потерян — сначала погаси (void) этот штрих-код в БД, потом печатай заново.`,
+          );
+        }
+      }
+      /* ============================================================================================== */
+
       // ВСТАВКА — ТОЛЬКО В ТЕКУЩИЙ ГОД
       const makeBarcode = (serialNum: number) =>
         `${branchCode}${actualType}${actualGender}${yy}${String(serialNum).padStart(SERIAL_LEN, '0')}`;
@@ -1171,47 +1353,139 @@ export default function BranchBarcodesPage() {
     [branchId, branchCode, frameType, gender, yy, serial, printer, status, log, yearNumCurrent],
   );
 
-  const printRAW = useCallback(async () => {
-    try {
-      await doPrint(Number(price));
-    } catch (e: any) {
-      log(e?.message || String(e));
-    }
-  }, [price, doPrint, log]);
+  /* ── Последние напечатанные ценники (для отмены) ── */
+  const [recentPrints, setRecentPrints] = useState<{ barcode: string; price: number; typeCode: FrameTypeCode; gender: GenderCode; ts: string }[]>([]);
+
+  useEffect(() => {
+    if (!branchId) return;
+    // Загружаем ВСЕ ценники, напечатанные сегодня (Asia/Bishkek), не проданные и не отменённые
+    const todayYMD = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bishkek' });
+    const startOfTodayIso = `${todayYMD}T00:00:00+06:00`;
+
+    const sb = getSupabase();
+    sb.from('frame_barcodes')
+      .select('barcode, price, type_code, gender, created_at')
+      .eq('branch_id', branchId)
+      .is('sold_at', null)
+      .is('voided_at', null)
+      .gte('created_at', startOfTodayIso)
+      .order('created_at', { ascending: false })
+      .limit(500) // safety cap на случай очень большой смены
+      .then(({ data }) => {
+        if (data) {
+          setRecentPrints(data.map((r: any) => ({
+            barcode: String(r.barcode ?? ''),
+            price: Number(r.price ?? 0),
+            typeCode: (r.type_code ?? '') as FrameTypeCode,
+            gender: (r.gender ?? '') as GenderCode,
+            ts: String(r.created_at ?? ''),
+          })));
+        }
+      });
+  }, [branchId]);
+
+  const addToRecent = useCallback((barcode: string, price: number, typeCode: FrameTypeCode, g: GenderCode) => {
+    // Без slice — показываем ВСЕ ценники за сегодня, в порядке от новых к старым
+    setRecentPrints((prev) => [{ barcode, price, typeCode, gender: g, ts: new Date().toISOString() }, ...prev]);
+  }, []);
+
+  const doPrintWithRecent = useCallback(
+    async (p: number, overrides?: { typeCode: FrameTypeCode; gender: GenderCode }) => {
+      await doPrint(p, overrides);
+      const t = overrides?.typeCode ?? frameType;
+      const g = overrides?.gender ?? gender;
+      const sb = getSupabase();
+      const { data } = await sb.from('frame_barcodes')
+        .select('barcode')
+        .eq('branch_id', branchId)
+        .eq('price', p as any)
+        .eq('type_code', t)
+        .eq('gender', g)
+        .is('sold_at', null)
+        .is('voided_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (data?.[0]) {
+        addToRecent(String(data[0].barcode), p, t, g);
+      }
+    },
+    [doPrint, frameType, gender, branchId, addToRecent],
+  );
+
+  const voidBarcode = useCallback(
+    async (barcode: string) => {
+      if (!window.confirm(`Отменить ценник ${barcode}? Он снова станет доступен для печати.`)) return;
+      const sb = getSupabase();
+      const { error } = await sb.from('frame_barcodes')
+        .update({ voided_at: new Date().toISOString() })
+        .eq('barcode', barcode)
+        .is('voided_at', null);
+      if (error) {
+        log(`Ошибка отмены: ${error.message}`);
+        return;
+      }
+      log(`Отменён: ${barcode}`);
+      setRecentPrints((prev) => prev.filter((r) => r.barcode !== barcode));
+      window.location.reload();
+    },
+    [log],
+  );
 
   const quickPrint = useCallback(
     async (priceValue: number, typeCode: FrameTypeCode, g: GenderCode) => {
       try {
-        await doPrint(priceValue, { typeCode, gender: g });
+        await doPrintWithRecent(priceValue, { typeCode, gender: g });
       } catch (e: any) {
         log(e?.message || String(e));
         throw e;
       }
     },
-    [doPrint, log],
+    [doPrintWithRecent, log],
   );
 
-  const title = branch ? `Оправы и штрихкоды · ${branch.name}` : 'Оправы и штрихкоды · филиал';
+  /**
+   * Тестовая печать — не трогает БД, просто отправляет демо-этикетку на принтер.
+   * Цена 2580 сом, штрихкод TEST2580MA. Используется для проверки шрифтов и вёрстки.
+   */
+  const testPrint = useCallback(async () => {
+    if (status !== 'connected' || !printer) {
+      log('Тестовая печать: QZ не подключён');
+      return;
+    }
+    try {
+      const qz = await ensureQZLoaded(log);
+      if (!qz?.version) throw new Error('QZ не загружен');
+
+      await ensureCanvasFonts();
+      const testPrice = '2580';
+      const testBarcode = 'TEST2580MA';
+      const b64 = buildBitmapJobBase64(testPrice, testBarcode);
+      const cfg = qz.configs.create(printer, {
+        legacy: true,
+        altPrinting: true,
+        rasterize: false,
+        scaleContent: false,
+      });
+      await qz.print(cfg, [{ type: 'raw', format: 'base64', data: b64 }]);
+      log(`Тестовый ценник отпечатан (цена ${testPrice}, штрихкод ${testBarcode}) — в БД НЕ записан`);
+    } catch (e: any) {
+      log(`Тестовая печать: ${e?.message || String(e)}`);
+    }
+  }, [status, printer, log]);
 
   if (branchError) {
     return (
       <div className="mx-auto min-h-screen max-w-5xl p-6 text-sm text-slate-900">
-        <header
-          className="mb-4 flex items-center justify-between rounded-3xl border border-sky-200
-                     bg-gradient-to-br from-white via-slate-50 to-sky-50/85
-                     px-5 py-3 shadow-[0_18px_50px_rgba(15,23,42,0.45)]"
-        >
-          <div className="flex items-center gap-3">
-            <Link
-              href="/settings/barcodes/overview"
-              className="rounded-xl border border-sky-200 bg-white px-2 py-1 text-xs text-slate-800 hover:bg-sky-50"
-            >
-              ← Обзор по филиалам
-            </Link>
-            <h1 className="text-lg font-semibold tracking-tight text-slate-900">{title}</h1>
-          </div>
+        <header className="mb-4 flex items-center gap-3 rounded-2xl bg-white ring-1 ring-sky-100 px-5 py-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+          <Link
+            href="/settings/barcodes/overview"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 transition"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Назад
+          </Link>
+          <h1 className="text-base font-bold tracking-tight text-slate-900">{branch?.name ?? 'Филиал'}</h1>
         </header>
-        <div className="rounded-2xl border border-rose-300 bg-gradient-to-r from-rose-50 via-rose-50 to-amber-50 px-4 py-3 text-xs text-rose-800 shadow-sm">
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 shadow-sm">
           {branchError}
         </div>
       </div>
@@ -1224,201 +1498,75 @@ export default function BranchBarcodesPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-7xl p-4 text-sm text-slate-900 md:p-6">
-      <header
-        className="mb-5 flex items-center justify-between rounded-3xl border border-sky-200
-                   bg-gradient-to-br from-white via-slate-50 to-sky-50
-                   px-5 py-3 shadow-[0_22px_60px_rgba(15,23,42,0.55)]
-                   backdrop-blur-xl"
-      >
+      {/* Невидимые preloader-элементы — заставляют браузер реально подгрузить шрифты,
+          которые потом использует canvas (через @import они объявлены, но
+          не загружаются, пока кто-то их не «использует» в DOM) */}
+      <span aria-hidden="true" style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', fontFamily: 'Onest', fontWeight: 400, fontSize: 1 }}>0123456789</span>
+      <span aria-hidden="true" style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', fontFamily: 'pavelt-jrjpm', fontSize: 1 }}>Refocus</span>
+
+      <header className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl bg-white ring-1 ring-sky-100 px-5 py-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
         <div className="flex items-center gap-3">
           <Link
             href="/settings/barcodes/overview"
-            className="rounded-xl border border-sky-200 bg-white px-2 py-1 text-xs text-slate-800 hover:bg-sky-50"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 transition"
           >
-            ← Обзор по филиалам
+            <ArrowLeft className="h-3.5 w-3.5" /> Назад
           </Link>
-          <div className="flex items-center gap-3">
-            <div
-              className="grid h-9 w-9 place-items-center rounded-2xl
-                         bg-gradient-to-br from-cyan-400 via-sky-400 to-indigo-500
-                         text-[11px] font-bold text-slate-900
-                         shadow-[0_0_18px_rgba(56,189,248,0.75)]"
-            >
-              RF
+          <div className="h-5 w-px bg-slate-200" />
+          <div className="flex items-center gap-2.5">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.35)]">
+              <Barcode className="h-4 w-4 text-white" />
             </div>
-            <div>
-              <h1 className="text-sm font-semibold tracking-tight text-slate-900 md:text-lg">{title}</h1>
-              <div className="text-[11px] text-slate-500">Печать ценников по видам и ценовым корзинам этого филиала</div>
-            </div>
+            <h1 className="text-base font-bold tracking-tight text-slate-900">{branch?.name ?? 'Филиал'}</h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl border border-sky-100 bg-white/80 px-3 py-1.5 text-[11px] text-slate-600">
-            Код филиала:&nbsp;
-            <span className="font-mono font-semibold text-slate-900">
-              {branchCode}
-              {yy}
-            </span>
-          </div>
-
+        <div className="flex items-center gap-2">
           <span
-            className={`rounded-full px-3 py-1 text-[11px] font-medium ${
+            className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${
               status === 'connected'
-                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                : status === 'error'
-                ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                ? 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200'
                 : status === 'connecting'
-                ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                ? 'bg-sky-50 text-sky-600 ring-1 ring-sky-200'
+                : 'bg-slate-50 text-slate-500 ring-1 ring-slate-200'
             }`}
           >
-            {status === 'connected' ? 'подключено' : status === 'connecting' ? 'подключение…' : status === 'error' ? 'ошибка' : 'ожидание'}
+            {status === 'connected' ? 'QZ подключён' : status === 'connecting' ? 'подключение…' : 'QZ не подключён'}
           </span>
 
           <button
             onClick={connectQZ}
-            className="rounded-2xl bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white shadow-[0_0_12px_rgba(56,189,248,0.6)] hover:brightness-110 active:scale-[.97]"
+            className="rounded-xl bg-cyan-500 px-3 py-2 text-xs font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.30)] hover:bg-cyan-400 active:scale-[.98] transition"
           >
-            Подключиться к QZ
+            Подключить QZ
+          </button>
+
+          <button
+            onClick={testPrint}
+            disabled={status !== 'connected' || !printer}
+            title="Печатает демо-этикетку (2580 сом, TEST2580MA). В базе не сохраняется."
+            className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 active:scale-[.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Тестовая печать
           </button>
         </div>
       </header>
 
       <div className="mb-5">
-        <Section
-          title={branch ? `Филиал «${branch.name}»` : 'Филиал'}
-          aside={
-            <div className="flex items-center gap-3 text-[11px] text-slate-500">
-              <span>План по корзинам: {PCT.b1}% / {PCT.b2}% / {PCT.b3}% / {PCT.b4}% / {PCT.b5}%</span>
-              <span className="hidden md:inline">•</span>
-              <span className="flex items-center gap-2">
-                <span className="text-slate-600">Учет лет:</span>
-                <select
-                  value={yearMode}
-                  onChange={(e) => setYearMode(e.target.value as YearMode)}
-                  className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-800"
-                  title="В начале года обычно на витрине остаются активные ценники прошлого года"
-                >
-                  <option value="current">Текущий ({String(yearNumCurrent).padStart(2, '0')})</option>
-                  <option value="current_plus_prev">Текущий + прошлый ({String(yearNumCurrent).padStart(2, '0')} + {String(yearNumPrev).padStart(2, '0')})</option>
-                </select>
-              </span>
-            </div>
-          }
-        >
-          <div className="grid gap-3 md:grid-cols-5">
-            <div className="rounded-2xl border border-sky-100 bg-white/90 p-3 shadow-sm md:col-span-2">
-              <div className="mb-1 text-xs font-medium text-slate-700">Всего слотов витрины</div>
-              <input
-                type="number"
-                min={0}
-                value={totalSlots}
-                onChange={(e) => setTotalSlots(Number(e.target.value || 0))}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
-              />
-              <div className="mt-1 text-[11px] text-slate-500">Доли по ценам: {PCT.b1}% / {PCT.b2}% / {PCT.b3}% / {PCT.b4}% / {PCT.b5}%</div>
-            </div>
-
-            <Stat label={`На витрине (годы ${yearsForShelfLabel})`} value={counts.totalOverall} />
-            <Stat label="Не хватает ценников (по ценам)" value={shortagesTotal} />
-            <Stat label="Активный принтер" value={<span className="block truncate">{printer || 'не выбран'}</span>} />
-            <Stat
-              label="Barcode issues"
-              value={
-                <span className="text-[12px]">
-                  mismatch {barcodeIssues.mismatched} · bad {barcodeIssues.unparsable}
-                </span>
-              }
-            />
+        <Section title={branch ? `Филиал «${branch.name}»` : 'Филиал'}>
+          <div className="grid gap-3 md:grid-cols-4">
+            <PlanSlotsInput value={totalSlots} onChange={setTotalSlots} />
+            <Stat label="На витрине" value={counts.totalOverall} />
+            <Stat label="Не хватает" value={shortagesTotal} />
+            <Stat label="Принтер" value={<span className="block truncate">{printer || 'не выбран'}</span>} />
           </div>
+
+          {isFormulaBranch && branch?.name && (
+            <FormulaInfoStrip branchName={branch.name} />
+          )}
         </Section>
       </div>
 
-      <div className="mb-5">
-        <Section
-          title="Ценовая картина витрины"
-          aside={<div className="text-[11px] text-slate-500">Количество активных оправ по диапазонам цен от 800 до 10&nbsp;000 сом.</div>}
-        >
-          <PriceDistributionChart perHundred={counts.perHundred} />
-        </Section>
-      </div>
-
-      <Section title="Печать конкретной цены">
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="block md:col-span-2">
-            <div className="mb-1 text-xs font-medium text-slate-700">Цена (на этикетке)</div>
-            <input
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="например, 2450"
-              className="font-nunito w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base font-bold tracking-tight"
-            />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-xs font-medium text-slate-700">Следующий штрих-код</div>
-            <input readOnly value={nextBarcode} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs" />
-          </label>
-        </div>
-
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <label className="block md:col-span-2">
-            <div className="mb-1 text-xs font-medium text-slate-700">Тип оправы</div>
-            <select
-              value={frameType}
-              onChange={(e) => setFrameType(e.target.value as FrameTypeCode)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-            >
-              {FRAME_TYPES.map((t) => (
-                <option key={t.code} value={t.code}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <div className="mt-1 text-[11px] text-slate-500">{FRAME_TYPES.find((t) => t.code === frameType)?.description}</div>
-          </label>
-
-          <label className="block">
-            <div className="mb-1 text-xs font-medium text-slate-700">Пол</div>
-            <select
-              value={gender}
-              onChange={(e) => setGender(e.target.value as GenderCode)}
-              disabled={frameType === 'RP' || frameType === 'RM'}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
-            >
-              <option value="F">Женские</option>
-              <option value="M">Мужские</option>
-            </select>
-            {(frameType === 'RP' || frameType === 'RM') && <div className="mt-1 text-[11px] text-amber-700">Для оправ для чтения используются только женские оправы.</div>}
-          </label>
-        </div>
-
-        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex-1">
-            <div className="mb-1 text-xs font-medium text-slate-700">Принтер</div>
-            <select value={printer} onChange={(e) => setPrinter(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm">
-              <option value="">— выбрать —</option>
-              {printers.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            onClick={printRAW}
-            className="mt-2 w-full rounded-2xl bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_0_14px_rgba(56,189,248,0.6)] hover:brightness-110 active:scale-[.99] md:mt-0 md:w-auto disabled:opacity-60"
-            disabled={!printer || status !== 'connected'}
-          >
-            🖨️ Печатать этикетку
-          </button>
-        </div>
-
-        <div className="mt-2 text-[11px] text-slate-500">
-          Новые штрихкоды печатаются в текущий год <span className="font-mono font-semibold text-slate-800">{String(yearNumCurrent).padStart(2, '0')}</span> (это правильно).
-        </div>
-      </Section>
 
       <div className="mt-5 space-y-4">
         {TYPE_SECTIONS.map((sec) => {
@@ -1429,13 +1577,17 @@ export default function BranchBarcodesPage() {
               title={sec.title}
               variant={getSectionVariant(sec)}
               aside={
-                plan && plan.slots > 0 ? (
-                  <span className="text-[11px] text-slate-700">
-                    план {plan.slots} мест · {plan.pct.toFixed(1)}%
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-slate-400">план 0 мест · 0%</span>
-                )
+                <div className="flex items-center gap-2 text-[11px]">
+                  {plan && plan.slots > 0 ? (
+                    <>
+                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-700">план {plan.slots}</span>
+                      <span className="rounded-md bg-cyan-50 px-1.5 py-0.5 font-semibold text-cyan-700">на полке {Object.values(typeActive[makeTypeKey(sec.typeCode, sec.gender)] || {}).reduce((s, v) => s + (Number.isFinite(v) ? Number(v) : 0), 0)}</span>
+                      <span className="rounded-md bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">к печати {Math.max(0, plan.slots - Object.values(typeActive[makeTypeKey(sec.typeCode, sec.gender)] || {}).reduce((s, v) => s + (Number.isFinite(v) ? Number(v) : 0), 0))}</span>
+                    </>
+                  ) : (
+                    <span className="text-slate-400">без плана</span>
+                  )}
+                </div>
               }
             >
               <TypeShortageGrid
@@ -1450,29 +1602,62 @@ export default function BranchBarcodesPage() {
                 typeSuggestPrices={typeSuggest[makeTypeKey(sec.typeCode, sec.gender)] || []}
                 onQuickPrint={(p) => quickPrint(p, sec.typeCode, sec.gender)}
                 printingAvailable={status === 'connected' && !!printer}
+                fixedPrices={
+                  isFormulaBranch && branch?.name
+                    ? computeSectionPrices(
+                        sec.typeCode as FormulaFrameType,
+                        sec.gender as FormulaGenderCode,
+                        branch.name,
+                      )
+                    : undefined
+                }
               />
             </Section>
           );
         })}
       </div>
 
-      <div className="mt-5">
-        <Section title="Лог печати и ошибок">
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        {/* Последние ценники — отмена */}
+        <Section title="Последние ценники">
+          {recentPrints.length > 0 ? (
+            <div className="grid gap-1 max-h-48 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+              {recentPrints.map((r) => (
+                <div key={r.barcode} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-slate-900 tabular-nums">{r.price} сом</div>
+                    <div className="mt-0.5 text-[12px] font-mono font-medium text-slate-600 truncate">{r.barcode}</div>
+                  </div>
+                  <button
+                    onClick={() => voidBarcode(r.barcode)}
+                    className="shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200 hover:bg-slate-200 hover:text-slate-700 transition"
+                  >
+                    Отменить
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400">Нет ценников</div>
+          )}
+        </Section>
+
+        {/* Лог */}
+        <Section title="Лог печати">
           <textarea
             readOnly
-            className="mt-1 h-48 w-full resize-none rounded-xl border border-slate-300 bg-white p-2 font-mono text-xs"
+            className="h-48 w-full resize-none rounded-xl border border-slate-200 bg-white p-2 font-mono text-[10px] text-slate-600"
             value={lines.join('\n')}
           />
-          <div className="mt-2 text-[11px] text-slate-500">Лог ограничен последними 400 строками.</div>
         </Section>
       </div>
     </div>
   );
 }
 
-/* ────────── график ────────── */
+/* ────────── график (УДАЛЁН) ────────── */
 
-function PriceDistributionChart({ perHundred }: { perHundred: Record<string, number> }) {
+function _PriceDistributionChart_UNUSED({ perHundred }: { perHundred: Record<string, number> }) {
   const BIN_STEP = 400;
 
   const bins = React.useMemo(() => {
@@ -1597,49 +1782,152 @@ function PriceDistributionChart({ perHundred }: { perHundred: Record<string, num
 
 /* ────────── UI helpers ────────── */
 
+/** Компактная read-only строка с параметрами формулы — вставляется внутрь блока филиала. */
+function FormulaInfoStrip({ branchName }: { branchName: string }) {
+  const country = getBranchCountry(branchName);
+  const countryName = country ? COUNTRIES[country].name : '—';
+  const currency = getBranchCurrency(branchName);
+  const currencySymbol = getBranchCurrencySymbol(branchName);
+  const cityIndex = getCityIndex(branchName);
+  const totalSlots = getBranchTotalSlots(branchName);
+  const premiumShare = getBranchPremiumShare(branchName);
+  const premiumPct = (premiumShare * 100).toFixed(1);
+  const approxPremium = Math.round(totalSlots * premiumShare * 0.6);
+  const premiumThreshold = country ? COUNTRIES[country].premiumThreshold : 4000;
+
+  const chipCls =
+    'inline-flex items-center gap-1 rounded-md bg-cyan-50/70 px-2 py-0.5 ring-1 ring-cyan-200/70 text-[11px] font-medium text-cyan-800';
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          <span className="text-cyan-500">●</span>
+          Формула
+        </span>
+        <span className={chipCls}>
+          <span className="text-cyan-500">страна</span>
+          <b>{countryName}</b>
+          <span className="text-cyan-400/80">· {currency}</span>
+        </span>
+        <span className={chipCls}>
+          <span className="text-cyan-500">город</span>
+          <b>×{cityIndex.toFixed(2)}</b>
+        </span>
+        <span className={chipCls}>
+          <span className="text-cyan-500">премиум</span>
+          <b>{premiumPct}%</b>
+          <span className="text-cyan-400/80">≈{approxPremium} ≥ {premiumThreshold.toLocaleString('ru-RU')} {currencySymbol}</span>
+        </span>
+        <span className="ml-auto font-mono text-[10.5px] text-slate-400 hidden md:inline">
+          База × пол × {BUCKET_STEP.toFixed(2)}^(бакет−1) × {cityIndex.toFixed(2)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PlanSlotsInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(String(value));
+
+  React.useEffect(() => { setDraft(String(value)); }, [value]);
+
+  const handleSave = () => {
+    const n = Number(draft || 0);
+    if (n !== value) {
+      if (!window.confirm(`Изменить план слотов с ${value} на ${n}?`)) {
+        setDraft(String(value));
+        setEditing(false);
+        return;
+      }
+      onChange(n);
+    }
+    setEditing(false);
+  };
+
+  return (
+    <div className="rounded-xl bg-slate-50 ring-1 ring-slate-100 p-3">
+      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">План слотов</div>
+      {editing ? (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={0}
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setDraft(String(value)); setEditing(false); } }}
+            className="w-full rounded-lg border border-cyan-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/50"
+          />
+          <button onClick={handleSave} className="rounded-lg bg-cyan-500 px-2 py-1 text-xs font-semibold text-white hover:bg-cyan-400">OK</button>
+          <button onClick={() => { setDraft(String(value)); setEditing(false); }} className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-300">X</button>
+        </div>
+      ) : (
+        <button onClick={() => setEditing(true)} className="mt-0.5 text-lg font-bold text-slate-900 hover:text-cyan-600 transition">{value}</button>
+      )}
+    </div>
+  );
+}
+
 const SECTION_VARIANT_CLASSES: Record<SectionVariant, string> = {
-  default: 'border-sky-200 bg-gradient-to-br from-white via-slate-50 to-sky-50',
-  reading: 'border-pink-200 bg-gradient-to-br from-rose-50 via-amber-50 to-rose-50',
-  kidsGirls: 'border-pink-300 bg-gradient-to-br from-pink-50 via-rose-50 to-indigo-100',
-  kidsBoys: 'border-cyan-300 bg-gradient-to-br from-cyan-50 via-sky-50 to-indigo-100',
-  plasticF: 'border-pink-300 bg-gradient-to-br from-pink-50 via-rose-50 to-indigo-100',
-  plasticM: 'border-cyan-300 bg-gradient-to-br from-cyan-50 via-sky-50 to-indigo-100',
-  metalF: 'border-rose-300 bg-gradient-to-br from-rose-50 via-slate-50 to-slate-200',
-  metalM: 'border-cyan-300 bg-gradient-to-br from-cyan-50 via-slate-50 to-slate-200',
+  default: 'border-sky-100 bg-white',
+  female: 'border-teal-300 bg-gradient-to-r from-teal-100 via-teal-50 to-cyan-50',
+  male: 'border-sky-300 bg-gradient-to-r from-sky-100 via-sky-50 to-white',
+};
+
+const GENDER_BADGE: Record<SectionVariant, { label: string; cls: string } | undefined> = {
+  default: undefined,
+  female: { label: 'Ж', cls: 'bg-teal-100 text-teal-700 ring-teal-200' },
+  male: { label: 'М', cls: 'bg-sky-100 text-sky-700 ring-sky-200' },
 };
 
 const Section = ({
   title,
   aside,
+  action,
   children,
   variant = 'default',
 }: {
   title: string;
   aside?: React.ReactNode;
+  action?: React.ReactNode;
   children: React.ReactNode;
   variant?: SectionVariant;
-}) => (
-  <section
-    className={`mb-4 rounded-3xl shadow-[0_14px_40px_rgba(15,23,42,0.4)] backdrop-blur-xl ${SECTION_VARIANT_CLASSES[variant]}`}
-  >
-    <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 px-4 py-2.5">
-      <h2 className="text-xs font-semibold text-slate-900 md:text-sm">{title}</h2>
-      {aside && <div className="flex items-center gap-1 text-[11px] text-slate-600">{aside}</div>}
-    </div>
-    <div className="px-4 pb-3 pt-2">{children}</div>
-  </section>
-);
+}) => {
+  const badge = GENDER_BADGE[variant];
+  return (
+    <section
+      className={`mb-4 rounded-2xl ring-1 shadow-[0_8px_30px_rgba(15,23,42,0.45)] ${SECTION_VARIANT_CLASSES[variant]}`}
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          {badge && (
+            <span className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold ring-1 ${badge.cls}`}>
+              {badge.label}
+            </span>
+          )}
+          <h2 className="text-sm font-bold text-slate-900 md:text-base">{title}</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {aside && <div className="flex items-center gap-1 text-[11px] text-slate-600">{aside}</div>}
+          {action}
+        </div>
+      </div>
+      <div className="px-4 pb-3 pt-2">{children}</div>
+    </section>
+  );
+};
 
 const Stat = ({ label, value }: { label: string; value: React.ReactNode }) => (
-  <div className="rounded-2xl border border-sky-100 bg-white/90 px-4 py-2.5 text-slate-900 shadow-sm">
-    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
-    <div className="mt-1 flex items-baseline gap-1.5 text-lg font-semibold text-slate-900">{value}</div>
+  <div className="rounded-xl bg-slate-50 ring-1 ring-slate-100 px-3 py-2.5 text-slate-900">
+    <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="mt-1 flex items-baseline gap-1.5 text-lg font-bold text-slate-900">{value}</div>
   </div>
 );
 
 function PriceChip({
   p,
-  warn,
   disabled,
   onClick,
 }: {
@@ -1656,15 +1944,12 @@ function PriceChip({
         if (disabled) return;
         void onClick(p);
       }}
-      className={`font-nunito rounded-2xl px-3 py-1 text-[13px] font-bold tracking-tight border shadow-sm
-        transition focus-visible:ring-2 focus-visible:ring-cyan-500
-        focus-visible:ring-offset-2 focus-visible:ring-offset-slate-100
+      className={`rounded-xl px-3.5 py-1.5 text-[13px] font-bold tabular-nums tracking-tight
+        transition-all duration-150 focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-1
         ${
           disabled
-            ? 'cursor-not-allowed opacity-40 bg-slate-100 text-slate-400 border-slate-200'
-            : warn
-            ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-            : 'bg-white text-slate-900 border-sky-100 hover:bg-cyan-50 hover:border-cyan-400'
+            ? 'cursor-not-allowed opacity-30 bg-slate-100 text-slate-400 ring-1 ring-slate-200'
+            : 'bg-gradient-to-b from-cyan-400 to-cyan-500 text-white shadow-[0_2px_8px_rgba(34,211,238,0.35)] hover:from-cyan-300 hover:to-cyan-400 hover:shadow-[0_4px_14px_rgba(34,211,238,0.45)] active:scale-[0.97]'
         }`}
     >
       {p}
@@ -1675,17 +1960,18 @@ function PriceChip({
 /* ────────── грид дефицитов ────────── */
 
 function TypeShortageGrid({
-  bucketShortages,
-  hundredShortages,
+  bucketShortages: _bs,
+  hundredShortages: _hs,
   frameType,
   gender,
   typePlanSlots,
-  totalSlots,
+  totalSlots: _ts,
   printedCount,
   typeActivePrices,
   typeSuggestPrices,
   onQuickPrint,
   printingAvailable,
+  fixedPrices,
 }: {
   bucketShortages: BucketShortage[];
   hundredShortages: HundredShortage[];
@@ -1698,19 +1984,28 @@ function TypeShortageGrid({
   typeSuggestPrices: number[];
   onQuickPrint: (price: number) => Promise<void> | void;
   printingAvailable: boolean;
+  /** Если передан — эти цены используются вместо formulaPrices (например, AI-сетка Токмока). */
+  fixedPrices?: number[];
 }) {
   const planSlots = typePlanSlots ?? 0;
 
   const rules = getTypePriceBounds(frameType, gender);
   if (!rules.min || !rules.max || rules.max <= rules.min) {
     return (
-      <div className="text-xs text-rose-700">
+      <div className="text-xs text-slate-500">
         Неизвестный или некорректный диапазон цен для типа {frameType}. Проверь getTypePriceBounds.
       </div>
     );
   }
 
   const activeSum = Object.values(typeActivePrices || {}).reduce((s, v) => s + (Number.isFinite(v) ? Number(v) : 0), 0);
+
+  /* ===================== NEW: подсветка дублей активных цен ===================== */
+  const dupActivePrices = Object.entries(typeActivePrices || {})
+    .map(([k, v]) => ({ p: Number(k), c: Number(v) }))
+    .filter((x) => Number.isFinite(x.p) && Number.isFinite(x.c) && x.c > 1)
+    .sort((a, b) => a.p - b.p);
+  /* ============================================================================ */
 
   const soldSuggestAll = (typeSuggestPrices || []).filter((p) => {
     if (!Number.isFinite(p)) return false;
@@ -1727,8 +2022,6 @@ function TypeShortageGrid({
 
   let formulaPrices: number[] = [];
   if (planSlots > 0 && slotsForFormula > 0) {
-    const ladderAll = generatePriceLadder(planSlots, rules.min, rules.max, PRICE_ALPHA);
-
     const used = new Set<number>();
     Object.keys(typeActivePrices || {}).forEach((k) => {
       const num = Number(k);
@@ -1736,14 +2029,18 @@ function TypeShortageGrid({
     });
     soldSuggestUniq.forEach((p) => used.add(p));
 
+    // Если для филиала задана фиксированная сетка (например, Токмок) — берём из неё.
+    // Иначе — генерируем по старой «лестнице».
+    const ladderAll =
+      fixedPrices && fixedPrices.length > 0
+        ? [...fixedPrices]
+        : generatePriceLadder(planSlots, rules.min, rules.max, PRICE_ALPHA);
+
     const free = ladderAll.filter((p) => !used.has(p));
     formulaPrices = free.slice(0, slotsForFormula);
   }
 
   const visiblePrices = planSlots > 0 ? [...soldSuggestUniq, ...formulaPrices] : soldSuggestUniq;
-
-  const have = activeSum;
-  const need = visiblePrices.length;
 
   const [bulk, setBulk] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -1776,7 +2073,7 @@ function TypeShortageGrid({
 
   if (planSlots > 0 && remainingByPlan <= 0 && visiblePrices.length === 0) {
     return (
-      <div className="text-xs text-emerald-700">
+      <div className="text-xs text-cyan-700">
         План по этому виду выполнен: на полке {activeSum} из {planSlots} слотов. Напечатано всего {printedCount}. Новые цены можно печатать вручную выше.
       </div>
     );
@@ -1800,37 +2097,39 @@ function TypeShortageGrid({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3 text-[11px] text-slate-600">
-        <span>Рекомендуемые цены для этого вида</span>
-
-        <div className="flex items-center gap-3">
-          <span className="whitespace-nowrap">
-            {planSlots > 0 ? (
-              <>
-                план {planSlots} • на полке {have} • к печати {need}
-              </>
-            ) : (
-              <>на полке {have} • к печати {need}</>
-            )}
-          </span>
-
-          <button
-            onClick={() => void handlePrintAll()}
-            disabled={!printingAvailable || bulk.running || visiblePrices.length === 0}
-            className="rounded-xl border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800 shadow-sm hover:bg-sky-50 active:scale-[.99] disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Распечатать все текущие рекомендованные слоты в этой секции"
-          >
-            {bulk.running ? `Печать ${bulk.done}/${bulk.total}` : `🖨️ Печатать все (${visiblePrices.length})`}
-          </button>
+      {dupActivePrices.length > 0 && (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-800">
+          <div className="font-semibold">Найдены дубли активных ценников (нарушение «1 цена = 1 ценник»):</div>
+          <div className="mt-1">
+            {dupActivePrices.map((x) => (
+              <span key={x.p} className="mr-2 inline-flex rounded-xl border border-sky-200 bg-white px-2 py-0.5 font-mono">
+                {x.p}×{x.c}
+              </span>
+            ))}
+          </div>
+          <div className="mt-1 text-[10px] text-sky-700">
+            Удали лишние (void) в БД по дубликатам и физически убери лишний ценник с витрины.
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white/90 p-2.5 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {visiblePrices.map((p, idx) => (
-            <PriceChip key={`${p}-${idx}`} p={p} warn={soldSet.has(p)} disabled={!printingAvailable || bulk.running} onClick={handleChipClick} />
+      <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2 flex-1">
+          {visiblePrices.map((p) => (
+            <PriceChip key={p} p={p} warn={soldSet.has(p)} disabled={!printingAvailable || bulk.running} onClick={handleChipClick} />
           ))}
         </div>
+        <button
+          onClick={() => {
+            if (!window.confirm(`Распечатать все ${visiblePrices.length} ценников?`)) return;
+            void handlePrintAll();
+          }}
+          disabled={!printingAvailable || bulk.running || visiblePrices.length === 0}
+          title={`Печатать все ${visiblePrices.length} ценников`}
+          className="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-cyan-500 text-white shadow-[0_2px_8px_rgba(34,211,238,0.30)] hover:bg-cyan-400 active:scale-[.95] disabled:opacity-30 disabled:cursor-not-allowed transition shrink-0"
+        >
+          {bulk.running ? <span className="text-[10px] font-bold">{bulk.done}/{bulk.total}</span> : <Printer className="h-4 w-4" />}
+        </button>
       </div>
     </div>
   );

@@ -15,12 +15,12 @@ export default function PosAwareSidebar({ role }: { role: any }) {
       document.documentElement.style.setProperty('--sidebar-width', '0rem');
     } else {
       document.body.classList.remove('pos-mode');
-      document.documentElement.style.setProperty('--sidebar-width', '18rem');
+      document.documentElement.style.setProperty('--sidebar-width', '16rem');
     }
     // на случай навигации SPA: очищаем при размонтировании
     return () => {
       document.body.classList.remove('pos-mode');
-      document.documentElement.style.setProperty('--sidebar-width', '18rem');
+      document.documentElement.style.setProperty('--sidebar-width', '16rem');
     };
   }, [isPOS]);
 

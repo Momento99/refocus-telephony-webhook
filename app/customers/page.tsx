@@ -436,7 +436,7 @@ export default function CustomersPage() {
                   Клиенты
                 </div>
                 <div className="mt-0.5 text-[13px] text-slate-600/90">
-                  База клиентов сети <span className="font-medium text-slate-900">Refocus</span>
+                  База клиентов сети <span className="font-medium text-slate-900 font-kiona">Refocus</span>
                 </div>
               </div>
             </div>
