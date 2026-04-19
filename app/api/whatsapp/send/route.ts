@@ -122,12 +122,13 @@ export async function POST(req: Request) {
       })
       .eq('id', msg.id);
 
+    const threadPatch: Record<string, unknown> = {
+      last_customer_message_at: null, // seller replied → clear unanswered marker
+    };
     if (!thread.first_seller_response_at) {
-      await admin
-        .from('whatsapp_threads')
-        .update({ first_seller_response_at: new Date().toISOString() })
-        .eq('id', msg.thread_id);
+      threadPatch.first_seller_response_at = new Date().toISOString();
     }
+    await admin.from('whatsapp_threads').update(threadPatch).eq('id', msg.thread_id);
 
     return json({ ok: true, wa_message_id: waMessageId });
   } catch (e: any) {

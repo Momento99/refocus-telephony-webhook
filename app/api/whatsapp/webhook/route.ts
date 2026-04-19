@@ -201,6 +201,7 @@ async function ingestMessage(m: MetaMessage) {
 
   const patch: Record<string, unknown> = {
     last_message_at: createdAt,
+    last_customer_message_at: createdAt,
     unread_count: ((thread?.unread_count as number | null) ?? 0) + 1,
     status: 'waiting_seller',
   };
