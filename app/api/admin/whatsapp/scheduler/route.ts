@@ -376,12 +376,134 @@ async function runScheduler(req: Request) {
     }
   }
 
+  // === 3. Instagram Direct — отправка pending outbound сообщений ===
+  const ig = await runInstagramOutbound(admin);
+
   return NextResponse.json({
     ok: true,
     sla_breaches_marked: breached,
     followups: { processed: items.length, sent, failed },
     texts: { sent: textsSent, failed: textsFailed },
+    instagram: ig,
   });
+}
+
+type IgConfig = {
+  ig_business_account_id: string | null;
+  page_access_token: string | null;
+  is_active: boolean | null;
+};
+
+async function runInstagramOutbound(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+): Promise<{ sent: number; failed: number; skipped?: string }> {
+  // SLA breach detection for IG — same logic as WhatsApp.
+  const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+  await admin
+    .from('instagram_threads')
+    .update({ sla_breached: true })
+    .eq('status', 'waiting_seller')
+    .eq('sla_breached', false)
+    .lte('first_customer_message_at', cutoff)
+    .is('first_seller_response_at', null);
+
+  const { data: cfgRow } = await admin
+    .from('instagram_api_config')
+    .select('ig_business_account_id, page_access_token, is_active')
+    .eq('id', 1)
+    .maybeSingle();
+  const cfg = (cfgRow as IgConfig | null) ?? null;
+
+  if (!cfg || !cfg.is_active) return { sent: 0, failed: 0, skipped: 'instagram inactive' };
+  if (!cfg.ig_business_account_id || !cfg.page_access_token) {
+    return { sent: 0, failed: 0, skipped: 'instagram credentials missing' };
+  }
+
+  const { data: pending } = await admin
+    .from('instagram_messages')
+    .select('id, thread_id, body, message_type')
+    .eq('direction', 'outbound')
+    .eq('status', 'pending')
+    .is('ig_message_id', null)
+    .eq('message_type', 'text')
+    .order('created_at', { ascending: true })
+    .limit(BATCH_SIZE);
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const raw of pending ?? []) {
+    const msg = raw as { id: string; thread_id: string; body: string | null; message_type: string };
+    if (!msg.body) {
+      await admin
+        .from('instagram_messages')
+        .update({ status: 'failed', error_message: 'empty body' })
+        .eq('id', msg.id);
+      failed++;
+      continue;
+    }
+    const { data: thread } = await admin
+      .from('instagram_threads')
+      .select('ig_user_id, first_seller_response_at')
+      .eq('id', msg.thread_id)
+      .maybeSingle();
+    if (!thread) {
+      await admin
+        .from('instagram_messages')
+        .update({ status: 'failed', error_message: 'thread not found' })
+        .eq('id', msg.id);
+      failed++;
+      continue;
+    }
+
+    try {
+      const r = await fetch(
+        `${CLOUD_API_BASE}/${cfg.ig_business_account_id}/messages?access_token=${encodeURIComponent(cfg.page_access_token)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient: { id: thread.ig_user_id },
+            message: { text: msg.body },
+          }),
+        },
+      );
+      const data: any = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const err = data?.error;
+        await admin
+          .from('instagram_messages')
+          .update({
+            status: 'failed',
+            error_code: String(err?.code ?? r.status),
+            error_message: err?.message ?? JSON.stringify(data),
+          })
+          .eq('id', msg.id);
+        failed++;
+        continue;
+      }
+      const mid: string | undefined = data?.message_id;
+      await admin
+        .from('instagram_messages')
+        .update({ status: 'sent', ig_message_id: mid ?? null })
+        .eq('id', msg.id);
+      if (!thread.first_seller_response_at) {
+        await admin
+          .from('instagram_threads')
+          .update({ first_seller_response_at: new Date().toISOString() })
+          .eq('id', msg.thread_id);
+      }
+      sent++;
+    } catch (e: any) {
+      await admin
+        .from('instagram_messages')
+        .update({ status: 'failed', error_message: `fetch: ${e?.message ?? e}` })
+        .eq('id', msg.id);
+      failed++;
+    }
+  }
+
+  return { sent, failed };
 }
 
 export async function POST(req: Request) {

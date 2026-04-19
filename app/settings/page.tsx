@@ -4,6 +4,23 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Settings2, Users, MessageCircle, ShieldCheck, ChevronRight } from 'lucide-react';
 
+const InstagramIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    {...props}
+  >
+    <rect x="3" y="3" width="18" height="18" rx="5" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 function SettingsTile({
   title,
   desc,
@@ -62,6 +79,13 @@ export default function SettingsHome() {
           desc="Meta Cloud API: креды, шаблоны сообщений и webhook для сервисных уведомлений."
           href="/settings/integrations/whatsapp"
           icon={<MessageCircle className="h-5 w-5 text-white" />}
+        />
+
+        <SettingsTile
+          title="Instagram Direct"
+          desc="Meta Graph API: переписка с клиентами из Instagram прямо в POS-инбоксе."
+          href="/settings/integrations/instagram"
+          icon={<InstagramIcon className="h-5 w-5 text-white" />}
         />
 
         <SettingsTile
