@@ -2,6 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import {
+  MessageCircle,
+  CheckCircle2,
+  CircleDashed,
+  Copy,
+  RefreshCw,
+  Save,
+  Loader2,
+  Link2,
+} from 'lucide-react';
 
 type Config = {
   id: number;
@@ -114,169 +124,195 @@ export default function WhatsAppIntegrationPage() {
     }
   }
 
-  if (loading) {
-    return <div className="max-w-3xl mx-auto p-6 text-slate-600">Загрузка…</div>;
-  }
-
   return (
-    <div className="min-h-screen bg-transparent text-slate-900">
-      <div className="max-w-3xl mx-auto space-y-5">
-        <header>
-          <h1 className="text-[20px] font-bold text-white tracking-tight flex items-center gap-2">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 ring-1 ring-white/20">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
-                <path d="M20.52 3.48A11.83 11.83 0 0 0 12.02 0C5.42 0 .04 5.38.04 11.98c0 2.11.55 4.17 1.6 5.99L0 24l6.17-1.62a11.95 11.95 0 0 0 5.85 1.49h.01c6.6 0 11.98-5.38 11.99-11.98 0-3.2-1.25-6.21-3.5-8.41zM12.02 21.85h-.01a9.86 9.86 0 0 1-5.03-1.38l-.36-.21-3.66.96.98-3.57-.23-.37a9.87 9.87 0 0 1-1.52-5.3c0-5.47 4.45-9.92 9.93-9.92 2.65 0 5.14 1.03 7.02 2.91a9.86 9.86 0 0 1 2.9 7.02c-.01 5.48-4.46 9.86-9.92 9.86z" />
-              </svg>
-            </span>
-            WhatsApp Business (Cloud API)
-          </h1>
-          <p className="text-[12px] text-slate-400 mt-0.5">
-            Подключение сервисных сообщений Refocus через Meta Cloud API
-          </p>
-        </header>
-
-      <section className="rounded-2xl border border-slate-200/60 bg-white/90 shadow-sm p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Учётные данные Meta</h2>
-          <span
-            className={`text-xs px-2 py-1 rounded-full ${
-              config?.is_active
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {config?.is_active ? 'Активно' : 'Не активно'}
-          </span>
-        </div>
-
-        <Field label="WABA ID (WhatsApp Business Account ID)">
-          <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="напр. 1234567890123456" />
-        </Field>
-
-        <Field label="Phone Number ID">
-          <Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="напр. 1098765432109876" />
-        </Field>
-
-        <Field label="Business Phone">
-          <Input value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} placeholder="+996705244966" />
-        </Field>
-
-        <Field label="Display Name">
-          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Refocus" />
-        </Field>
-
-        <Field
-          label="Permanent Access Token"
-          hint={
-            config?.has_access_token
-              ? '✓ Токен сохранён. Оставьте поле пустым, чтобы не менять. Введите новое значение, чтобы перезаписать.'
-              : 'Токен не задан. Сгенерируйте в Meta for Developers → System Users.'
-          }
-        >
-          <Input
-            type="password"
-            value={accessToken}
-            onChange={(e) => setAccessToken(e.target.value)}
-            placeholder={config?.has_access_token ? '••••••••••••••••' : 'EAAG...'}
-            autoComplete="off"
-          />
-        </Field>
-
-        <Field
-          label="Webhook Verify Token"
-          hint="Любая случайная строка. Понадобится при настройке вебхука в Meta Dashboard."
-        >
-          <div className="flex gap-2">
-            <Input value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} placeholder="refocus_wa_verify_2026" />
-            <button
-              type="button"
-              onClick={() => setVerifyToken(`refocus_wa_${Math.random().toString(36).slice(2, 14)}`)}
-              className="shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
-            >
-              Сгенерировать
-            </button>
-          </div>
-        </Field>
-
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={isActive}
-            onChange={(e) => setIsActive(e.target.checked)}
-            className="h-4 w-4 accent-emerald-600"
-          />
-          <span className="text-sm">Интеграция активна (шедулер начнёт отправлять follow-up)</span>
-        </label>
-
-        <div className="pt-2">
-          <button
-            onClick={save}
-            disabled={saving}
-            className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? 'Сохраняем…' : 'Сохранить'}
-          </button>
-          {config?.updated_at && (
-            <span className="text-xs text-slate-500 ml-3">
-              Обновлено: {new Date(config.updated_at).toLocaleString('ru-RU')}
-            </span>
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200/60 bg-white/90 shadow-sm p-5 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Шаблон для подачи в Мету</h2>
-          <p className="text-slate-600 text-sm mt-1">
-            Первый service-шаблон. Подавайте в Meta Business Manager → WhatsApp Manager → Message Templates → Create Template.
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-3 text-sm">
-          <Row label="Name" value={TEMPLATE_NAME} onCopy={() => copy(TEMPLATE_NAME)} />
-          <Row label="Category" value={TEMPLATE_CATEGORY} />
-          <Row label="Language" value={TEMPLATE_LANGUAGE} />
-          <div>
-            <div className="text-slate-500 text-xs uppercase tracking-wide mb-1">Body</div>
-            <pre className="whitespace-pre-wrap font-sans text-slate-800 text-sm bg-white rounded-lg border border-slate-200 p-3">
-{TEMPLATE_BODY}
-            </pre>
-            <button
-              onClick={() => copy(TEMPLATE_BODY)}
-              className="mt-2 text-xs text-blue-600 hover:underline"
-            >
-              Скопировать body
-            </button>
+    <div className="text-slate-50">
+      {/* Header (бренд-стандарт) */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <MessageCircle className="h-5 w-5 text-white" />
           </div>
           <div>
-            <div className="text-slate-500 text-xs uppercase tracking-wide mb-1">Sample values (для Меты)</div>
-            <div className="text-slate-700">
-              <div>{'{{1}}'} → <span className="font-mono">{TEMPLATE_SAMPLE_1}</span></div>
-              <div>{'{{2}}'} → <span className="font-mono">{TEMPLATE_SAMPLE_2}</span></div>
+            <div className="text-2xl font-bold tracking-tight text-slate-50">WhatsApp Business</div>
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">
+              Сервисные сообщения через Meta Cloud API
             </div>
           </div>
         </div>
 
-        <div className="text-xs text-slate-500 leading-relaxed">
-          <strong>Советы при подаче:</strong> категория обязательно <span className="font-mono">UTILITY</span>,
-          не <span className="font-mono">MARKETING</span> — иначе отклонят. Sample values подставьте реальные примеры,
-          иначе Мета не примет форму. Апрув обычно 1–3 дня.
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200/60 bg-white/90 shadow-sm p-5 space-y-2">
-        <h2 className="text-lg font-semibold">Webhook URL</h2>
-        <p className="text-slate-600 text-sm">
-          В настройках вебхука в Meta укажите этот URL (подключим, когда появится токен):
-        </p>
-        <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 font-mono text-sm break-all">
-          https://<span className="text-slate-400">ваш-домен</span>/api/whatsapp/webhook
-        </div>
-        <p className="text-xs text-slate-500">
-          Verify Token для подтверждения вебхука — тот, что задан выше в форме.
-        </p>
-      </section>
+        {config?.is_active ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-400 ring-1 ring-emerald-400/20">
+            <CheckCircle2 className="h-4 w-4" />
+            Интеграция активна
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-500/10 px-3 py-1.5 text-[12px] font-semibold text-slate-400 ring-1 ring-slate-400/20">
+            <CircleDashed className="h-4 w-4" />
+            Не активна
+          </span>
+        )}
       </div>
+
+      {loading ? (
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-6 text-sm text-slate-500 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+          <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-cyan-500" />
+          <div className="text-center">Загрузка…</div>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {/* Учётные данные Meta */}
+          <section className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5 space-y-4">
+            <div className="text-base font-semibold text-slate-900">Учётные данные Meta</div>
+
+            <Field label="WABA ID (WhatsApp Business Account ID)">
+              <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="напр. 1234567890123456" />
+            </Field>
+
+            <Field label="Phone Number ID">
+              <Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="напр. 1098765432109876" />
+            </Field>
+
+            <Field label="Business Phone">
+              <Input value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} placeholder="+996705244966" />
+            </Field>
+
+            <Field label="Display Name">
+              <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Refocus" />
+            </Field>
+
+            <Field
+              label="Permanent Access Token"
+              hint={
+                config?.has_access_token
+                  ? '✓ Токен сохранён. Оставьте поле пустым, чтобы не менять. Введите новое значение, чтобы перезаписать.'
+                  : 'Токен не задан. Сгенерируйте в Meta for Developers → System Users.'
+              }
+            >
+              <Input
+                type="password"
+                value={accessToken}
+                onChange={(e) => setAccessToken(e.target.value)}
+                placeholder={config?.has_access_token ? '••••••••••••••••' : 'EAAG...'}
+                autoComplete="off"
+              />
+            </Field>
+
+            <Field
+              label="Webhook Verify Token"
+              hint="Любая случайная строка. Понадобится при настройке вебхука в Meta Dashboard."
+            >
+              <div className="flex gap-2">
+                <Input
+                  value={verifyToken}
+                  onChange={(e) => setVerifyToken(e.target.value)}
+                  placeholder="refocus_wa_verify_2026"
+                />
+                <button
+                  type="button"
+                  onClick={() => setVerifyToken(`refocus_wa_${Math.random().toString(36).slice(2, 14)}`)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Сгенерировать
+                </button>
+              </div>
+            </Field>
+
+            <label className="flex items-center gap-2 cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="h-4 w-4 accent-cyan-500"
+              />
+              <span className="text-sm text-slate-700">
+                Интеграция активна (шедулер начнёт отправлять follow-up)
+              </span>
+            </label>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <button
+                onClick={save}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {saving ? 'Сохраняем…' : 'Сохранить'}
+              </button>
+              {config?.updated_at && (
+                <span className="text-[11px] text-slate-500">
+                  Обновлено: {new Date(config.updated_at).toLocaleString('ru-RU')}
+                </span>
+              )}
+            </div>
+          </section>
+
+          {/* Шаблон для подачи в Мету */}
+          <section className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5 space-y-4">
+            <div>
+              <div className="text-base font-semibold text-slate-900">Шаблон для подачи в Мету</div>
+              <p className="mt-1 text-[12px] text-slate-500">
+                Первый service-шаблон. Подавайте в Meta Business Manager → WhatsApp Manager → Message Templates → Create Template.
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-4 space-y-3 text-sm">
+              <Row label="Name" value={TEMPLATE_NAME} onCopy={() => copy(TEMPLATE_NAME)} />
+              <Row label="Category" value={TEMPLATE_CATEGORY} />
+              <Row label="Language" value={TEMPLATE_LANGUAGE} />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Body</div>
+                <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800 bg-white rounded-lg ring-1 ring-sky-100 p-3">
+{TEMPLATE_BODY}
+                </pre>
+                <button
+                  onClick={() => copy(TEMPLATE_BODY)}
+                  className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-cyan-700 hover:text-cyan-800 transition"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Скопировать body
+                </button>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                  Sample values (для Меты)
+                </div>
+                <div className="text-slate-700 space-y-0.5 text-[13px]">
+                  <div>
+                    {'{{1}}'} → <span className="font-mono text-slate-900">{TEMPLATE_SAMPLE_1}</span>
+                  </div>
+                  <div>
+                    {'{{2}}'} → <span className="font-mono text-slate-900">{TEMPLATE_SAMPLE_2}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-3 text-[12px] text-amber-800 leading-relaxed">
+              <span className="font-semibold">Советы при подаче:</span> категория обязательно{' '}
+              <span className="font-mono">UTILITY</span>, не <span className="font-mono">MARKETING</span> —
+              иначе отклонят. Sample values подставьте реальные примеры, иначе Мета не примет форму. Апрув обычно 1–3 дня.
+            </div>
+          </section>
+
+          {/* Webhook URL */}
+          <section className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-cyan-600" />
+              <div className="text-base font-semibold text-slate-900">Webhook URL</div>
+            </div>
+            <p className="text-[12px] text-slate-500">
+              В настройках вебхука в Meta укажите этот URL (подключим, когда появится токен):
+            </p>
+            <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3 font-mono text-sm text-slate-800 break-all">
+              https://<span className="text-slate-400">ваш-домен</span>/api/whatsapp/webhook
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Verify Token для подтверждения вебхука — тот, что задан выше в форме.
+            </p>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -292,9 +328,11 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
+      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </label>
       {children}
-      {hint && <div className="text-xs text-slate-500 mt-1">{hint}</div>}
+      {hint && <div className="mt-1 text-[11px] text-slate-500">{hint}</div>}
     </div>
   );
 }
@@ -303,7 +341,7 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 ${props.className ?? ''}`}
+      className={`w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 ${props.className ?? ''}`}
     />
   );
 }
@@ -311,10 +349,16 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
 function Row({ label, value, onCopy }: { label: string; value: string; onCopy?: () => void }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="text-slate-500 text-xs uppercase tracking-wide w-24 shrink-0">{label}</div>
-      <div className="font-mono text-slate-800 break-all flex-1">{value}</div>
+      <div className="w-24 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div className="flex-1 break-all font-mono text-[13px] text-slate-900">{value}</div>
       {onCopy && (
-        <button onClick={onCopy} className="text-xs text-blue-600 hover:underline shrink-0">
+        <button
+          onClick={onCopy}
+          className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-cyan-700 hover:text-cyan-800 transition"
+        >
+          <Copy className="h-3.5 w-3.5" />
           Копировать
         </button>
       )}

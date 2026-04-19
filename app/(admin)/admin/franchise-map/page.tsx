@@ -660,37 +660,35 @@ export default function FranchiseMapPage() {
   }, []);
 
   return (
-    <div className="min-h-[100dvh] bg-transparent text-slate-900">
+    <div className="text-slate-50">
 
       {/* ═══ ХЕДЕР ═══ */}
-      <div className="px-5 pt-6 pb-5 max-w-7xl mx-auto space-y-4">
+      <div className="space-y-4 mb-6">
 
-        {/* ── Заголовок (на тёмном фоне) ── */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0" style={{background:'#22d3ee',boxShadow:'0 4px 18px rgba(34,211,238,0.35)'}}>
-              <Globe size={22} className="text-white" />
+        {/* Header (бренд-стандарт) */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <Globe className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-[24px] font-bold text-white leading-tight tracking-tight">
-                Сеть франшизы <span className="font-kiona" style={{color:'#22d3ee'}}>Refocus</span>
-              </h1>
-              <p className="text-[12px] text-slate-400 mt-0.5">
+              <div className="text-2xl font-bold tracking-tight text-slate-50">Сеть франшизы</div>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">
                 Интерактивная карта · КР, Казахстан, Узбекистан, Россия
-              </p>
+              </div>
             </div>
           </div>
           {/* Счётчики */}
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center gap-2 rounded-xl px-3.5 py-2" style={{background:'rgba(34,211,238,0.1)',boxShadow:'inset 0 0 0 1px rgba(34,211,238,0.2)'}}>
-              <CheckCircle2 size={15} style={{color:'#22d3ee'}} />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 rounded-xl bg-cyan-500/10 ring-1 ring-cyan-400/20 px-3.5 py-2">
+              <CheckCircle2 className="h-4 w-4 text-cyan-400" />
               <span className="text-[18px] font-bold text-white tabular-nums">5</span>
-              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">точек</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">точек</span>
             </div>
-            <div className="flex items-center gap-2 rounded-xl px-3.5 py-2" style={{background:'rgba(34,211,238,0.1)',boxShadow:'inset 0 0 0 1px rgba(34,211,238,0.2)'}}>
-              <Globe size={15} style={{color:'#22d3ee'}} />
+            <div className="flex items-center gap-2 rounded-xl bg-cyan-500/10 ring-1 ring-cyan-400/20 px-3.5 py-2">
+              <Globe className="h-4 w-4 text-cyan-400" />
               <span className="text-[18px] font-bold text-white tabular-nums">1</span>
-              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">страна</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">страна</span>
             </div>
           </div>
         </div>
@@ -699,7 +697,7 @@ export default function FranchiseMapPage() {
         <div className="space-y-3">
           {/* Управление сетью */}
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.15em] mb-2 ml-1" style={{color:'rgba(34,211,238,0.6)'}}>Управление сетью</div>
+            <div className="mb-2 ml-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/60">Управление сетью</div>
             <div className="grid grid-cols-3 gap-2.5">
               {[
                 { href: '/admin/franchise', icon: BarChart3, label: 'Центр управления', sub: 'Филиалы, выручка, команда' },
@@ -707,13 +705,13 @@ export default function FranchiseMapPage() {
                 { href: '/admin/franchise-finance', icon: DollarSign, label: 'Финансы', sub: 'Роялти и паушальный' },
               ].map(item => (
                 <Link key={item.href} href={item.href}
-                  className="group flex items-center gap-3 px-4 py-3.5 rounded-xl bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04] hover:shadow-[0_8px_24px_rgba(34,211,238,0.12)] hover:ring-cyan-300/30 hover:-translate-y-0.5 transition-all">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{background:'#22d3ee'}}>
-                    <item.icon size={20} className="text-white" />
+                  className="group flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+                    <item.icon className="h-5 w-5 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <div className="font-bold text-[14px]" style={{color:'#0f172a'}}>{item.label}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">{item.sub}</div>
+                    <div className="text-[14px] font-semibold text-slate-900">{item.label}</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">{item.sub}</div>
                   </div>
                 </Link>
               ))}
@@ -722,7 +720,7 @@ export default function FranchiseMapPage() {
 
           {/* Настройка и снабжение */}
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.15em] mb-2 ml-1" style={{color:'rgba(34,211,238,0.4)'}}>Настройка и снабжение</div>
+            <div className="mb-2 ml-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/60">Настройка и снабжение</div>
             <div className="grid grid-cols-4 gap-2.5">
               {[
                 { href: '/admin/franchise-ramp-up/setup', icon: Settings2, label: 'Настройка', sub: 'Организации, филиалы' },
@@ -731,13 +729,13 @@ export default function FranchiseMapPage() {
                 { href: '/admin/franchise-chat', icon: MessageCircle, label: 'Чат', sub: 'Переписка' },
               ].map(item => (
                 <Link key={item.href} href={item.href}
-                  className="group flex items-center gap-2.5 px-3.5 py-3 rounded-xl bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04] hover:shadow-[0_6px_20px_rgba(34,211,238,0.1)] hover:ring-cyan-300/25 hover:-translate-y-0.5 transition-all">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{background:'rgba(34,211,238,0.12)'}}>
-                    <item.icon size={17} style={{color:'#22d3ee'}} />
+                  className="group flex items-center gap-2.5 px-3.5 py-3 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-50 ring-1 ring-cyan-200">
+                    <item.icon className="h-4 w-4 text-cyan-600" />
                   </div>
                   <div className="min-w-0">
-                    <div className="font-semibold text-[13px]" style={{color:'#0f172a'}}>{item.label}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">{item.sub}</div>
+                    <div className="text-[13px] font-semibold text-slate-900">{item.label}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-500">{item.sub}</div>
                   </div>
                 </Link>
               ))}
@@ -748,7 +746,7 @@ export default function FranchiseMapPage() {
           <div className="grid grid-cols-2 gap-2.5">
             {/* Документация */}
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.15em] mb-2 ml-1" style={{color:'rgba(34,211,238,0.4)'}}>Документация</div>
+              <div className="mb-2 ml-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/60">Документация</div>
               <div className="grid grid-cols-3 gap-2.5">
                 {[
                   { href: '/admin/franchise-hq', icon: BookOpen, label: 'Материалы HQ' },
@@ -756,37 +754,37 @@ export default function FranchiseMapPage() {
                   { href: '/admin/franchise-calendar', icon: CalendarDays, label: 'Календарь' },
                 ].map(item => (
                   <Link key={item.href} href={item.href}
-                    className="group flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white shadow-sm ring-1 ring-black/[0.04] hover:shadow-[0_4px_16px_rgba(34,211,238,0.1)] hover:ring-cyan-300/20 transition-all">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{background:'rgba(34,211,238,0.12)'}}>
-                      <item.icon size={15} style={{color:'#22d3ee'}} />
+                    className="group flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-cyan-50 ring-1 ring-cyan-200">
+                      <item.icon className="h-4 w-4 text-cyan-600" />
                     </div>
-                    <span className="font-semibold text-[12px]" style={{color:'#0f172a'}}>{item.label}</span>
+                    <span className="text-[12px] font-semibold text-slate-900">{item.label}</span>
                   </Link>
                 ))}
               </div>
             </div>
             {/* Запуск / Отключение */}
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.15em] mb-2 ml-1" style={{color:'rgba(34,211,238,0.4)'}}>Запуск / Закрытие</div>
+              <div className="mb-2 ml-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/60">Запуск / Закрытие</div>
               <div className="grid grid-cols-2 gap-2.5">
                 <Link href="/admin/franchise-ramp-up/onboarding"
-                  className="group flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-white shadow-sm ring-1 ring-cyan-200/30 hover:shadow-[0_6px_20px_rgba(34,211,238,0.12)] hover:ring-cyan-300/40 hover:-translate-y-0.5 transition-all">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{background:'#22d3ee'}}>
-                    <Rocket size={15} className="text-white" />
+                  className="group flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+                    <Rocket className="h-4 w-4 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <div className="font-semibold text-[12px]" style={{color:'#0f172a'}}>Запуск</div>
-                    <div className="text-[10px] text-slate-400">Путь до открытия</div>
+                    <div className="text-[12px] font-semibold text-slate-900">Запуск</div>
+                    <div className="text-[10px] text-slate-500">Путь до открытия</div>
                   </div>
                 </Link>
                 <Link href="/admin/franchise-ramp-up/offboarding"
-                  className="group flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-white shadow-sm ring-1 ring-black/[0.04] hover:shadow-md hover:-translate-y-0.5 transition-all">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
-                    <ShieldOff size={15} className="text-slate-400" />
+                  className="group flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-slate-300">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100">
+                    <ShieldOff className="h-4 w-4 text-slate-400" />
                   </div>
                   <div className="min-w-0">
-                    <div className="font-semibold text-[12px] text-slate-500">Отключение</div>
-                    <div className="text-[10px] text-slate-400">Деактивация точки</div>
+                    <div className="text-[12px] font-semibold text-slate-500">Отключение</div>
+                    <div className="text-[10px] text-slate-500">Деактивация точки</div>
                   </div>
                 </Link>
               </div>
@@ -800,19 +798,19 @@ export default function FranchiseMapPage() {
       <LaunchProgressBlock />
 
       {/* ═══ КАРТА И СПИСКИ ═══ */}
-      <div className="px-5 max-w-7xl mx-auto pb-12 flex flex-col gap-6">
+      <div className="flex flex-col gap-6">
 
         {/* ── Контейнер карты ── */}
-        <div className="map-fs-wrapper w-full rounded-3xl overflow-hidden ring-1 ring-sky-200 shadow-[0_22px_70px_rgba(15,23,42,0.12)] relative bg-[#1e293b]"
+        <div className="map-fs-wrapper w-full rounded-2xl overflow-hidden ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] relative bg-[#1e293b]"
           style={{ minHeight: '830px' }}>
           {!mapReady && !mapError && (
-            <div className="absolute inset-0 bg-gradient-to-br from-sky-50 to-slate-50 flex flex-col items-center justify-center z-10 gap-3">
-              <div className="w-10 h-10 rounded-full border-4 border-teal-200 border-t-teal-500 animate-spin" />
+            <div className="absolute inset-0 bg-slate-50 flex flex-col items-center justify-center z-10 gap-3">
+              <div className="w-10 h-10 rounded-full border-4 border-cyan-200 border-t-cyan-500 animate-spin" />
               <span className="text-sm text-slate-500 font-medium">Загрузка карты...</span>
             </div>
           )}
           {mapError && (
-            <div className="absolute inset-0 bg-gradient-to-br from-sky-50 to-slate-50 flex flex-col items-center justify-center z-10 gap-2">
+            <div className="absolute inset-0 bg-slate-50 flex flex-col items-center justify-center z-10 gap-2">
               <MapPin size={32} className="text-slate-300" />
               <span className="text-slate-500">Карта недоступна</span>
             </div>
@@ -933,10 +931,10 @@ export default function FranchiseMapPage() {
         <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* Активные */}
-          <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-emerald-50/85 ring-1 ring-emerald-200 shadow-[0_22px_70px_rgba(15,23,42,0.10)] p-5">
+          <div className="rounded-2xl bg-white ring-1 ring-emerald-200 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center">
-                <CheckCircle2 size={14} className="text-white" />
+              <div className="grid h-7 w-7 place-items-center rounded-lg bg-emerald-500">
+                <CheckCircle2 className="h-4 w-4 text-white" />
               </div>
               <span className="text-sm font-semibold text-slate-800">Кыргызстан — Чуйская обл.</span>
               <span className="ml-auto text-[10px] font-semibold text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200 rounded-full px-2 py-0.5">5 точек</span>
@@ -963,35 +961,35 @@ export default function FranchiseMapPage() {
 
           {/* Заявки на франшизу — компактный блок-ссылка */}
           <Link href="/admin/franchise-applications"
-            className="group rounded-3xl bg-white ring-1 ring-slate-200 shadow-sm p-5 flex items-center gap-4 hover:shadow-md hover:-translate-y-0.5 transition-all">
+            className="group flex items-center gap-4 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5 transition hover:ring-cyan-300/40">
             <div className="relative">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-gradient-to-br from-[#22d3ee] to-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.3)]">
-                <Inbox size={20} className="text-white" />
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+                <Inbox className="h-5 w-5 text-white" />
               </div>
               {apps.filter(a => a.status === 'new').length > 0 && (
-                <div className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center shadow-sm animate-pulse">
+                <div className="absolute -top-1.5 -right-1.5 grid h-6 w-6 place-items-center rounded-full bg-rose-500 animate-pulse">
                   <span className="text-[11px] font-bold text-white">{apps.filter(a => a.status === 'new').length}</span>
                 </div>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[14px] font-semibold text-slate-800">Заявки на франшизу</div>
-              <div className="text-[12px] text-slate-500 mt-0.5">
+              <div className="text-[14px] font-semibold text-slate-900">Заявки на франшизу</div>
+              <div className="mt-0.5 text-[12px] text-slate-500">
                 {apps.length === 0
                   ? 'Пока нет заявок'
                   : `${apps.length} заявок · ${apps.filter(a => a.status === 'new').length} новых`}
               </div>
             </div>
-            <ChevronRight size={18} className="text-slate-300 group-hover:text-cyan-500 transition-colors" />
+            <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-cyan-500 transition-colors" />
           </Link>
 
         </div>
 
         {/* ═══ ПУЛЬС СЕТИ ═══ */}
-        <div className="rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center shadow-sm">
-              <Zap size={15} className="text-white" />
+            <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+              <Zap className="h-4 w-4 text-white" />
             </div>
             <div>
               <span className="font-bold text-slate-800 text-[14px]">Пульс сети</span>
@@ -1043,10 +1041,10 @@ export default function FranchiseMapPage() {
         </div>
 
         {/* ═══ РЕЙТИНГ ═══ */}
-        <div className="rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
-              <Trophy size={15} className="text-white" />
+            <div className="grid h-8 w-8 place-items-center rounded-xl bg-amber-500 shadow-[0_4px_12px_rgba(245,158,11,0.28)]">
+              <Trophy className="h-4 w-4 text-white" />
             </div>
             <div>
               <span className="font-bold text-slate-800 text-[14px]">Рейтинг филиалов</span>
@@ -1080,7 +1078,7 @@ export default function FranchiseMapPage() {
                     <div className="w-20 hidden sm:block">
                       <div className="h-1.5 rounded-full bg-slate-100">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400"
+                          className="h-full rounded-full bg-amber-500"
                           style={{ width: `${Math.round(branch.revenue_month / stats[0].revenue_month * 100)}%` }}
                         />
                       </div>
@@ -1093,10 +1091,10 @@ export default function FranchiseMapPage() {
         </div>
 
         {/* ═══ КОНТАКТЫ ═══ */}
-        <div className="rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-sm">
-              <User size={15} className="text-white" />
+            <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+              <User className="h-4 w-4 text-white" />
             </div>
             <span className="font-bold text-slate-800 text-[14px]">Сотрудники по филиалам</span>
           </div>
@@ -1114,15 +1112,15 @@ export default function FranchiseMapPage() {
                   {list.map(emp => (
                     <div key={emp.id} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-violet-50 ring-1 ring-violet-100 flex items-center justify-center shrink-0">
-                          <User size={12} className="text-violet-400" />
+                        <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-cyan-50 ring-1 ring-cyan-200">
+                          <User className="h-3.5 w-3.5 text-cyan-600" />
                         </div>
                         <span className="text-[13px] font-medium text-slate-700">{emp.full_name}</span>
                       </div>
                       {emp.phone ? (
                         <a
                           href={`tel:${emp.phone}`}
-                          className="flex items-center gap-1.5 text-[12px] font-semibold text-teal-600 hover:text-teal-700 transition-colors"
+                          className="flex items-center gap-1.5 text-[12px] font-semibold text-cyan-700 hover:text-cyan-800 transition-colors"
                         >
                           <Phone size={12} />
                           {emp.phone}
@@ -1197,26 +1195,25 @@ function LaunchProgressBlock() {
   if (loading || data.length === 0) return null;
 
   return (
-    <div className="px-5 max-w-7xl mx-auto mt-5">
-      <div className="rounded-2xl bg-white backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.15)] ring-1 ring-sky-200/40 overflow-hidden">
-        <div className="h-1 bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400" />
-        <div className="px-5 py-4 flex items-center justify-between border-b" style={{ borderColor: 'rgba(56,189,248,0.08)' }}>
+    <div className="mb-6">
+      <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
+        <div className="px-5 py-4 flex items-center justify-between border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 shadow-sm">
-              <Rocket size={16} className="text-white" />
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+              <Rocket className="h-4 w-4 text-white" />
             </div>
             <div>
-              <div className="text-sm font-bold text-slate-800">Открытие франшиз</div>
-              <div className="text-[11px] text-slate-400">Прогресс по 60-дневному плану</div>
+              <div className="text-sm font-semibold text-slate-900">Открытие франшиз</div>
+              <div className="text-[11px] text-slate-500">Прогресс по 60-дневному плану</div>
             </div>
           </div>
         </div>
 
         {data.map((d) => (
-          <div key={d.branch_id} className="px-5 py-4 border-b flex items-center gap-4" style={{ borderColor: 'rgba(56,189,248,0.04)' }}>
+          <div key={d.branch_id} className="px-5 py-4 border-b border-slate-100 last:border-b-0 flex items-center gap-4">
             {/* Branch name + stage */}
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-bold text-slate-800">{d.branch_name}</div>
+              <div className="text-sm font-semibold text-slate-900">{d.branch_name}</div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[12px] text-slate-500">{d.currentStage}</span>
                 {d.currentDays && <span className="text-[11px] text-cyan-600 font-semibold">{d.currentDays}</span>}
@@ -1225,14 +1222,14 @@ function LaunchProgressBlock() {
 
             {/* Progress bar */}
             <div className="w-[140px] shrink-0">
-              <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden ring-1 ring-slate-200/60">
-                <div className={`h-full rounded-full transition-all ${d.pct === 100 ? 'bg-gradient-to-r from-emerald-400 to-teal-400' : 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400'}`}
+              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div className={`h-full rounded-full transition-all ${d.pct === 100 ? 'bg-emerald-500' : 'bg-cyan-500'}`}
                   style={{ width: `${d.pct}%` }} />
               </div>
             </div>
 
             {/* Percent */}
-            <div className={`text-lg font-black tabular-nums w-[50px] text-right ${d.pct === 100 ? 'text-emerald-600' : d.pct > 0 ? 'text-cyan-600' : 'text-slate-400'}`}>
+            <div className={`text-lg font-bold tabular-nums w-[50px] text-right ${d.pct === 100 ? 'text-emerald-600' : d.pct > 0 ? 'text-cyan-600' : 'text-slate-400'}`}>
               {d.pct}%
             </div>
 

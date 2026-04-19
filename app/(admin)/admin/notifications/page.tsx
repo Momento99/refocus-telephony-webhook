@@ -183,7 +183,7 @@ function SoftPrimaryButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'rounded-xl bg-gradient-to-r from-cyan-500 to-sky-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+        'inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:cursor-not-allowed disabled:opacity-50',
         className
       )}
     >
@@ -231,9 +231,9 @@ function StatBox({
   tone?: 'sky' | 'emerald' | 'amber' | 'rose';
 }) {
   return (
-    <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-4">
-      <div className="text-[11px] text-slate-500 font-medium">{title}</div>
-      <div className="mt-1 text-[22px] font-bold text-slate-900">{value}</div>
+    <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{title}</div>
+      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
       <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>
     </div>
   );
@@ -285,7 +285,7 @@ function Input({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-[#22d3ee]/50 focus:bg-white"
+        className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
       />
     </label>
   );
@@ -312,7 +312,7 @@ function Textarea({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-[#22d3ee]/50 focus:bg-white"
+        className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
       />
     </label>
   );
@@ -865,23 +865,31 @@ async function sendNewsTest() {
   }
 }
   return (
-    <div className="min-h-screen bg-transparent text-slate-900">
-      <div className="mx-auto max-w-7xl px-5 pb-10 pt-8">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-[20px] font-bold text-white tracking-tight">Уведомления</h1>
-            <p className="text-[12px] text-slate-400 mt-0.5">Push-сценарии и кампании</p>
+    <div className="text-slate-50">
+      <div>
+        {/* Header (бренд-стандарт) */}
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <Bell className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-50">Уведомления</div>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">Push-сценарии и кампании</div>
+            </div>
           </div>
-          <button onClick={() => void loadDashboard()} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 text-slate-300 text-[13px] font-medium hover:bg-white/15 disabled:opacity-50 transition-all">
+          <button
+            onClick={() => void loadDashboard()}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
+          >
             <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
             Обновить
           </button>
         </div>
 
-        {error && <div className="mb-4 rounded-xl bg-red-500/15 ring-1 ring-red-500/20 px-4 py-2.5 text-sm text-red-400">{error}</div>}
-        {info && <div className="mb-4 rounded-xl bg-emerald-500/15 ring-1 ring-emerald-500/20 px-4 py-2.5 text-sm text-emerald-400">{info}</div>}
+        {error && <div className="mb-4 rounded-xl bg-rose-50 ring-1 ring-rose-200 px-4 py-2.5 text-sm text-rose-700">{error}</div>}
+        {info && <div className="mb-4 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 px-4 py-2.5 text-sm text-emerald-700">{info}</div>}
 
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatBox
@@ -931,7 +939,7 @@ async function sendNewsTest() {
                   return (
                     <div
                       key={code}
-                      className="rounded-2xl bg-white ring-1 ring-slate-200 p-5"
+                      className="rounded-2xl bg-white ring-1 ring-sky-100 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)]"
                     >
                       {/* Шапка */}
                       <div className="mb-3 flex items-center justify-between">
@@ -976,8 +984,8 @@ async function sendNewsTest() {
                                   className={cn(
                                     'px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all',
                                     !rule.country_id
-                                      ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 text-white shadow-sm'
-                                      : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100',
+                                      ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                                      : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
                                   )}
                                 >
                                   🌍 Все
@@ -990,8 +998,8 @@ async function sendNewsTest() {
                                     className={cn(
                                       'px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all',
                                       rule.country_id === c.id
-                                        ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 text-white shadow-sm'
-                                        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100',
+                                        ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                                        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
                                     )}
                                   >
                                     {c.flag} {c.name}
@@ -1123,7 +1131,7 @@ async function sendNewsTest() {
             }
           >
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-5">
+              <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
                 <div className="mb-4 text-base font-semibold text-slate-900">
                   Новая кампания
                 </div>
@@ -1267,7 +1275,7 @@ async function sendNewsTest() {
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-5">
+              <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="text-base font-semibold text-slate-900">
                     Последние кампании

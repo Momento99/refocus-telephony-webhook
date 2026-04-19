@@ -121,8 +121,8 @@ function formatDayLabel(iso: string): string {
 function TimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { h, m } = parseTimeStr(value);
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-white/90 px-2.5 py-1.5 text-xs shadow-sm">
-      <Clock className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+    <div className="inline-flex items-center gap-1.5 rounded-xl bg-white ring-1 ring-sky-200 px-2.5 py-1.5 text-xs">
+      <Clock className="h-3.5 w-3.5 text-cyan-500 shrink-0" />
       <select
         value={pad2(h)}
         onChange={(e) => onChange(`${e.target.value}:${pad2(m)}`)}
@@ -144,7 +144,7 @@ function TimePicker({ value, onChange }: { value: string; onChange: (v: string) 
 
 function Shell({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-3xl border border-sky-200 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 px-5 py-4 shadow-[0_22px_60px_rgba(15,23,42,0.55)] backdrop-blur-xl text-slate-900 ${className}`}>
+    <div className={`rounded-2xl bg-white ring-1 ring-sky-100 px-5 py-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900 ${className}`}>
       {children}
     </div>
   );
@@ -181,7 +181,7 @@ function PenaltyModal({
       />
 
       {/* panel */}
-      <div className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl border border-sky-200 bg-gradient-to-br from-white via-slate-50 to-sky-50/90 shadow-[0_30px_80px_rgba(15,23,42,0.65)] overflow-hidden">
+      <div className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl bg-white ring-1 ring-sky-100 shadow-[0_30px_80px_rgba(0,0,0,0.4)] overflow-hidden">
 
         {/* header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
@@ -684,7 +684,7 @@ export default function PenaltiesTab() {
               <span className="text-[12px] text-slate-700">
                 &gt; <span className="font-semibold tabular-nums text-slate-900">{r.threshold_m} мин</span>
               </span>
-              <span className="text-[12px] font-semibold tabular-nums text-teal-700">
+              <span className="text-[12px] font-semibold tabular-nums text-cyan-700">
                 {r.amount} сом
               </span>
               <button
@@ -710,7 +710,7 @@ export default function PenaltiesTab() {
             value={form.threshold_m}
             onChange={(e) => setAddForm((f) => ({ ...f, [type]: { ...f[type], threshold_m: e.target.value } }))}
             placeholder="мин"
-            className="w-16 rounded-lg border border-sky-200 bg-white px-2 py-1.5 text-[12px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+            className="w-16 rounded-lg ring-1 ring-sky-200 bg-white px-2 py-1.5 text-[12px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
           />
           <input
             type="number"
@@ -718,11 +718,11 @@ export default function PenaltiesTab() {
             value={form.amount}
             onChange={(e) => setAddForm((f) => ({ ...f, [type]: { ...f[type], amount: e.target.value } }))}
             placeholder="сом"
-            className="w-20 rounded-lg border border-sky-200 bg-white px-2 py-1.5 text-[12px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+            className="w-20 rounded-lg ring-1 ring-sky-200 bg-white px-2 py-1.5 text-[12px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
           />
           <button
             onClick={() => addRule(type)}
-            className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-cyan-400 to-sky-400 px-2.5 py-1.5 text-[11px] font-medium text-slate-900 hover:brightness-110"
+            className="inline-flex items-center gap-1 rounded-lg bg-cyan-500 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-cyan-400 transition"
           >
             <Plus className="h-3 w-3" /> Добавить
           </button>
@@ -817,9 +817,7 @@ export default function PenaltiesTab() {
                     <td className="px-3 py-2.5">
                       <button
                         onClick={() => saveSchedule(b.id)}
-                        className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-slate-900
-                                   bg-gradient-to-r from-cyan-400 to-sky-400
-                                   hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+                        className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white bg-cyan-500 hover:bg-cyan-400 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
                       >
                         <Save className="h-3 w-3" /> Сохранить
                       </button>
@@ -859,7 +857,7 @@ export default function PenaltiesTab() {
                   className="w-full flex items-center gap-3 rounded-2xl bg-white ring-1 ring-slate-200 px-4 py-3 text-left hover:ring-sky-300 hover:bg-sky-50/60 transition-all group"
                 >
                   {/* avatar placeholder */}
-                  <div className="shrink-0 h-8 w-8 rounded-xl bg-gradient-to-br from-cyan-400 to-sky-500 flex items-center justify-center text-white text-[12px] font-bold">
+                  <div className="shrink-0 h-8 w-8 rounded-xl bg-cyan-500 flex items-center justify-center text-white text-[12px] font-bold">
                     {emp.employee_name.charAt(0).toUpperCase()}
                   </div>
 
@@ -955,7 +953,7 @@ export default function PenaltiesTab() {
               <button
                 onClick={() => void loadAttendance()}
                 disabled={attendanceLoading}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-400 to-sky-400 px-3 py-1.5 text-[11px] font-semibold text-slate-900 hover:brightness-110 disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-cyan-400 transition disabled:opacity-50"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${attendanceLoading ? 'animate-spin' : ''}`} />
                 Обновить

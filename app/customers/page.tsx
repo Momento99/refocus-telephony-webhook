@@ -66,9 +66,9 @@ const statusOf = (nextISO: string | null): 'due' | 'soon' | 'later' | 'none' => 
   return 'later';
 };
 
-/* ========= Refocus UI (полуглассморфизм) ========= */
+/* ========= Refocus UI (бренд-стандарт) ========= */
 
-function GlassCard({
+function Card({
   children,
   className = '',
 }: {
@@ -77,14 +77,7 @@ function GlassCard({
 }) {
   return (
     <div
-      className={[
-        'rounded-3xl',
-        'bg-gradient-to-br from-white/95 via-white/85 to-sky-50/80',
-        'ring-1 ring-sky-200/70',
-        'shadow-[0_22px_70px_rgba(15,23,42,0.25)]',
-        'backdrop-blur-xl',
-        className,
-      ].join(' ')}
+      className={`rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] ${className}`}
     >
       {children}
     </div>
@@ -94,19 +87,16 @@ function GlassCard({
 const btnBase =
   'inline-flex items-center justify-center gap-2 whitespace-nowrap ' +
   'rounded-xl px-4 py-2.5 text-sm font-medium transition ' +
-  'focus:outline-none focus:ring-2 focus:ring-teal-300/70 ' +
+  'focus:outline-none focus:ring-2 focus:ring-cyan-300/70 ' +
   'disabled:opacity-50 disabled:cursor-not-allowed';
 
 const btnPrimary =
   btnBase +
-  ' text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 ' +
-  'shadow-[0_14px_35px_rgba(56,189,248,0.40)] ' +
-  'hover:from-teal-300 hover:via-cyan-300 hover:to-sky-300 active:from-teal-500 active:via-cyan-500 active:to-sky-500';
+  ' bg-cyan-500 text-white font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.28)] hover:bg-cyan-400';
 
 const btnGhost =
   btnBase +
-  ' bg-white/85 ring-1 ring-teal-200 text-teal-700 ' +
-  'shadow-[0_10px_28px_rgba(15,23,42,0.14)] hover:bg-white';
+  ' bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50';
 
 function GBtn({
   children,
@@ -136,12 +126,10 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={[
-        'w-full rounded-[14px] px-3.5 py-2.5',
-        'bg-white/90 text-slate-900 placeholder:text-slate-400',
-        'ring-1 ring-sky-200/80',
-        'shadow-[0_14px_35px_rgba(15,23,42,0.14)]',
-        'backdrop-blur',
-        'outline-none focus:ring-2 focus:ring-cyan-400/80',
+        'w-full rounded-xl px-3 py-2.5 text-sm',
+        'bg-white text-slate-900 placeholder:text-slate-400',
+        'ring-1 ring-sky-200',
+        'outline-none transition focus:ring-2 focus:ring-cyan-400/70',
         props.className || '',
       ].join(' ')}
     />
@@ -153,12 +141,10 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={[
-        'w-full rounded-[14px] px-3.5 py-2.5',
-        'bg-white/90 text-slate-900',
-        'ring-1 ring-sky-200/80',
-        'shadow-[0_14px_35px_rgba(15,23,42,0.14)]',
-        'backdrop-blur',
-        'outline-none focus:ring-2 focus:ring-cyan-400/80',
+        'w-full rounded-xl px-3 py-2.5 text-sm',
+        'bg-white text-slate-900',
+        'ring-1 ring-sky-200',
+        'outline-none transition focus:ring-2 focus:ring-cyan-400/70',
         props.className || '',
       ].join(' ')}
     />
@@ -176,58 +162,20 @@ function StatBox({
   value: string;
   tone?: 'sky' | 'emerald' | 'amber' | 'rose';
 }) {
-  const toneMap = {
-    sky: {
-      bg: 'from-sky-50 via-white to-sky-50',
-      ring: 'ring-sky-200/70',
-      value: 'text-slate-900',
-      badge: 'bg-sky-50 text-sky-700 ring-sky-200',
-    },
-    emerald: {
-      bg: 'from-emerald-50 via-white to-emerald-50',
-      ring: 'ring-emerald-200/70',
-      value: 'text-slate-900',
-      badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    },
-    amber: {
-      bg: 'from-amber-50 via-white to-amber-50',
-      ring: 'ring-amber-200/70',
-      value: 'text-slate-900',
-      badge: 'bg-amber-50 text-amber-700 ring-amber-200',
-    },
-    rose: {
-      bg: 'from-rose-50 via-white to-rose-50',
-      ring: 'ring-rose-200/70',
-      value: 'text-slate-900',
-      badge: 'bg-rose-50 text-rose-700 ring-rose-200',
-    },
-  } as const;
-
-  const t = toneMap[tone];
+  const badge =
+    tone === 'emerald' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' :
+    tone === 'amber'   ? 'bg-amber-50 text-amber-700 ring-amber-200' :
+    tone === 'rose'    ? 'bg-rose-50 text-rose-700 ring-rose-200' :
+                         'bg-sky-50 text-sky-700 ring-sky-200';
 
   return (
-    <div
-      className={[
-        'rounded-2xl p-5',
-        'bg-gradient-to-br',
-        t.bg,
-        'ring-1',
-        t.ring,
-        'shadow-[0_16px_45px_rgba(15,23,42,0.18)]',
-        'backdrop-blur-xl',
-      ].join(' ')}
-    >
+    <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
       <div className="flex items-center justify-between gap-3">
-        <div className={['inline-flex items-center gap-2 text-sm text-slate-700'].join(' ')}>
-          <span className={['inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[12px] ring-1', t.badge].join(' ')}>
-            {icon}
-            {label}
-          </span>
-        </div>
-
-        <div className={['text-[22px] font-semibold tabular-nums', t.value].join(' ')}>
-          {value}
-        </div>
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${badge}`}>
+          {icon}
+          {label}
+        </span>
+        <div className="text-2xl font-bold tabular-nums text-slate-900">{value}</div>
       </div>
     </div>
   );
@@ -237,7 +185,6 @@ function Chip({
   active,
   onClick,
   children,
-  tone = 'slate',
 }: {
   active?: boolean;
   onClick?: () => void;
@@ -246,21 +193,13 @@ function Chip({
 }) {
   const base =
     'h-9 px-3 rounded-full text-[12px] font-semibold transition inline-flex items-center gap-1.5 ' +
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ' +
-    'shadow-[0_10px_28px_rgba(15,23,42,0.14)]';
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70';
 
-  const inactive = {
-    slate: 'bg-white/85 ring-1 ring-slate-200 text-slate-700 hover:bg-white',
-    emerald: 'bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 hover:bg-emerald-100/80',
-    amber: 'bg-amber-50 ring-1 ring-amber-200 text-amber-700 hover:bg-amber-100/80',
-  } as const;
-
-  const activeCls =
-    'text-white ring-0 bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 ' +
-    'shadow-[0_14px_35px_rgba(56,189,248,0.45)]';
+  const inactive = 'bg-white ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50';
+  const activeCls = 'bg-cyan-500 text-white ring-0 shadow-[0_4px_12px_rgba(34,211,238,0.25)]';
 
   return (
-    <button onClick={onClick} className={`${base} ${active ? activeCls : inactive[tone]}`} type="button">
+    <button onClick={onClick} className={`${base} ${active ? activeCls : inactive}`} type="button">
       {children}
     </button>
   );
@@ -419,39 +358,32 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="relative min-h-[100dvh] bg-transparent text-slate-900">
+    <div className="text-slate-50">
       <Toaster position="top-right" />
 
-      <div className="mx-auto max-w-7xl px-5 pt-8 pb-10 space-y-5">
-        {/* Шапка */}
-        <GlassCard className="px-6 py-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_16px_40px_rgba(34,211,238,0.55)]">
-                <Users className="h-5 w-5" />
-              </div>
-
-              <div>
-                <div className="text-[30px] leading-[1.05] font-semibold tracking-tight text-slate-900 drop-shadow-[0_1px_0_rgba(34,211,238,0.35)]">
-                  Клиенты
-                </div>
-                <div className="mt-0.5 text-[13px] text-slate-600/90">
-                  База клиентов сети <span className="font-medium text-slate-900 font-kiona">Refocus</span>
-                </div>
-              </div>
+      <div className="space-y-5">
+        {/* Header (бренд-стандарт) */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <Users className="h-5 w-5 text-white" />
             </div>
-
-            <div className="flex flex-wrap items-center gap-2 md:justify-end">
-              <GBtn variant="ghost" onClick={load}>
-                <RefreshCw className="h-4 w-4" />
-                Обновить
-              </GBtn>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-50">Клиенты</div>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">
+                База клиентов сети
+              </div>
             </div>
           </div>
-        </GlassCard>
+
+          <GBtn variant="ghost" onClick={load}>
+            <RefreshCw className="h-4 w-4" />
+            Обновить
+          </GBtn>
+        </div>
 
         {/* Фильтры */}
-        <GlassCard className="px-6 py-5">
+        <Card className="px-5 py-4">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
             <div className="md:col-span-4 relative sm:max-w-[24rem]">
               <Input
@@ -512,7 +444,7 @@ export default function CustomersPage() {
               </GBtn>
             </div>
           </div>
-        </GlassCard>
+        </Card>
 
         {/* Сводка */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -537,10 +469,10 @@ export default function CustomersPage() {
         </div>
 
         {/* Таблица */}
-        <GlassCard className="overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full table-fixed text-[13px] text-slate-900">
-              <thead className="bg-gradient-to-b from-white to-slate-50 text-slate-700 border-b border-slate-200/70">
+              <thead className="bg-slate-50/80 text-slate-500 border-b border-slate-100">
                 <tr>
                   <th className="px-3.5 py-2 w-56 text-left text-[13px] font-semibold">Клиент</th>
                   <th className="px-3.5 py-2 w-40 text-left text-[13px] font-semibold">Телефон</th>
@@ -589,7 +521,7 @@ export default function CustomersPage() {
               <tbody>
                 {loading &&
                   Array.from({ length: 8 }).map((_, i) => (
-                    <tr key={`sk-${i}`} className="border-t border-slate-100/80">
+                    <tr key={`sk-${i}`} className="border-t border-slate-100">
                       <td className="px-3.5 py-2" colSpan={9}>
                         <div className="h-4 w-full rounded bg-slate-100/80 animate-pulse" />
                       </td>
@@ -629,7 +561,7 @@ export default function CustomersPage() {
                     return (
                       <tr
                         key={r.customer_id}
-                        className="border-t border-slate-100/80 hover:bg-sky-50/60 cursor-pointer"
+                        className="border-t border-slate-100 transition hover:bg-sky-50/40 cursor-pointer"
                         onClick={() => router.push(href)}
                         role="button"
                         tabIndex={0}
@@ -646,7 +578,7 @@ export default function CustomersPage() {
                         <td className="px-3.5 py-2">
                           {r.phone ? (
                             <a
-                              className="text-sky-700 hover:text-sky-600 underline-offset-2 hover:underline"
+                              className="text-cyan-700 hover:text-cyan-600 underline-offset-2 hover:underline"
                               href={`tel:${r.phone.replace(/\D/g, '')}`}
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -696,16 +628,16 @@ export default function CustomersPage() {
                             {r.phone ? (
                               <a
                                 href={`tel:${r.phone.replace(/\D/g, '')}`}
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/85 ring-1 ring-sky-200 shadow-[0_10px_26px_rgba(15,23,42,0.14)] hover:bg-white transition"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200 text-slate-500 transition hover:bg-cyan-50 hover:ring-cyan-200 hover:text-cyan-600"
                                 title="Позвонить"
                               >
-                                <Phone className="h-4 w-4 text-sky-700" />
+                                <Phone className="h-4 w-4" />
                               </a>
                             ) : null}
 
                             <Link
                               href={href}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-tr from-teal-400 via-cyan-400 to-sky-400 shadow-[0_14px_35px_rgba(56,189,248,0.45)] hover:from-teal-300 hover:via-cyan-300 hover:to-sky-300 transition"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.28)] hover:bg-cyan-400 transition"
                               title="Открыть карточку клиента"
                             >
                               <ExternalLink className="h-4 w-4 text-white" />
@@ -718,17 +650,15 @@ export default function CustomersPage() {
 
                 {!loading && !filtered.length && (
                   <tr>
-                    <td className="px-3.5 py-12 text-center text-slate-600" colSpan={9}>
-                      <div className="mx-auto max-w-md rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85 ring-1 ring-sky-200/70 shadow-[0_22px_70px_rgba(15,23,42,0.18)] p-8">
-                        Ничего не найдено
-                      </div>
+                    <td className="px-3.5 py-12 text-center text-slate-500" colSpan={9}>
+                      Ничего не найдено
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </GlassCard>
+        </Card>
       </div>
     </div>
   );

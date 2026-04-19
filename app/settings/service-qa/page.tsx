@@ -21,6 +21,7 @@ import {
   Cpu,
   Cloud,
 } from 'lucide-react';
+import AICenterTabs from '@/app/(admin)/admin/ai-employee-messages/AICenterTabs';
 
 type DailyReportRow = {
   id: number;
@@ -1924,25 +1925,25 @@ export default function ServiceQaPage() {
   };
 
   return (
-    <div className="min-h-screen bg-transparent text-slate-900">
-      <div className="mx-auto max-w-7xl px-5 pb-10 pt-8">
-        <section className="mb-6 rounded-[34px] bg-gradient-to-br from-white via-slate-50 to-sky-50/85 p-5 sm:p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] ring-1 ring-sky-200 backdrop-blur-xl">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_14px_40px_rgba(6,182,212,0.35)]">
-                <ShieldAlert className="h-5 w-5" />
-              </div>
-
-              <div>
-                <h1 className="text-[30px] font-semibold tracking-tight text-slate-900">
-                  Контроль сервиса
-                </h1>
-                <p className="mt-1 text-sm text-slate-600">
-                  Дата:{' '}
-                  <span className="font-semibold text-slate-900">{formatDateRuLong(selectedDate)}</span>
-                </p>
-              </div>
+    <div className="text-slate-50">
+      <div>
+        {/* Header (бренд-стандарт) */}
+        <div className="mb-6 flex items-start gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <ShieldAlert className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <div className="text-2xl font-bold tracking-tight text-slate-50">Контроль сервиса</div>
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">
+              Дата: {formatDateRuLong(selectedDate)}
             </div>
+          </div>
+        </div>
+
+        <AICenterTabs />
+
+        <section className="mb-6 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
 
             <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[460px]">
               <div className="rounded-[28px] bg-white/85 p-4 ring-1 ring-sky-200">
@@ -2024,7 +2025,7 @@ export default function ServiceQaPage() {
           </div>
         </section>
 
-        <section className="mb-8 rounded-[34px] bg-gradient-to-br from-white via-slate-50 to-sky-50/85 p-5 sm:p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] ring-1 ring-sky-200 backdrop-blur-xl">
+        <section className="mb-8 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-cyan-100 text-cyan-700">
@@ -2327,7 +2328,7 @@ export default function ServiceQaPage() {
           ) : null}
         </div>
 
-        <section className="mb-8 rounded-[34px] bg-gradient-to-br from-white via-slate-50 to-sky-50/85 p-5 sm:p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] ring-1 ring-sky-200 backdrop-blur-xl">
+        <section className="mb-8 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
@@ -2368,7 +2369,7 @@ export default function ServiceQaPage() {
           </div>
         </section>
 
-        <section className="mb-8 rounded-[34px] bg-gradient-to-br from-white via-slate-50 to-sky-50/85 p-5 sm:p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] ring-1 ring-sky-200 backdrop-blur-xl">
+        <section className="mb-8 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
@@ -2465,7 +2466,7 @@ export default function ServiceQaPage() {
           )}
         </section>
 
-        <section className="mb-8 rounded-[34px] bg-gradient-to-br from-white via-slate-50 to-sky-50/85 p-5 sm:p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] ring-1 ring-sky-200 backdrop-blur-xl">
+        <section className="mb-8 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
@@ -2656,7 +2657,7 @@ export default function ServiceQaPage() {
           )}
         </section>
 
-        <section className="mb-8 rounded-[34px] bg-gradient-to-br from-white via-slate-50 to-sky-50/85 p-5 sm:p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] ring-1 ring-sky-200 backdrop-blur-xl">
+        <section className="mb-8 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
@@ -2771,7 +2772,7 @@ export default function ServiceQaPage() {
           )}
         </section>
 
-        <section className="rounded-[34px] bg-gradient-to-br from-white via-slate-50 to-sky-50/85 p-5 sm:p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] ring-1 ring-sky-200 backdrop-blur-xl">
+        <section className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-teal-100 text-teal-700">

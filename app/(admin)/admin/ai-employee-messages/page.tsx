@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import AICenterTabs from './AICenterTabs';
 import {
   AlertTriangle,
   Bot,
@@ -9,11 +9,9 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
   Clock3,
   Copy,
   Loader2,
-  ShieldAlert,
   Sparkles,
   Target,
   TrendingUp,
@@ -108,24 +106,24 @@ const STATUS_META: Record<
 > = {
   generated: {
     label: 'Готово',
-    cardRing: 'ring-emerald-200/80',
+    cardRing: 'ring-emerald-200',
     cardBg: 'from-white via-emerald-50/80 to-sky-50/80',
     chipClass:
-      'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80',
+      'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
     icon: CheckCircle2,
   },
   pending: {
     label: 'Ожидает',
-    cardRing: 'ring-sky-200/80',
+    cardRing: 'ring-sky-200',
     cardBg: 'from-white via-slate-50 to-sky-50/80',
-    chipClass: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200/80',
+    chipClass: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200',
     icon: Clock3,
   },
   failed: {
     label: 'Ошибка',
-    cardRing: 'ring-rose-200/80',
+    cardRing: 'ring-rose-200',
     cardBg: 'from-white via-rose-50/80 to-amber-50/80',
-    chipClass: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200/80',
+    chipClass: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
     icon: XCircle,
   },
 };
@@ -468,11 +466,10 @@ function SoftPrimaryButton({
       disabled={disabled}
       onClick={onClick}
       className={classNames(
-        'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white',
-        'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400',
-        'shadow-[0_14px_35px_rgba(14,165,233,0.28)] transition hover:brightness-105 active:brightness-95',
-        'focus:outline-none focus:ring-2 focus:ring-teal-300/70',
-        disabled && 'cursor-not-allowed opacity-50 shadow-none',
+        'inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white',
+        'shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400',
+        'focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
+        disabled && 'cursor-not-allowed opacity-50',
         className,
       )}
     >
@@ -498,11 +495,10 @@ function SoftGhostButton({
       disabled={disabled}
       onClick={onClick}
       className={classNames(
-        'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium',
-        'bg-white text-teal-700 ring-1 ring-teal-200',
-        'shadow-[0_12px_30px_rgba(15,23,42,0.10)] transition hover:bg-white',
+        'inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-medium text-slate-700',
+        'ring-1 ring-slate-200 transition hover:bg-slate-50',
         'focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
-        disabled && 'cursor-not-allowed opacity-50 shadow-none',
+        disabled && 'cursor-not-allowed opacity-50',
         className,
       )}
     >
@@ -522,23 +518,15 @@ function StatBox({
   hint: string;
   tone?: 'sky' | 'emerald' | 'amber' | 'rose';
 }) {
-  const tones: Record<string, { card: string; accent: string }> = {
-    sky: { card: 'from-white via-slate-50 to-sky-50/80 ring-sky-200/55', accent: '' },
-    emerald: { card: 'from-white via-slate-50 to-emerald-50/80 ring-emerald-200/55', accent: '' },
-    amber: { card: 'from-white via-slate-50 to-amber-50/80 ring-amber-200/55', accent: '' },
-    rose: { card: 'from-white via-slate-50 to-rose-50/80 ring-rose-200/55', accent: '' },
-  };
-
-  const t = tones[tone];
+  const ring =
+    tone === 'emerald' ? 'ring-emerald-200' :
+    tone === 'amber'   ? 'ring-amber-200' :
+    tone === 'rose'    ? 'ring-rose-200' :
+                         'ring-sky-100';
 
   return (
-    <div
-      className={classNames(
-        'rounded-2xl bg-gradient-to-br px-4 py-3 ring-1 shadow-[0_18px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl',
-        t.card,
-      )}
-    >
-      <div className="text-xs text-slate-600">{title}</div>
+    <div className={classNames('rounded-2xl bg-white px-4 py-3 ring-1 shadow-[0_8px_30px_rgba(15,23,42,0.45)]', ring)}>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{title}</div>
       <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
       <div className="text-[11px] text-slate-500">{hint}</div>
     </div>
@@ -559,10 +547,10 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={classNames(
-        'rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition',
+        'rounded-full px-3 py-1.5 text-xs font-semibold transition',
         active
-          ? 'bg-teal-50 text-teal-700 ring-teal-200 shadow-[0_8px_25px_rgba(20,184,166,0.12)]'
-          : 'bg-white text-slate-600 ring-sky-200/80 hover:bg-white',
+          ? 'bg-cyan-500 text-white ring-0 shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+          : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
       )}
     >
       {label}
@@ -581,22 +569,16 @@ function InsightCard({
   lines: string[];
   tone: 'sky' | 'emerald' | 'amber' | 'rose';
 }) {
-  const toneMap: Record<string, string> = {
-    sky: 'from-white via-slate-50 to-sky-50/85 ring-sky-200/55',
-    emerald: 'from-white via-slate-50 to-emerald-50/85 ring-emerald-200/55',
-    amber: 'from-white via-slate-50 to-amber-50/85 ring-amber-200/55',
-    rose: 'from-white via-slate-50 to-rose-50/85 ring-rose-200/55',
-  };
+  const ring =
+    tone === 'emerald' ? 'ring-emerald-200' :
+    tone === 'amber'   ? 'ring-amber-200' :
+    tone === 'rose'    ? 'ring-rose-200' :
+                         'ring-sky-100';
 
   return (
-    <div
-      className={classNames(
-        'rounded-2xl bg-gradient-to-br p-4 ring-1 shadow-[0_22px_70px_rgba(15,23,42,0.18)] backdrop-blur-xl',
-        toneMap[tone],
-      )}
-    >
+    <div className={classNames('rounded-2xl bg-white p-4 ring-1 shadow-[0_8px_30px_rgba(15,23,42,0.45)]', ring)}>
       <div className="flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-sm">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
           {icon}
         </div>
         <div className="text-sm font-semibold text-slate-900">{title}</div>
@@ -958,27 +940,28 @@ export default function AIControlPage() {
   }, [filteredRows]);
 
   return (
-    <div className="min-h-[100dvh] bg-transparent text-slate-900">
-      <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute -left-24 -top-20 h-72 w-72 rounded-full bg-gradient-to-br from-teal-300/30 via-cyan-300/22 to-sky-300/18 blur-3xl" />
-        <div className="absolute -right-28 top-24 h-80 w-80 rounded-full bg-gradient-to-br from-sky-300/22 via-indigo-300/16 to-violet-300/16 blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-gradient-to-br from-emerald-300/18 via-teal-300/14 to-cyan-300/16 blur-3xl" />
-      </div>
-
-      <div className="mx-auto w-full max-w-7xl px-5 pb-10 pt-8">
-        {/* ── Header ── */}
-        <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 shadow-sm">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.30)]">
-              <Brain className="h-4 w-4" />
+    <div className="text-slate-50">
+      <div>
+        {/* Header (бренд-стандарт) */}
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <Brain className="h-5 w-5 text-white" />
             </div>
-            <h1 className="text-lg font-bold text-slate-900 mr-auto">AI контроль</h1>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-50">AI контроль</div>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">
+                Еженедельные сообщения для сотрудников
+              </div>
+            </div>
+          </div>
 
+          <div className="flex items-center gap-2">
             <div className="relative">
               <select
                 value={selectedWeek}
                 onChange={(e) => { setSelectedWeek(e.target.value); void loadRows(e.target.value); }}
-                className="appearance-none rounded-lg bg-white pl-3 pr-7 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-sky-200/80 focus:outline-none focus:ring-2 focus:ring-cyan-400/80"
+                className="appearance-none rounded-xl bg-white pl-3 pr-8 py-2 text-xs font-medium text-slate-700 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
               >
                 {availableWeeks.map((w) => <option key={w} value={w}>{formatWeekRange(w)}</option>)}
               </select>
@@ -991,47 +974,33 @@ export default function AIControlPage() {
             </SoftPrimaryButton>
             {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
           </div>
-        </section>
+        </div>
 
-        {/* ── Nav + Stats row ── */}
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Link
-            href="/settings/service-qa"
-            className="group flex items-center gap-3 rounded-2xl bg-white p-3.5 ring-1 ring-slate-200/80 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all"
-          >
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-orange-400 to-red-500 text-white shadow-sm">
-              <ShieldAlert className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-900">Контроль сервиса</div>
-              <div className="text-[11px] text-slate-500">Оценки, жалобы, качество</div>
-            </div>
-            <ChevronRight className="ml-auto h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-          </Link>
-
-          <div className="flex items-center rounded-2xl bg-white p-3.5 ring-1 ring-slate-200/80 shadow-sm">
-            <div className="grid grid-cols-4 gap-2 flex-1">
-              <div className="text-center"><div className="text-lg font-bold text-slate-900">{stats.total}</div><div className="text-[10px] text-slate-500">в контуре</div></div>
-              <div className="text-center"><div className="text-lg font-bold text-emerald-600">{stats.generated}</div><div className="text-[10px] text-slate-500">готово</div></div>
-              <div className="text-center"><div className="text-lg font-bold text-amber-600">{stats.riskyEmployees}</div><div className="text-[10px] text-slate-500">риски</div></div>
-              <div className="text-center"><div className="text-lg font-bold text-slate-700">{stats.branches}</div><div className="text-[10px] text-slate-500">филиалов</div></div>
-            </div>
+        {/* ── Stats row ── */}
+        <div className="mb-5 rounded-2xl bg-white p-4 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+          <div className="grid grid-cols-4 gap-2">
+            <div className="text-center"><div className="text-2xl font-bold text-slate-900">{stats.total}</div><div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mt-0.5">в контуре</div></div>
+            <div className="text-center"><div className="text-2xl font-bold text-emerald-600">{stats.generated}</div><div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mt-0.5">готово</div></div>
+            <div className="text-center"><div className="text-2xl font-bold text-amber-600">{stats.riskyEmployees}</div><div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mt-0.5">риски</div></div>
+            <div className="text-center"><div className="text-2xl font-bold text-slate-700">{stats.branches}</div><div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mt-0.5">филиалов</div></div>
           </div>
         </div>
 
+        <AICenterTabs />
+
         {notice && (
           <div className={classNames(
-            'mt-3 rounded-xl px-4 py-2 text-xs ring-1',
-            notice.type === 'success' && 'bg-emerald-50/95 text-emerald-800 ring-emerald-200/80',
-            notice.type === 'error' && 'bg-rose-50/95 text-rose-800 ring-rose-200/80',
-            notice.type === 'info' && 'bg-sky-50/95 text-sky-800 ring-sky-200/80',
+            'mb-3 rounded-xl px-4 py-2 text-xs ring-1',
+            notice.type === 'success' && 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+            notice.type === 'error' && 'bg-rose-50 text-rose-700 ring-rose-200',
+            notice.type === 'info' && 'bg-sky-50 text-sky-700 ring-sky-200',
           )}>
             {notice.text}
           </div>
         )}
 
         {/* ── AI Summary + Filters (one card) ── */}
-        <section className="mt-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 shadow-sm">
+        <section className="mb-4 rounded-2xl bg-white p-5 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <div className="flex items-center gap-2 mb-3">
             <Bot className="h-4 w-4 text-cyan-600" />
             <span className="text-sm font-semibold text-slate-800">AI-сводка недели</span>
@@ -1068,7 +1037,7 @@ export default function AIControlPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Поиск…"
-              className="w-full sm:w-[240px] rounded-lg bg-white px-3 py-1.5 text-xs text-slate-900 ring-1 ring-sky-200/80 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/80"
+              className="w-full sm:w-[240px] rounded-xl bg-white px-3 py-2 text-xs text-slate-900 ring-1 ring-sky-200 placeholder:text-slate-400 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
             />
           </div>
         </section>
@@ -1078,7 +1047,7 @@ export default function AIControlPage() {
           {loading && (
             <div className="space-y-3">
               {[1, 2, 3].map((k) => (
-                <div key={k} className="animate-pulse rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+                <div key={k} className="animate-pulse rounded-2xl bg-white p-4 ring-1 ring-sky-100">
                   <div className="h-5 w-40 rounded bg-slate-200" />
                   <div className="mt-3 h-4 w-full rounded bg-slate-200" />
                   <div className="mt-2 h-4 w-3/4 rounded bg-slate-200" />
@@ -1088,7 +1057,7 @@ export default function AIControlPage() {
           )}
 
           {!loading && filteredRows.length === 0 && (
-            <div className="rounded-2xl bg-white px-5 py-8 text-center ring-1 ring-slate-200/80 shadow-sm">
+            <div className="rounded-2xl bg-white px-5 py-8 text-center ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
               <div className="text-sm font-semibold text-slate-600">Нет данных по этой неделе</div>
             </div>
           )}
@@ -1115,9 +1084,9 @@ export default function AIControlPage() {
                       <div
                         key={`${row.employee_id}-${row.week_start}`}
                         className={classNames(
-                          'flex items-center gap-3 rounded-xl px-4 py-2.5 ring-1 backdrop-blur-xl',
+                          'flex items-center gap-3 rounded-xl px-4 py-2.5 ring-1',
                           meta.cardRing,
-                          row.logical_status === 'failed' ? 'bg-rose-50/60' : 'bg-white/80',
+                          row.logical_status === 'failed' ? 'bg-rose-50/60' : 'bg-white',
                         )}
                       >
                         <UserRound className="h-4 w-4 text-slate-400 shrink-0" />
@@ -1153,7 +1122,7 @@ export default function AIControlPage() {
                   return (
                     <div
                       key={`${row.employee_id}-${row.week_start}`}
-                      className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 shadow-sm"
+                      className="rounded-2xl bg-white p-4 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]"
                     >
                       {/* Name + badges row */}
                       <div className="flex items-center gap-2 flex-wrap">
@@ -1162,11 +1131,11 @@ export default function AIControlPage() {
                           <span className="text-[11px] text-slate-500">{miniSignals.join(' · ')}</span>
                         )}
                         <span className="ml-auto" />
-                        {flags.disciplineRisk && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700 ring-1 ring-rose-200/80">Дисциплина</span>}
-                        {flags.avgCheckRisk && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200/80">Чек</span>}
-                        {flags.penaltiesRisk && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700 ring-1 ring-rose-200/80">Штрафы</span>}
+                        {flags.disciplineRisk && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700 ring-1 ring-rose-200">Дисциплина</span>}
+                        {flags.avgCheckRisk && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">Чек</span>}
+                        {flags.penaltiesRisk && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700 ring-1 ring-rose-200">Штрафы</span>}
                         {!flags.disciplineRisk && !flags.avgCheckRisk && !flags.penaltiesRisk && (
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200/80">OK</span>
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">OK</span>
                         )}
                       </div>
 

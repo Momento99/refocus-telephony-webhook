@@ -17,6 +17,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
+import AICenterTabs from '../AICenterTabs';
 
 type Conversation = {
   id: string;
@@ -284,14 +285,29 @@ export default function AdvisorPage() {
     : 'bg-emerald-500';
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 pb-6 pt-4">
+    <div className="text-slate-50">
+      {/* Header (бренд-стандарт) */}
+      <div className="mb-6 flex items-start gap-3">
+        <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+          <Brain className="h-5 w-5 text-white" />
+        </div>
+        <div>
+          <div className="text-2xl font-bold tracking-tight text-slate-50">Бизнес-советник</div>
+          <div className="mt-0.5 text-[12px] text-cyan-300/50">
+            RAG по 30 книгам + прямой доступ к статистике CRM
+          </div>
+        </div>
+      </div>
+
+      <AICenterTabs />
+
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4">
         {/* Sidebar: conversations */}
-        <aside className="rounded-2xl bg-white p-3 ring-1 ring-slate-200/80 shadow-sm h-[calc(100vh-160px)] flex flex-col">
+        <aside className="rounded-2xl bg-white p-3 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] h-[calc(100vh-160px)] flex flex-col">
           <button
             type="button"
             onClick={handleNewConversation}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 px-3 py-2 text-sm font-medium text-white shadow-[0_8px_20px_rgba(14,165,233,0.25)] hover:brightness-105"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-3 py-2 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400"
           >
             <MessageSquarePlus className="h-4 w-4" />
             Новый разговор
@@ -342,10 +358,10 @@ export default function AdvisorPage() {
         </aside>
 
         {/* Main chat */}
-        <section className="rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm h-[calc(100vh-160px)] flex flex-col overflow-hidden">
+        <section className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] h-[calc(100vh-160px)] flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-sm">
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-cyan-500 text-white">
               <Brain className="h-4 w-4" />
             </div>
             <div className="flex-1 min-w-0">
@@ -367,7 +383,7 @@ export default function AdvisorPage() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             {messages.length === 0 && !sending && (
               <div className="h-full flex flex-col items-center justify-center text-center">
-                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_14px_40px_rgba(14,165,233,0.35)]">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-500 text-white shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
                   <Sparkles className="h-5 w-5" />
                 </div>
                 <div className="mt-3 text-sm font-semibold text-slate-900">Спроси что угодно про сеть</div>
@@ -400,8 +416,8 @@ export default function AdvisorPage() {
                   className={classNames(
                     'max-w-[85%] rounded-2xl px-4 py-3 ring-1 shadow-sm',
                     m.role === 'user'
-                      ? 'bg-gradient-to-br from-teal-50 to-cyan-50 ring-cyan-200/70 text-slate-800'
-                      : 'bg-white ring-slate-200/80',
+                      ? 'bg-cyan-50 ring-cyan-200 text-slate-800'
+                      : 'bg-white ring-sky-100',
                   )}
                 >
                   {m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0 && (
@@ -433,7 +449,7 @@ export default function AdvisorPage() {
 
             {sending && (
               <div className="flex justify-start">
-                <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200/80 shadow-sm inline-flex items-center gap-2 text-[12px] text-slate-500">
+                <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] inline-flex items-center gap-2 text-[12px] text-slate-500">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-500" />
                   Ассистент думает, проверяет данные и книги…
                 </div>
@@ -468,7 +484,7 @@ export default function AdvisorPage() {
               <button
                 type="submit"
                 disabled={sending || !input.trim()}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 px-4 py-2.5 text-sm font-medium text-white shadow-[0_10px_25px_rgba(14,165,233,0.28)] hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Отправить

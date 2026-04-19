@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Landmark, FileText, Download, ExternalLink,
-  AlertTriangle, CheckCircle2, Clock, ChevronDown,
+  Landmark, Download, ExternalLink,
+  AlertTriangle, CheckCircle2,
 } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
 
@@ -185,18 +185,33 @@ function fmtKGS(n: number) {
 
 /* ───────── UI components ───────── */
 
-function GlassSection({ children, className = "", tone = "money" }: { children: React.ReactNode; className?: string; tone?: "money" | "danger" | "warning" | "neutral" }) {
-  const bg = tone === "danger" ? "from-white via-rose-50 to-amber-50/85" : tone === "warning" ? "from-white via-amber-50 to-orange-50/85" : tone === "neutral" ? "from-white via-slate-50 to-slate-50/85" : "from-white via-slate-50 to-sky-50/85";
-  const ring = tone === "danger" ? "ring-rose-200/80" : tone === "warning" ? "ring-amber-200/80" : tone === "neutral" ? "ring-slate-200/80" : "ring-sky-200/80";
-  return <div className={`rounded-3xl bg-gradient-to-br ${bg} ring-1 ${ring} backdrop-blur-xl shadow-[0_22px_70px_rgba(15,23,42,0.20)] ${className}`}>{children}</div>;
+function Card({ children, className = "", tone = "default" }: { children: React.ReactNode; className?: string; tone?: "default" | "danger" | "warning" }) {
+  const ring =
+    tone === "danger"  ? "ring-rose-200" :
+    tone === "warning" ? "ring-amber-200" :
+                         "ring-sky-100";
+  return (
+    <div className={`rounded-2xl bg-white ring-1 ${ring} p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)] ${className}`}>
+      {children}
+    </div>
+  );
 }
 
 function Btn({ children, primary, onClick, href }: { children: React.ReactNode; primary?: boolean; onClick?: () => void; href?: string }) {
   const cls = primary
-    ? "inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 shadow-[0_18px_55px_rgba(34,197,235,0.55)] hover:opacity-95"
-    : "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium bg-white/85 hover:bg-white text-teal-700 ring-1 ring-teal-200 shadow-[0_14px_40px_rgba(15,23,42,0.12)]";
+    ? "inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
+    : "inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50";
   if (href) return <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>{children}</a>;
   return <button onClick={onClick} className={cls}>{children}</button>;
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-3">{children}</p>;
+}
+
+function SubItem({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "danger" }) {
+  const ring = tone === "danger" ? "ring-rose-100" : "ring-sky-100";
+  return <div className={`rounded-xl bg-slate-50/60 ring-1 ${ring} p-3`}>{children}</div>;
 }
 
 /* ───────── MAIN PAGE ───────── */
@@ -240,47 +255,47 @@ export default function TaxesPage() {
     })();
   }, [periods.quarterly]);
 
-  return (
-    <div className="space-y-5">
+  const deadlineTone: "danger" | "warning" | "default" =
+    overdueDeadlines ? "danger" : urgentDeadlines ? "warning" : "default";
 
-      {/* ═══ HEADER ═══ */}
-      <GlassSection className="px-5 py-5 sm:px-6" tone="money">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="absolute -inset-2 rounded-3xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 blur-xl opacity-35" />
-            <div className="relative grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_18px_55px_rgba(34,197,235,0.70)]">
-              <Landmark className="h-5 w-5" />
-            </div>
-          </div>
-          <div>
-            <h1 className="text-[22px] md:text-[30px] font-semibold text-slate-900">Налоги</h1>
-            <p className="mt-0.5 text-xs text-slate-500">Дедлайн: <span className={urgentDeadlines || overdueDeadlines ? "text-amber-600 font-semibold" : "font-medium text-slate-700"}>{periods.deadlineDate}</span> {overdueDeadlines ? "(просрочено!)" : `(через ${periods.daysLeft} дн.)`}</p>
+  return (
+    <div className="text-slate-50">
+
+      {/* Header (бренд-стандарт) */}
+      <div className="mb-6 flex items-start gap-3">
+        <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+          <Landmark className="h-5 w-5 text-white" />
+        </div>
+        <div>
+          <div className="text-2xl font-bold tracking-tight text-slate-50">Налоги</div>
+          <div className="mt-0.5 text-[12px] text-cyan-300/50">
+            Дедлайн: {periods.deadlineDate} {overdueDeadlines ? "· просрочено" : `· через ${periods.daysLeft} дн.`}
           </div>
         </div>
-      </GlassSection>
+      </div>
 
-      {/* ═══ WHAT TO DO ═══ */}
-      <GlassSection className="px-5 py-5 sm:px-6" tone={overdueDeadlines ? "danger" : urgentDeadlines ? "warning" : "money"}>
-        <div className="flex items-center gap-3 mb-4">
-          {overdueDeadlines || urgentDeadlines
-            ? <AlertTriangle className={`h-5 w-5 shrink-0 ${overdueDeadlines ? "text-red-500" : "text-amber-500"}`} />
-            : <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-          }
-          <p className={`text-sm font-semibold ${overdueDeadlines ? "text-red-700" : urgentDeadlines ? "text-amber-700" : "text-emerald-700"}`}>
+      {/* Alert + чек-лист отчётов */}
+      <Card tone={deadlineTone} className="mb-5">
+        <div className="mb-4 flex items-center gap-3">
+          {overdueDeadlines || urgentDeadlines ? (
+            <AlertTriangle className={`h-5 w-5 shrink-0 ${overdueDeadlines ? "text-rose-500" : "text-amber-500"}`} />
+          ) : (
+            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          )}
+          <p className={`text-sm font-semibold ${overdueDeadlines ? "text-rose-700" : urgentDeadlines ? "text-amber-700" : "text-emerald-700"}`}>
             {overdueDeadlines ? "Срок подачи истёк!" : urgentDeadlines ? `Осталось ${periods.daysLeft} дн. — до ${periods.deadlineDate}` : "Все отчёты поданы"}
           </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* 161 */}
-          <div className="rounded-xl bg-white/70 ring-1 ring-sky-200/50 p-4">
+          <SubItem>
             <p className="text-sm font-semibold text-slate-900 mb-1">161 — зарплатный отчёт</p>
             <div className="text-[12px] text-slate-600 space-y-1">
               <p>В него входят: <span className="font-medium">подоходный налог</span> + <span className="font-medium">страховые взносы</span></p>
               <p>Подаётся <span className="font-medium">каждый месяц до 20-го числа</span></p>
               <p>Срок: <span className="font-medium text-slate-900">{periods.deadlineDate}</span></p>
             </div>
-            <div className="mt-2 pt-2 border-t border-slate-200/40 flex justify-between text-[12px]">
+            <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between text-[12px]">
               <span className="text-slate-500">Кант</span>
               <span className="font-semibold text-slate-900">{fmtKGS(KANT.monthly161)}</span>
             </div>
@@ -288,18 +303,17 @@ export default function TaxesPage() {
               <span className="text-slate-500">Мама × 3 филиала</span>
               <span className="font-semibold text-slate-900">{fmtKGS(3123 * 3)}</span>
             </div>
-          </div>
+          </SubItem>
 
-          {/* 091 */}
           {periods.isQuarterlyDue && (
-            <div className="rounded-xl bg-white/70 ring-1 ring-sky-200/50 p-4">
+            <SubItem>
               <p className="text-sm font-semibold text-slate-900 mb-1">091 — единый налог</p>
               <div className="text-[12px] text-slate-600 space-y-1">
                 <p>Налог от <span className="font-medium">выручки × 0.5%</span> (розничная торговля до 30 млн)</p>
                 <p>Подаётся <span className="font-medium">раз в квартал до 20-го числа</span></p>
                 <p>Срок: <span className="font-medium text-slate-900">{periods.deadlineDate}</span></p>
               </div>
-              <div className="mt-2 pt-2 border-t border-slate-200/40 flex justify-between text-[12px]">
+              <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between text-[12px]">
                 <span className="text-slate-500">Кант ({revenueLoading ? "..." : quarterRevenue !== null ? fmtKGS(quarterRevenue) : "—"})</span>
                 <span className="font-semibold text-slate-900">{revenueLoading ? "..." : quarterRevenue !== null ? fmtKGS(Math.round(quarterRevenue * 0.005)) : "—"}</span>
               </div>
@@ -307,20 +321,20 @@ export default function TaxesPage() {
                 <span className="text-slate-500">Мама × 3 филиала</span>
                 <span className="font-semibold text-slate-900">{fmtKGS(1489 + 959 + 863)}</span>
               </div>
-            </div>
+            </SubItem>
           )}
         </div>
-      </GlassSection>
+      </Card>
 
-      {/* ═══ TWO COLUMNS ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* Две колонки */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
 
         {/* LEFT — KANT */}
-        <GlassSection className="px-5 py-5 sm:px-6" tone="money">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-600 mb-4">ИП Момбеков · Кант</p>
+        <Card>
+          <SectionLabel>ИП Момбеков · Кант</SectionLabel>
 
           {/* Кант 161 */}
-          <div className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3 mb-2">
+          <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3 mb-2">
             <div className="flex items-center justify-between mb-2">
               <div>
                 <p className="text-sm font-medium text-slate-900">Кант · 161 за {periods.monthly.month}</p>
@@ -340,7 +354,7 @@ export default function TaxesPage() {
 
           {/* Кант 091 */}
           {periods.isQuarterlyDue && (
-            <div className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3 mb-2">
+            <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3 mb-2">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-sm font-medium text-slate-900">Кант · 091 единый за Q1</p>
                 <div className="flex items-center gap-2">
@@ -366,7 +380,7 @@ export default function TaxesPage() {
           <div className="mt-3 space-y-2">
             <p className="text-[10px] uppercase tracking-wider text-slate-400">Оплата</p>
 
-            <div className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3">
+            <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-sm font-medium text-slate-900">Подоходный налог</p>
                 <p className="text-sm font-semibold text-slate-900">{fmtKGS(1960)}</p>
@@ -379,7 +393,7 @@ export default function TaxesPage() {
               <Btn href="https://cabinet.salyk.kg/payment/pay/create"><ExternalLink className="h-4 w-4" /> Оплатить 1 960 сом</Btn>
             </div>
 
-            <div className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3">
+            <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-sm font-medium text-slate-900">Страховые взносы</p>
                 <p className="text-sm font-semibold text-slate-900">{fmtKGS(2756)}</p>
@@ -393,7 +407,7 @@ export default function TaxesPage() {
             </div>
 
             {periods.isQuarterlyDue && (
-              <div className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3">
+              <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-sm font-medium text-slate-900">Единый налог</p>
                   <p className="text-sm font-semibold text-slate-900">{revenueLoading ? "..." : quarterRevenue !== null ? fmtKGS(Math.round(quarterRevenue * 0.005)) : "—"}</p>
@@ -406,14 +420,14 @@ export default function TaxesPage() {
               </div>
             )}
           </div>
-        </GlassSection>
+        </Card>
 
         {/* RIGHT — MAMA */}
-        <GlassSection className="px-5 py-5 sm:px-6" tone="money">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-600 mb-4">ИП Кудайкулова · 3 филиала</p>
+        <Card>
+          <SectionLabel>ИП Кудайкулова · 3 филиала</SectionLabel>
 
           {/* Кара-Балта */}
-          <div className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3 mb-2">
+          <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3 mb-2">
             <div className="flex items-center justify-between mb-1">
               <div>
                 <p className="text-sm font-medium text-slate-900">Кара-Балта · 161 за {periods.monthly.month}</p>
@@ -434,7 +448,7 @@ export default function TaxesPage() {
           </div>
 
           {/* Беловодск */}
-          <div className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3 mb-2">
+          <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3 mb-2">
             <div className="flex items-center justify-between mb-1">
               <div>
                 <p className="text-sm font-medium text-slate-900">Беловодск · 161 за {periods.monthly.month}</p>
@@ -455,7 +469,7 @@ export default function TaxesPage() {
           </div>
 
           {/* Сокулук */}
-          <div className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3 mb-2">
+          <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3 mb-2">
             <div className="flex items-center justify-between mb-1">
               <div>
                 <p className="text-sm font-medium text-slate-900">Сокулук · 161 за {periods.monthly.month}</p>
@@ -490,7 +504,7 @@ export default function TaxesPage() {
               { name: "Беловодск", rayon: "010 Московский", tax091: 863 },
               { name: "Сокулук", rayon: "012 Сокулукский", tax091: 959 },
             ].map((f, i) => (
-              <div key={i} className="rounded-xl bg-white/60 ring-1 ring-sky-200/40 p-3">
+              <div key={i} className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
                 <p className="text-[12px] font-semibold text-cyan-700 mb-2">{f.name} · {f.rayon}</p>
                 <div className="space-y-1.5 text-[11px] mb-2">
                   <div className="flex justify-between">
@@ -515,14 +529,14 @@ export default function TaxesPage() {
               </div>
             ))}
           </div>
-        </GlassSection>
+        </Card>
 
       </div>
 
-      {/* ═══ TAX PROFILES ═══ */}
+      {/* Профили налогоплательщиков */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <GlassSection className="px-5 py-5 sm:px-6" tone="neutral">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-3">Налоговый профиль · Кант</p>
+        <Card>
+          <SectionLabel>Налоговый профиль · Кант</SectionLabel>
           <div className="space-y-2">
             {[
               { l: "ФИО", v: KANT.name },
@@ -552,10 +566,10 @@ export default function TaxesPage() {
               <span className="font-mono font-medium text-slate-900">{KANT.password}</span>
             </div>
           </div>
-        </GlassSection>
+        </Card>
 
-        <GlassSection className="px-5 py-5 sm:px-6" tone="neutral">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-3">Налоговый профиль · Мама</p>
+        <Card>
+          <SectionLabel>Налоговый профиль · Мама</SectionLabel>
           <div className="space-y-2">
             {[
               { l: "ФИО", v: MAMA.name },
@@ -593,7 +607,7 @@ export default function TaxesPage() {
               <span className="font-mono font-medium text-slate-900">{MAMA.password}</span>
             </div>
           </div>
-        </GlassSection>
+        </Card>
       </div>
 
     </div>

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Sparkles, Shield, User2, Calendar, Volume2, AlertTriangle, Lightbulb } from 'lucide-react';
+import AICenterTabs from '../AICenterTabs';
 
 const BRANCH_ID = 5; // Токмок — единственный пилотный филиал
 
@@ -165,36 +166,43 @@ export default function FeedbackPage() {
     : null;
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 py-6 space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Фидбэк сотрудников</h1>
-          <div className="text-sm text-slate-500">Филиал: <b>Токмок</b> · пилот</div>
+    <div className="text-slate-50 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <div className="text-2xl font-bold tracking-tight text-slate-50">Фидбэк сотрудников</div>
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">Филиал: Токмок · пилот</div>
+          </div>
         </div>
-        <div className="flex items-end gap-2">
-          <label className="text-xs text-slate-500">
+        <div className="flex items-center gap-2">
+          <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
             с
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-              className="ml-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+              className="ml-2 rounded-xl bg-white ring-1 ring-sky-200 px-2 py-1.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400/70" />
           </label>
-          <label className="text-xs text-slate-500">
+          <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
             по
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-              className="ml-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+              className="ml-2 rounded-xl bg-white ring-1 ring-sky-200 px-2 py-1.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400/70" />
           </label>
           <button
             onClick={load}
             disabled={loading}
-            className="rounded-xl bg-slate-100 px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Обновить'}
           </button>
         </div>
       </div>
 
+      <AICenterTabs />
+
       {/* Верхняя панель: Пульс + Дайджест */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-3xl bg-white ring-1 ring-slate-200/80 p-5 shadow-sm">
+        <div className="lg:col-span-2 rounded-3xl bg-white ring-1 ring-sky-100 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-slate-700">Пульс настроения</h2>
             {avgMood != null && (
@@ -206,16 +214,16 @@ export default function FeedbackPage() {
           <MoodChart points={moodChart} />
         </div>
 
-        <div className="rounded-3xl bg-gradient-to-br from-teal-50 via-cyan-50 to-sky-50 ring-1 ring-sky-200/60 p-5">
+        <div className="rounded-2xl bg-white ring-1 ring-cyan-200 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="h-4 w-4 text-sky-600" />
+            <Sparkles className="h-4 w-4 text-cyan-600" />
             <h2 className="text-sm font-semibold text-slate-800">AI-дайджест</h2>
           </div>
           <p className="text-xs text-slate-600 mb-3">Claude Sonnet соберёт темы, алерты и идеи за выбранный период.</p>
           <button
             onClick={makeDigest}
             disabled={digesting}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-500 to-sky-500 px-4 py-2 text-sm text-white shadow-md hover:opacity-95 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] hover:bg-cyan-400 transition disabled:opacity-50"
           >
             {digesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             Сформировать
@@ -225,7 +233,7 @@ export default function FeedbackPage() {
 
       {/* Дайджест-блок */}
       {digest && (
-        <div className="rounded-3xl bg-white ring-1 ring-slate-200/80 p-5 shadow-sm space-y-4">
+        <div className="rounded-3xl bg-white ring-1 ring-sky-100 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)] space-y-4">
           {digest.summary && <p className="text-[15px] text-slate-800 leading-relaxed">{digest.summary}</p>}
 
           {Array.isArray(digest.themes) && digest.themes.length > 0 && (
@@ -271,16 +279,16 @@ export default function FeedbackPage() {
       )}
 
       {/* Табы */}
-      <div className="rounded-3xl bg-white ring-1 ring-slate-200/80 p-1.5 shadow-sm inline-flex gap-1">
+      <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-1 shadow-[0_8px_30px_rgba(15,23,42,0.45)] inline-flex gap-1">
         <button
           onClick={() => setTab('signed')}
-          className={`rounded-xl px-3.5 py-2 text-sm font-medium ${tab === 'signed' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          className={`rounded-xl px-3.5 py-2 text-sm font-medium ${tab === 'signed' ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
         >
           Именные ({daily.length + weekly.length})
         </button>
         <button
           onClick={() => setTab('anon')}
-          className={`rounded-xl px-3.5 py-2 text-sm font-medium ${tab === 'anon' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          className={`rounded-xl px-3.5 py-2 text-sm font-medium ${tab === 'anon' ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
         >
           <Shield className="h-3.5 w-3.5 inline-block -mt-0.5 mr-1" />Анонимные ({anonymous.length})
         </button>
@@ -289,7 +297,7 @@ export default function FeedbackPage() {
       {tab === 'signed' && (
         <div className="space-y-3">
           {weekly.map((w) => (
-            <div key={`w${w.id}`} className="rounded-2xl bg-white ring-1 ring-slate-200/80 p-4 shadow-sm">
+            <div key={`w${w.id}`} className="rounded-2xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
               <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
                 <span className="inline-flex items-center gap-1.5">
                   <User2 className="h-3.5 w-3.5" />{w.employee_name}
@@ -312,7 +320,7 @@ export default function FeedbackPage() {
           ))}
 
           {daily.map((d) => (
-            <div key={`d${d.id}`} className="rounded-2xl bg-white ring-1 ring-slate-200/80 p-4 shadow-sm">
+            <div key={`d${d.id}`} className="rounded-2xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
               <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
                 <span className="inline-flex items-center gap-1.5">
                   <User2 className="h-3.5 w-3.5" />{d.employee_name}
@@ -352,7 +360,7 @@ export default function FeedbackPage() {
             Эти записи не связаны с конкретными сотрудниками — только с филиалом и неделей.
           </div>
           {anonymous.map((a) => (
-            <div key={`a${a.id}`} className="rounded-2xl bg-white ring-1 ring-slate-200/80 p-4 shadow-sm">
+            <div key={`a${a.id}`} className="rounded-2xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
               <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
                 <span className="inline-block text-[10px] uppercase tracking-wide bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
                   {ANON_TOPIC_LABELS[a.anon_topic] || a.anon_topic}

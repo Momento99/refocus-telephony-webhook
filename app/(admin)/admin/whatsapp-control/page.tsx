@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MessageCircle, Clock, AlertTriangle, TrendingUp, RefreshCw, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
-import getSupabase from '@/lib/supabaseClient';
+import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 
 type Branch = { id: number; name: string };
 
@@ -63,7 +63,7 @@ export default function WhatsAppControlPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const sb = getSupabase();
+      const sb = getBrowserSupabase();
       const { from, to } = periodRange(period);
       const fromIso = from.toISOString();
       const toIso = to.toISOString();
@@ -180,159 +180,165 @@ export default function WhatsAppControlPage() {
   };
 
   return (
-    <div className="min-h-screen bg-transparent text-slate-900">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <header className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-[20px] font-bold text-white tracking-tight flex items-center gap-2">
-              <MessageCircle className="text-emerald-400" size={20} />
-              WhatsApp — Контроль
-            </h1>
-            <p className="text-[12px] text-slate-400 mt-0.5">
-              Статистика ответов продавцов, SLA и качество работы по филиалам
-            </p>
+    <div className="text-slate-50">
+      <div className="space-y-5">
+        {/* Header (бренд-стандарт) */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <MessageCircle className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-50">WhatsApp — контроль</div>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">
+                Скорость ответов продавцов, SLA и качество работы по филиалам
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <PeriodPicker value={period} onChange={setPeriod} />
             <button
               onClick={load}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/10 text-slate-300 text-[13px] font-medium px-3.5 py-2 hover:bg-white/15 transition"
+              title="Обновить"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200 text-slate-600 transition hover:bg-slate-50"
             >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
-        </header>
-
-      {/* Summary */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Диалогов" value={summary.total} hint={`${summary.responded} с ответом`} />
-        <Stat
-          label="Средний ответ"
-          value={summary.avgMin != null ? `${summary.avgMin.toFixed(1)} мин` : '—'}
-          icon={<Clock size={14} />}
-          hint={`SLA: ${summary.slaPct != null ? summary.slaPct.toFixed(0) + '%' : '—'}`}
-        />
-        <Stat
-          label="Просрочено SLA"
-          value={summary.breached}
-          icon={<AlertTriangle size={14} />}
-          danger={summary.breached > 0}
-        />
-        <Stat
-          label="Follow-up отправлено"
-          value={summary.fuSent}
-          hint={`в очереди: ${summary.fuPending}${summary.fuFailed ? `, ошибок: ${summary.fuFailed}` : ''}`}
-        />
-      </section>
-
-      {/* Per branch */}
-      <section className="rounded-2xl border border-slate-200/60 bg-white/90 shadow-sm">
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">По филиалам</h2>
-          <TrendingUp className="text-slate-400" size={18} />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="text-left px-4 py-2">Филиал</th>
-                <th className="text-right px-4 py-2">Диалогов</th>
-                <th className="text-right px-4 py-2">Ответили</th>
-                <th className="text-right px-4 py-2">Средний ответ</th>
-                <th className="text-right px-4 py-2">SLA</th>
-                <th className="text-right px-4 py-2">Нарушений</th>
-                <th className="text-right px-4 py-2">Follow-up</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byBranch.map((r) => (
-                <tr key={r.branch.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2 font-medium text-slate-900">{r.branch.name}</td>
-                  <td className="px-4 py-2 text-right">{r.threads}</td>
-                  <td className="px-4 py-2 text-right">{r.responded}</td>
-                  <td className="px-4 py-2 text-right">
-                    {r.avgMin != null ? `${r.avgMin.toFixed(1)} мин` : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {r.slaPct != null ? (
-                      <span
-                        className={
-                          r.slaPct >= 80
-                            ? 'text-emerald-700'
-                            : r.slaPct >= 50
-                              ? 'text-amber-700'
-                              : 'text-red-700'
-                        }
-                      >
-                        {r.slaPct.toFixed(0)}%
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {r.breached > 0 ? (
-                      <span className="text-red-700">{r.breached}</span>
-                    ) : (
-                      <span className="text-slate-400">0</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right">{r.fuSent}</td>
-                </tr>
-              ))}
-              {byBranch.length === 0 && (
+
+        {/* Summary */}
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Stat label="Диалогов" value={summary.total} hint={`${summary.responded} с ответом`} />
+          <Stat
+            label="Средний ответ"
+            value={summary.avgMin != null ? `${summary.avgMin.toFixed(1)} мин` : '—'}
+            icon={<Clock size={14} />}
+            hint={`SLA: ${summary.slaPct != null ? summary.slaPct.toFixed(0) + '%' : '—'}`}
+          />
+          <Stat
+            label="Просрочено SLA"
+            value={summary.breached}
+            icon={<AlertTriangle size={14} />}
+            danger={summary.breached > 0}
+          />
+          <Stat
+            label="Follow-up отправлено"
+            value={summary.fuSent}
+            hint={`в очереди: ${summary.fuPending}${summary.fuFailed ? `, ошибок: ${summary.fuFailed}` : ''}`}
+          />
+        </section>
+
+        {/* Per branch */}
+        <section className="overflow-hidden rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-slate-900">По филиалам</h2>
+            <TrendingUp className="text-cyan-600" size={18} />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                    {loading ? 'Загрузка…' : 'Нет данных за период'}
-                  </td>
+                  <th className="text-left px-4 py-3">Филиал</th>
+                  <th className="text-right px-4 py-3">Диалогов</th>
+                  <th className="text-right px-4 py-3">Ответили</th>
+                  <th className="text-right px-4 py-3">Средний ответ</th>
+                  <th className="text-right px-4 py-3">SLA</th>
+                  <th className="text-right px-4 py-3">Нарушений</th>
+                  <th className="text-right px-4 py-3">Follow-up</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Breached list */}
-      {breachedThreads.length > 0 && (
-        <section className="rounded-2xl border border-red-200 bg-red-50/50 shadow-sm p-5">
-          <h2 className="text-lg font-semibold text-red-900 mb-2 flex items-center gap-2">
-            <AlertTriangle size={18} /> Диалоги с нарушением SLA
-          </h2>
-          <div className="space-y-2">
-            {breachedThreads.map((t) => {
-              const mins = responseMinutes(t);
-              const b = branches.find((x) => x.id === t.branch_id);
-              return (
-                <div
-                  key={t.id}
-                  className="text-sm bg-white rounded-lg border border-red-200 px-3 py-2 flex justify-between gap-3"
-                >
-                  <div className="truncate">
-                    <span className="font-medium">{b?.name ?? '—'}</span> ·{' '}
-                    <span className="text-slate-600">{t.phone_number}</span>
-                  </div>
-                  <div className="text-red-700 shrink-0">
-                    {mins != null ? `${mins.toFixed(0)} мин` : 'нет ответа'}
-                  </div>
-                </div>
-              );
-            })}
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-900">
+                {byBranch.map((r) => (
+                  <tr key={r.branch.id} className="transition hover:bg-sky-50/40">
+                    <td className="px-4 py-3 font-medium">{r.branch.name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{r.threads}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{r.responded}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {r.avgMin != null ? `${r.avgMin.toFixed(1)} мин` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {r.slaPct != null ? (
+                        <span
+                          className={
+                            r.slaPct >= 80
+                              ? 'text-emerald-700 font-semibold'
+                              : r.slaPct >= 50
+                                ? 'text-amber-700 font-semibold'
+                                : 'text-rose-700 font-semibold'
+                          }
+                        >
+                          {r.slaPct.toFixed(0)}%
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {r.breached > 0 ? (
+                        <span className="text-rose-700 font-semibold">{r.breached}</span>
+                      ) : (
+                        <span className="text-slate-400">0</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">{r.fuSent}</td>
+                  </tr>
+                ))}
+                {byBranch.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                      {loading ? 'Загрузка…' : 'Нет данных за период'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
-      )}
+
+        {/* Breached list */}
+        {breachedThreads.length > 0 && (
+          <section className="rounded-2xl bg-white ring-1 ring-rose-200 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+            <h2 className="text-base font-semibold text-rose-700 mb-3 flex items-center gap-2">
+              <AlertTriangle size={18} /> Диалоги с нарушением SLA
+            </h2>
+            <div className="space-y-2">
+              {breachedThreads.map((t) => {
+                const mins = responseMinutes(t);
+                const b = branches.find((x) => x.id === t.branch_id);
+                return (
+                  <div
+                    key={t.id}
+                    className="text-sm rounded-xl bg-rose-50 ring-1 ring-rose-200 px-3 py-2 flex justify-between gap-3"
+                  >
+                    <div className="truncate">
+                      <span className="font-medium text-slate-900">{b?.name ?? '—'}</span>{' '}
+                      <span className="text-slate-400">·</span>{' '}
+                      <span className="text-slate-600">{t.phone_number}</span>
+                    </div>
+                    <div className="text-rose-700 font-semibold shrink-0">
+                      {mins != null ? `${mins.toFixed(0)} мин` : 'нет ответа'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* LLM analysis */}
-        <section className="rounded-2xl bg-white ring-1 ring-slate-200 p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2 text-slate-900">
-              <Sparkles className="text-purple-600" size={18} />
+        <section className="rounded-2xl bg-white ring-1 ring-sky-100 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)] space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-base font-semibold flex items-center gap-2 text-slate-900">
+              <Sparkles className="text-cyan-600" size={18} />
               Анализ качества через AI
             </h2>
             <button
               onClick={analyze}
               disabled={analyzing}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 text-white px-4 py-2 text-sm hover:bg-purple-700 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:opacity-50"
             >
+              {analyzing ? <Loader2Spinner /> : <Sparkles className="h-4 w-4" />}
               {analyzing ? 'Анализируем…' : 'Проанализировать за период'}
             </button>
           </div>
@@ -341,8 +347,8 @@ export default function WhatsAppControlPage() {
             скорость, эмпатия, решение проблем, топ/антитоп продавцов, частые жалобы.
           </p>
           {lastReport?.markdown && (
-            <div className="mt-4 rounded-xl bg-slate-50 border border-slate-200 p-4">
-              <div className="text-xs text-slate-500 mb-2">
+            <div className="mt-4 rounded-xl bg-slate-50/60 ring-1 ring-slate-100 p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
                 Последний отчёт · {new Date(lastReport.created_at).toLocaleString('ru-RU')}
               </div>
               <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">
@@ -354,6 +360,10 @@ export default function WhatsAppControlPage() {
       </div>
     </div>
   );
+}
+
+function Loader2Spinner() {
+  return <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />;
 }
 
 function Stat({
@@ -371,37 +381,37 @@ function Stat({
 }) {
   return (
     <div
-      className={`rounded-2xl p-4 border shadow-sm ${
-        danger
-          ? 'bg-red-50 border-red-200'
-          : 'bg-white border-slate-200/60'
+      className={`rounded-2xl p-4 bg-white ring-1 shadow-[0_8px_30px_rgba(15,23,42,0.45)] ${
+        danger ? 'ring-rose-200' : 'ring-sky-100'
       }`}
     >
-      <div className="text-xs text-slate-500 flex items-center gap-1">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
         {icon}
         {label}
       </div>
       <div
-        className={`text-2xl font-semibold mt-1 ${
-          danger ? 'text-red-700' : 'text-slate-900'
+        className={`text-2xl font-bold mt-1 tabular-nums ${
+          danger ? 'text-rose-700' : 'text-slate-900'
         }`}
       >
         {value}
       </div>
-      {hint && <div className="text-xs text-slate-500 mt-1">{hint}</div>}
+      {hint && <div className="text-[11px] text-slate-500 mt-1">{hint}</div>}
     </div>
   );
 }
 
 function PeriodPicker({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
   return (
-    <div className="inline-flex rounded-xl border border-slate-300 bg-white overflow-hidden">
+    <div className="inline-flex rounded-xl bg-white p-1 ring-1 ring-sky-100 shadow-[0_4px_16px_rgba(15,23,42,0.08)]">
       {(['today', 'week', 'month'] as Period[]).map((p) => (
         <button
           key={p}
           onClick={() => onChange(p)}
-          className={`px-3 py-2 text-sm ${
-            value === p ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50'
+          className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+            value === p
+              ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
           }`}
         >
           {p === 'today' ? 'Сегодня' : p === 'week' ? 'Неделя' : 'Месяц'}

@@ -141,14 +141,6 @@ type EmployeeRow = {
   branch_id: number | null;
 };
 
-type UserRoleRow = {
-  user_id: string;
-  email: string | null;
-  branch_id: number | null;
-  branch_name: string | null;
-  role: 'owner' | 'manager' | 'seller' | 'master' | null;
-};
-
 type QaReportRow = {
   report_date: string;
   branch_id: number | null;
@@ -975,7 +967,6 @@ export default function FranchisePage() {
           settingsRes,
           ordersRes,
           employeesRes,
-          rolesRes,
           qaRes,
         ] = await Promise.all([
           sb()
@@ -995,7 +986,6 @@ export default function FranchisePage() {
             .eq('is_active', true)
             .neq('full_name', 'TEST SERVICE QA WEEKLY')
             .order('branch_id', { ascending: true }),
-          sb().rpc('users_with_roles_list'),
           sb()
             .schema('service_qa')
             .from('daily_employee_reports')
@@ -1010,14 +1000,12 @@ export default function FranchisePage() {
         if (settingsRes.error) warnings.push('контакты филиалов');
         if (ordersRes.error) warnings.push('выручка и заказы');
         if (employeesRes.error) warnings.push('сотрудники');
-        if (rolesRes.error) warnings.push('ответственные пользователи');
         if (qaRes.error) warnings.push('Service QA');
 
         const branches = (branchesRes.data ?? []) as BranchRow[];
         const settingsRows = settingsRes.error ? [] : ((settingsRes.data ?? []) as BranchSettingsRow[]);
         const orders = ordersRes.error ? [] : ((ordersRes.data ?? []) as OrderRow[]);
         const employees = employeesRes.error ? [] : ((employeesRes.data ?? []) as EmployeeRow[]);
-        const roleRows = rolesRes.error ? [] : ((rolesRes.data ?? []) as UserRoleRow[]);
         const qaRows = qaRes.error ? [] : ((qaRes.data ?? []) as QaReportRow[]);
 
         const settingsByBranch = new Map<number, BranchSettingsRow>();
@@ -1029,14 +1017,6 @@ export default function FranchisePage() {
           const existing = employeesByBranch.get(row.branch_id) ?? [];
           existing.push(row);
           employeesByBranch.set(row.branch_id, existing);
-        }
-
-        const rolesByBranch = new Map<number, UserRoleRow[]>();
-        for (const row of roleRows) {
-          if (row.branch_id === null) continue;
-          const existing = rolesByBranch.get(row.branch_id) ?? [];
-          existing.push(row);
-          rolesByBranch.set(row.branch_id, existing);
         }
 
         const ordersByBranch = new Map<number, OrderAgg>();
@@ -1081,13 +1061,12 @@ export default function FranchisePage() {
         const mapped = branches.map((branch) => {
           const settings = settingsByBranch.get(branch.id);
           const branchEmployees = employeesByBranch.get(branch.id) ?? [];
-          const branchRoles = rolesByBranch.get(branch.id) ?? [];
           const branchQa = [...(qaByBranch.get(branch.id) ?? [])].sort((a, b) => b.report_date.localeCompare(a.report_date));
           const orderAgg = ordersByBranch.get(branch.id) ?? { revenueMonth: 0, revenueLastMonth: 0, ordersMonth: 0 };
 
-          const ownerEmail = branchRoles.find((row) => row.role === 'owner')?.email ?? null;
-          const managerEmail = branchRoles.find((row) => row.role === 'manager')?.email ?? null;
-          const fallbackEmail = branchRoles.find((row) => firstNonEmpty(row.email))?.email ?? null;
+          const ownerEmail: string | null = null;
+          const managerEmail: string | null = null;
+          const fallbackEmail: string | null = null;
 
           const serviceRating = avgRounded(branchQa.map((row) => row.overall_score));
           const violationList = buildViolationList(branchQa);

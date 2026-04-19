@@ -421,7 +421,7 @@ function Switch({
       onClick={toggle}
       className={cx(
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200",
-        v ? "bg-gradient-to-r from-teal-400 to-sky-400" : "bg-slate-300"
+        v ? "bg-cyan-500" : "bg-slate-300"
       )}
       aria-pressed={v}
       title={v ? "Бонусы включены" : "Бонусы выключены"}
@@ -453,10 +453,7 @@ function Card({
   return (
     <div
       className={cx(
-        "rounded-3xl p-5 sm:p-6",
-        "bg-gradient-to-br from-white via-slate-50 to-sky-50/85",
-        "ring-1 ring-sky-200/80 backdrop-blur-xl",
-        "shadow-[0_22px_70px_rgba(15,23,42,0.60)] text-slate-900",
+        "rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900",
         className
       )}
     >
@@ -467,14 +464,7 @@ function Card({
 
 function HeaderCard({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className={cx(
-        "rounded-3xl p-5 sm:p-6",
-        "bg-gradient-to-br from-white via-slate-50 to-sky-50/85",
-        "ring-1 ring-sky-200/80 backdrop-blur-xl",
-        "shadow-[0_22px_70px_rgba(15,23,42,0.60)] text-slate-900"
-      )}
-    >
+    <div className="rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
       {children}
     </div>
   );
@@ -486,11 +476,10 @@ function PrimaryBtn(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
     <button
       {...rest}
       className={cx(
-        "rounded-xl px-4 py-2 text-sm font-medium text-white",
-        "bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400",
-        "shadow-[0_16px_44px_rgba(34,211,238,0.35)] hover:brightness-110 active:brightness-95 active:scale-[0.99]",
-        "focus:outline-none focus:ring-2 focus:ring-teal-300/70",
-        "disabled:opacity-60 disabled:cursor-not-allowed",
+        "inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white",
+        "shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400",
+        "focus:outline-none focus:ring-2 focus:ring-cyan-300/70",
+        "disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
     />
@@ -503,11 +492,10 @@ function GhostBtn(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
     <button
       {...rest}
       className={cx(
-        "rounded-xl px-3.5 py-2 text-sm font-medium",
-        "bg-white/85 hover:bg-white text-teal-700",
-        "ring-1 ring-teal-200 shadow-[0_14px_40px_rgba(15,23,42,0.18)]",
-        "focus:outline-none focus:ring-2 focus:ring-teal-300/70",
-        "disabled:opacity-60 disabled:cursor-not-allowed",
+        "inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700",
+        "ring-1 ring-slate-200 transition hover:bg-slate-50",
+        "focus:outline-none focus:ring-2 focus:ring-cyan-300/70",
+        "disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
     />
@@ -520,10 +508,10 @@ function DangerBtn(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
     <button
       {...rest}
       className={cx(
-        "rounded-xl px-4 py-2 text-sm font-medium text-rose-700",
-        "bg-white/90 hover:bg-rose-50",
-        "ring-1 ring-rose-200 shadow-[0_14px_40px_rgba(15,23,42,0.18)]",
+        "inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-rose-700",
+        "ring-1 ring-rose-200 transition hover:bg-rose-50",
         "focus:outline-none focus:ring-2 focus:ring-rose-300/70",
+        "disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
     />
@@ -1530,17 +1518,9 @@ export default function Page() {
         <div className="absolute bottom-0 right-0 h-72 w-72 rounded-full bg-emerald-500/10 blur-[80px]" />
       </div>
 
-      <div className="relative mx-auto max-w-7xl px-5 pt-8 pb-10">
+      <div className="relative">
         {errorText ? (
-          <div
-            className={cx(
-              "mb-4 rounded-3xl p-4 sm:p-5",
-              "bg-gradient-to-br from-white via-rose-50 to-amber-50/80",
-              "ring-1 ring-rose-200/80",
-              "shadow-[0_22px_70px_rgba(0,0,0,0.35)]",
-              "text-slate-900"
-            )}
-          >
+          <div className="mb-4 rounded-2xl p-4 bg-white ring-1 ring-rose-200 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
             <div className="flex items-start justify-between gap-3">
               <div className="pr-3">
                 <div className="font-semibold">Не удалось загрузить зарплаты</div>
@@ -1553,22 +1533,28 @@ export default function Page() {
           </div>
         ) : null}
 
+        {/* Header (бренд-стандарт) */}
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <Wallet className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-50">
+                Зарплаты и посещаемость
+              </div>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">
+                Выплаты по филиалам · {periodLabel}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="mb-4">
           <HeaderCard>
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 shadow-[0_0_32px_rgba(34,211,238,0.35)] ring-1 ring-white/25">
-                  <Wallet className="h-5 w-5 text-white" />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-[30px] leading-none font-semibold tracking-tight text-slate-900">
-                    Зарплаты и посещаемость
-                  </div>
-                  <div className="text-[12px] text-slate-500">
-                    Выплаты по филиалам •{" "}
-                    <span className="font-medium text-slate-700">{periodLabel}</span>
-                  </div>
-                </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Период</span>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -1638,14 +1624,14 @@ export default function Page() {
         </div>
 
         {/* ===== Tab switcher ===== */}
-        <div className="mb-5 flex gap-1 rounded-2xl bg-white/90 p-1 ring-1 ring-sky-200/80 shadow-[0_8px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl w-fit">
+        <div className="mb-5 flex gap-1 rounded-2xl bg-white p-1 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] w-fit">
           <button
             onClick={() => setTab("payroll")}
             className={cx(
-              "rounded-xl px-5 py-2 text-sm font-medium transition-all",
+              "rounded-xl px-5 py-2 text-sm font-semibold transition",
               tab === "payroll"
-                ? "bg-gradient-to-r from-cyan-400 to-sky-400 text-slate-900 shadow-[0_4px_16px_rgba(34,211,238,0.30)]"
-                : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/70"
+                ? "bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]"
+                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
             )}
           >
             Зарплаты
@@ -1653,10 +1639,10 @@ export default function Page() {
           <button
             onClick={() => setTab("penalties")}
             className={cx(
-              "rounded-xl px-5 py-2 text-sm font-medium transition-all",
+              "rounded-xl px-5 py-2 text-sm font-semibold transition",
               tab === "penalties"
-                ? "bg-gradient-to-r from-cyan-400 to-sky-400 text-slate-900 shadow-[0_4px_16px_rgba(34,211,238,0.30)]"
-                : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/70"
+                ? "bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]"
+                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
             )}
           >
             Штрафы и графики
@@ -1673,8 +1659,8 @@ export default function Page() {
           <Card>
             <div className="flex items-center justify-between gap-3">
               <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <span className="grid h-9 w-9 place-items-center rounded-2xl bg-gradient-to-br from-sky-100 via-white to-sky-50 ring-1 ring-sky-200/70">
-                  <Building2 className="h-4 w-4 text-sky-700" />
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 ring-1 ring-cyan-200">
+                  <Building2 className="h-4 w-4 text-cyan-600" />
                 </span>
                 К выплате
               </div>
@@ -1684,7 +1670,7 @@ export default function Page() {
             </div>
 
             <div className="mt-2 flex items-baseline gap-3">
-              <div className="text-3xl font-semibold text-teal-700 tabular-nums">
+              <div className="text-3xl font-semibold text-cyan-700 tabular-nums">
                 {fmt(totalNet)} сом
               </div>
             </div>
@@ -1692,11 +1678,11 @@ export default function Page() {
             {activeWeek && (
               <div className="mt-1 text-xs text-slate-600">
                 За месяц:{" "}
-                <span className="font-medium text-teal-700">{fmt(totalNetMonth)} сом</span>
+                <span className="font-medium text-cyan-700">{fmt(totalNetMonth)} сом</span>
               </div>
             )}
 
-            <div className="mt-4 rounded-3xl bg-white/90 ring-1 ring-sky-200/80 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.20)]">
+            <div className="mt-4 rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-4">
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 По филиалам
               </div>
@@ -1704,7 +1690,7 @@ export default function Page() {
                 {branches.map((b) => (
                   <li key={b.id} className="flex items-center justify-between">
                     <span className="text-slate-800">{b.name}</span>
-                    <span className="font-semibold text-teal-700 tabular-nums">
+                    <span className="font-semibold text-cyan-700 tabular-nums">
                       {fmt(branchTotals.get(b.id) ?? 0)} сом
                     </span>
                   </li>
@@ -1878,17 +1864,17 @@ export default function Page() {
                       inputMode="numeric"
                       maxLength={8}
                       placeholder="не задан"
-                      className="h-7 w-24 rounded-lg border border-sky-200 bg-white px-2.5 text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+                      className="h-7 w-24 rounded-lg ring-1 ring-sky-200 bg-white px-2.5 text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
                     />
                     <button
-                      className="h-7 rounded-lg px-2.5 text-[11px] font-medium text-teal-700 bg-white ring-1 ring-teal-200 hover:bg-teal-50"
+                      className="h-7 rounded-lg px-2.5 text-[11px] font-medium text-slate-700 bg-white ring-1 ring-slate-200 hover:bg-slate-50"
                       onClick={() => setPinInputs((p) => ({ ...p, [b.id]: genPin4() }))}
                     >
                       Генерировать
                     </button>
                     {(pinInputs[b.id] ?? "") && (
                       <button
-                        className="h-7 rounded-lg px-2.5 text-[11px] font-medium text-white bg-gradient-to-r from-teal-400 to-sky-400 hover:brightness-110 disabled:opacity-60"
+                        className="h-7 rounded-lg px-2.5 text-[11px] font-semibold text-white bg-cyan-500 hover:bg-cyan-400 transition disabled:opacity-50"
                         disabled={pinBusy === b.id}
                         onClick={() => saveBranchPin(b.id)}
                       >
@@ -1951,7 +1937,7 @@ export default function Page() {
                                 value={form.login}
                                 onChange={(ev) => setCredForm((f) => ({ ...f, [emp.id]: { ...form, login: ev.target.value } }))}
                                 placeholder="логин"
-                                className="h-7 w-24 rounded-lg border border-sky-200 bg-white px-2 text-[11px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/60"
+                                className="h-7 w-24 rounded-lg ring-1 ring-sky-200 bg-white px-2 text-[11px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/60"
                               />
                               <input
                                 value={form.pin}
@@ -1959,14 +1945,14 @@ export default function Page() {
                                 placeholder="PIN"
                                 inputMode="numeric"
                                 maxLength={4}
-                                className="h-7 w-14 rounded-lg border border-sky-200 bg-white px-2 text-[11px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/60"
+                                className="h-7 w-14 rounded-lg ring-1 ring-sky-200 bg-white px-2 text-[11px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/60"
                               />
                               <button
-                                className="h-7 rounded-lg px-1.5 text-[10px] text-teal-700 ring-1 ring-teal-200 hover:bg-teal-50"
+                                className="h-7 rounded-lg px-1.5 text-[10px] text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
                                 onClick={() => setCredForm((f) => ({ ...f, [emp.id]: { ...form, pin: genPin4() } }))}
                               >PIN</button>
                               <button
-                                className="h-7 inline-flex items-center gap-0.5 rounded-lg bg-gradient-to-r from-cyan-400 to-sky-400 px-2 text-[11px] font-medium text-slate-900 hover:brightness-110"
+                                className="h-7 inline-flex items-center gap-0.5 rounded-lg bg-cyan-500 px-2 text-[11px] font-semibold text-white hover:bg-cyan-400 transition"
                                 onClick={() => createEmpCred(emp.id)}
                               >
                                 <Plus className="h-3 w-3" /> Создать
@@ -2057,7 +2043,7 @@ export default function Page() {
                     {planTarget > 0 && (
                       <div className="mb-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 transition-all"
+                          className="h-full rounded-full bg-cyan-500 transition-all"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
@@ -2232,7 +2218,7 @@ export default function Page() {
                             <td
                               className={cx(
                                 rowTdBase,
-                                "text-right font-semibold text-teal-700 tabular-nums"
+                                "text-right font-semibold text-cyan-700 tabular-nums"
                               )}
                             >
                               {fmt(netPeriod)}
@@ -2243,7 +2229,7 @@ export default function Page() {
                                 <button
                                   title="Детали по дням"
                                   onClick={() => openDaily({ id: e.id, fullName: e.fullName, branchId: b.id, netPeriod, netMonth })}
-                                  className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-medium text-teal-700 bg-white ring-1 ring-teal-200 hover:bg-teal-50 transition-colors"
+                                  className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-medium text-slate-700 bg-white ring-1 ring-slate-200 hover:bg-slate-50 transition"
                                 >
                                   <BarChart2 className="h-3.5 w-3.5" />
                                   <span>Детали</span>
@@ -2275,7 +2261,7 @@ export default function Page() {
                 <div className="mt-4 flex items-center justify-end">
                   <div className="text-sm text-slate-700">
                     Итого по филиалу:{" "}
-                    <span className="font-semibold text-teal-700 tabular-nums">
+                    <span className="font-semibold text-cyan-700 tabular-nums">
                       {fmt((byBranch.get(b.id) ?? []).reduce((s, e: any) => s + getNet(e), 0))} сом
                     </span>
                   </div>
@@ -2293,7 +2279,7 @@ export default function Page() {
             tabIndex={-1}
           >
             <div className="max-h-[90vh] w-[980px] overflow-hidden rounded-3xl bg-white/95 ring-1 ring-sky-200 shadow-[0_30px_120px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-              <div className="flex items-center justify-between border-b border-sky-200 px-4 py-3 bg-gradient-to-r from-sky-50 via-white to-sky-50/80">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 bg-slate-50/80">
                 <div className="text-sm">
                   <div className="font-semibold text-slate-900">{dailyMeta.name}</div>
                   <div className="text-xs text-slate-500">
@@ -2374,7 +2360,7 @@ export default function Page() {
                             className={cx(
                               rowTdLast,
                               "text-right text-sm font-semibold tabular-nums",
-                              r.net_day < 0 ? "text-rose-600" : "text-teal-700"
+                              r.net_day < 0 ? "text-rose-600" : "text-cyan-700"
                             )}
                           >
                             {fmt(r.net_day)}
@@ -2387,19 +2373,19 @@ export default function Page() {
               </div>
 
               {showDailyFooter ? (
-                <div className="border-t border-sky-200 px-4 py-3 text-right text-sm space-y-1 bg-gradient-to-r from-sky-50 via-white to-sky-50/80">
+                <div className="border-t border-slate-100 px-4 py-3 text-right text-sm space-y-1 bg-slate-50/80">
                   <div>
                     <span className="text-slate-600">
                       {activeWeek ? "Итого по дням за неделю: " : "Итого по дням (без корректировок): "}
                     </span>
-                    <span className="font-semibold text-teal-700 tabular-nums">
+                    <span className="font-semibold text-cyan-700 tabular-nums">
                       {fmt(dailyNetSum)} сом
                     </span>
                   </div>
 
                   <div>
                     <span className="text-slate-600">Корректировки месяца (включая премию за план): </span>
-                    <span className="font-semibold text-teal-700 tabular-nums">
+                    <span className="font-semibold text-cyan-700 tabular-nums">
                       {fmt(dailyAdj)} сом
                     </span>
                     {activeWeek ? (
@@ -2411,7 +2397,7 @@ export default function Page() {
                     <span className="text-slate-600">
                       {activeWeek ? "К выплате за неделю (как в списке): " : "Итого за месяц (как в списке): "}
                     </span>
-                    <span className="font-semibold text-teal-700 tabular-nums">
+                    <span className="font-semibold text-cyan-700 tabular-nums">
                       {fmt(dailyMeta.netPeriod)} сом
                     </span>
                     {activeWeek ? (
@@ -2422,7 +2408,7 @@ export default function Page() {
                   {!activeWeek ? (
                     <div>
                       <span className="text-slate-600">Итого по дням + корректировки (для сверки): </span>
-                      <span className="font-semibold text-teal-700 tabular-nums">
+                      <span className="font-semibold text-cyan-700 tabular-nums">
                         {fmt(dailyNetWithAdj)} сом
                       </span>
                     </div>

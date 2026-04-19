@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getBrowserSupabase } from "@/lib/supabaseBrowser";
 import {
   Package,
   Users,
@@ -38,10 +38,7 @@ type LocationCard = {
   stock: StockMap;
 };
 
-const sb: SupabaseClient = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-);
+const sb = getBrowserSupabase();
 
 function cx(...c: Array<string | false | null | undefined>) {
   return c.filter(Boolean).join(" ");
@@ -59,15 +56,11 @@ function fmtTs(ts: string | null) {
   });
 }
 
-function GlassCard(props: { className?: string; children: React.ReactNode }) {
+function Card(props: { className?: string; children: React.ReactNode }) {
   return (
     <div
       className={cx(
-        "rounded-2xl p-5 sm:p-6",
-        "bg-gradient-to-br from-white via-slate-50 to-sky-50/85",
-        "ring-1 ring-sky-200/80",
-        "shadow-[0_22px_70px_rgba(15,23,42,0.25)]",
-        "backdrop-blur-xl",
+        "rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]",
         props.className
       )}
     >
@@ -84,19 +77,15 @@ function SoftPrimaryButton(
     <button
       {...rest}
       className={cx(
-        "rounded-xl px-4 py-2 text-sm font-medium text-white",
-        "bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400",
-        "shadow-[0_18px_60px_rgba(34,211,238,0.35)]",
-        "hover:brightness-[1.03] active:brightness-[0.97]",
-        "focus:outline-none focus:ring-2 focus:ring-teal-300/70",
+        "inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white",
+        "shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400",
+        "focus:outline-none focus:ring-2 focus:ring-cyan-300/70",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
     >
-      <span className="inline-flex items-center gap-2">
-        {iconLeft}
-        {children}
-      </span>
+      {iconLeft}
+      {children}
     </button>
   );
 }
@@ -108,12 +97,9 @@ function SoftGhostButton(props: React.ButtonHTMLAttributes<HTMLButtonElement> & 
     <button
       {...rest}
       className={cx(
-        "rounded-xl px-3.5 py-2 text-sm font-medium text-teal-700",
-        "bg-white/85 hover:bg-white",
-        "ring-1 ring-teal-200",
-        "shadow-[0_16px_55px_rgba(15,23,42,0.18)]",
-        "focus:outline-none focus:ring-2 focus:ring-cyan-300/60",
-        "inline-flex items-center gap-2",
+        "inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700",
+        "ring-1 ring-slate-200 transition hover:bg-slate-50",
+        "focus:outline-none focus:ring-2 focus:ring-cyan-300/70",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
@@ -146,10 +132,8 @@ function QtyInput(props: {
         onChange(Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
       }}
       className={cx(
-        "w-28 rounded-[14px] px-3 py-2 text-sm text-slate-900",
-        "bg-white/90 ring-1 ring-sky-200/80",
-        "focus:outline-none focus:ring-2 focus:ring-cyan-400/80",
-        "shadow-[0_14px_45px_rgba(15,23,42,0.14)]",
+        "w-28 rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900",
+        "ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70",
         "placeholder:text-slate-400",
         "disabled:opacity-60 disabled:cursor-not-allowed"
       )}
@@ -283,290 +267,233 @@ export default function WarehousePage() {
   }
 
   return (
-    <div className="min-h-screen bg-transparent text-slate-900">
-      <div className="mx-auto max-w-7xl px-5 pt-8 pb-10">
-        {/* Header */}
-        <GlassCard className="p-5 sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
-              <div
-                className={cx(
-                  "h-10 w-10 rounded-xl",
-                  "bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400",
-                  "shadow-[0_18px_60px_rgba(34,211,238,0.35)]",
-                  "grid place-items-center"
-                )}
-              >
-                <Package className="h-5 w-5 text-white" />
-              </div>
-
-              <div>
-                <div className="text-[30px] font-semibold leading-tight">Склад расходников</div>
-                <div className="text-xs text-slate-600/90">
-                  Филиал пересчитывает и фиксирует итоговые количества (факт).
-                </div>
-              </div>
+    <div className="text-slate-50">
+      {/* Header (бренд-стандарт) */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <Package className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <div className="text-2xl font-bold tracking-tight text-slate-50">Склад расходников</div>
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">
+              Филиал пересчитывает и фиксирует итоговые количества
             </div>
+          </div>
+        </div>
 
+        <SoftGhostButton onClick={() => void load()} iconLeft={<RefreshCw className="h-4 w-4" />} disabled={loading}>
+          Обновить
+        </SoftGhostButton>
+      </div>
+
+      {/* Навигация по складским разделам */}
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Link
+          href="/warehouse/suppliers"
+          className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40"
+        >
+          <div className="h-10 w-10 shrink-0 grid place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+            <Users className="h-5 w-5 text-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-semibold text-slate-900">Поставщики</div>
+            <div className="mt-0.5 text-xs text-slate-500">Контрагенты и условия поставок</div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-cyan-500 transition-colors" />
+        </Link>
+
+        <Link
+          href="/admin/lens-procurement"
+          className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40"
+        >
+          <div className="h-10 w-10 shrink-0 grid place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+            <ShoppingCart className="h-5 w-5 text-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-semibold text-slate-900">Закуп линз</div>
+            <div className="mt-0.5 text-xs text-slate-500">Заказы и история закупок</div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-cyan-500 transition-colors" />
+        </Link>
+      </div>
+
+      {error ? (
+        <div className="mb-5 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+          {error}
+        </div>
+      ) : null}
+
+      {!error && !loading && cards.length === 0 ? (
+        <div className="mb-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700 ring-1 ring-amber-200">
+          Данных нет (либо нет доступа owner, либо нет shop-локаций в выборке).
+        </div>
+      ) : null}
+
+      {/* Totals */}
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {UI_ITEMS.map((it) => (
+          <div
+            key={it.key}
+            className="rounded-2xl p-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]"
+          >
             <div className="flex items-center gap-2">
-              <SoftGhostButton onClick={() => void load()} iconLeft={<RefreshCw className="h-4 w-4" />} disabled={loading}>
-                Обновить
-              </SoftGhostButton>
+              <it.Icon className="h-4 w-4 text-cyan-600" />
+              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{it.label}</div>
+            </div>
+            <div className="mt-1 text-2xl font-bold text-slate-900 tabular-nums">
+              {totals[it.key]} <span className="text-slate-400 text-sm font-medium">шт</span>
             </div>
           </div>
-        </GlassCard>
+        ))}
+      </div>
 
-        {/* Навигация по складским разделам */}
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Link
-            href="/warehouse/suppliers"
-            className={cx(
-              "group flex items-center gap-4 rounded-2xl px-5 py-4",
-              "bg-gradient-to-br from-white via-slate-50 to-sky-50/85",
-              "ring-1 ring-sky-200/80",
-              "shadow-[0_18px_60px_rgba(15,23,42,0.18)]",
-              "hover:-translate-y-0.5 transition-transform duration-150"
-            )}
-          >
-            <div className={cx(
-              "h-11 w-11 shrink-0 rounded-2xl grid place-items-center",
-              "bg-gradient-to-br from-violet-500 to-indigo-500",
-              "shadow-[0_12px_40px_rgba(109,40,217,0.35)]"
-            )}>
-              <Users className="h-5 w-5 text-white" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-semibold text-slate-900">Поставщики</div>
-              <div className="mt-0.5 text-xs text-slate-500">Контрагенты и условия поставок</div>
-            </div>
-            <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-          </Link>
-
-          <Link
-            href="/admin/lens-procurement"
-            className={cx(
-              "group flex items-center gap-4 rounded-2xl px-5 py-4",
-              "bg-gradient-to-br from-white via-slate-50 to-sky-50/85",
-              "ring-1 ring-sky-200/80",
-              "shadow-[0_18px_60px_rgba(15,23,42,0.18)]",
-              "hover:-translate-y-0.5 transition-transform duration-150"
-            )}
-          >
-            <div className={cx(
-              "h-11 w-11 shrink-0 rounded-2xl grid place-items-center",
-              "bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400",
-              "shadow-[0_12px_40px_rgba(34,211,238,0.35)]"
-            )}>
-              <ShoppingCart className="h-5 w-5 text-white" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-semibold text-slate-900">Закуп линз</div>
-              <div className="mt-0.5 text-xs text-slate-500">Заказы и история закупок</div>
-            </div>
-            <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-          </Link>
-        </div>
-
-        {error ? (
-          <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-            {error}
-          </div>
-        ) : null}
-
-        {!error && !loading && cards.length === 0 ? (
-          <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
-            Данных нет (либо нет доступа owner, либо нет shop-локаций в выборке).
-          </div>
-        ) : null}
-
-        {/* Totals */}
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {UI_ITEMS.map((it) => (
-            <div
-              key={it.key}
-              className={cx(
-                "rounded-2xl p-4",
-                "bg-gradient-to-br from-white via-slate-50 to-sky-50/85",
-                "ring-1 ring-sky-200/80",
-                "shadow-[0_18px_60px_rgba(15,23,42,0.18)]"
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <it.Icon className="h-4 w-4 text-sky-700/80" />
-                <div className="text-xs text-slate-600">Всего</div>
-              </div>
-              <div className="mt-2 text-lg font-semibold tabular-nums">{totals[it.key]} шт</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Cards */}
-        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {loading ? (
-            <GlassCard>
-              <div className="text-sm text-slate-600">Загрузка…</div>
-            </GlassCard>
-          ) : (
-            cards.map((c) => (
-              <GlassCard key={c.locationId}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4 text-sky-700/80" />
-                      <div className="truncate text-base font-semibold">{c.name}</div>
-                    </div>
-                    <div className="mt-1 text-[11px] text-slate-500">
-                      Последняя фиксация: {fmtTs(c.lastFixedAt)}
-                    </div>
-                  </div>
-
-                  <SoftPrimaryButton
-                    onClick={() => openFix(c)}
-                    iconLeft={<CheckCircle2 className="h-4 w-4" />}
-                  >
-                    Зафиксировать
-                  </SoftPrimaryButton>
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-3">
-                  {UI_ITEMS.map((it) => (
-                    <div
-                      key={it.key}
-                      className={cx(
-                        "flex items-center justify-between gap-3 rounded-2xl px-4 py-3",
-                        "bg-white/85 ring-1 ring-sky-200/80",
-                        "shadow-[0_14px_45px_rgba(15,23,42,0.12)]"
-                      )}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-9 w-9 rounded-xl bg-sky-50 ring-1 ring-sky-200/70 grid place-items-center">
-                          <it.Icon className="h-4 w-4 text-sky-700/80" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-slate-800">{it.label}</div>
-                          <div className="text-[11px] text-slate-500">шт</div>
-                        </div>
-                      </div>
-
-                      <div className="text-base font-semibold tabular-nums">
-                        {c.stock[it.key]} <span className="text-slate-500 text-sm font-medium">шт</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
-            ))
-          )}
-        </div>
-
-        {/* Modal */}
-        {modalOpen && selected ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-            <div
-              className={cx(
-                "w-full max-w-[640px] rounded-2xl bg-white/95",
-                "ring-1 ring-sky-200",
-                "shadow-[0_30px_120px_rgba(0,0,0,0.65)]",
-                "backdrop-blur-xl"
-              )}
-            >
-              <div className="flex items-start justify-between gap-4 p-5 sm:p-6">
+      {/* Cards */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {loading ? (
+          <Card>
+            <div className="text-sm text-slate-600">Загрузка…</div>
+          </Card>
+        ) : (
+          cards.map((c) => (
+            <Card key={c.locationId}>
+              <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="text-base font-semibold text-slate-900">
-                    Фиксация остатков: {selected.name}
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-cyan-600" />
+                    <div className="truncate text-base font-semibold text-slate-900">{c.name}</div>
                   </div>
                   <div className="mt-1 text-[11px] text-slate-500">
-                    Вводишь факт после пересчёта (абсолютные числа).
+                    Последняя фиксация: {fmtTs(c.lastFixedAt)}
                   </div>
                 </div>
 
-                <button
-                  onClick={closeFix}
-                  className="rounded-xl p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-300/60 disabled:opacity-60"
-                  aria-label="close"
-                  disabled={busy}
+                <SoftPrimaryButton
+                  onClick={() => openFix(c)}
+                  iconLeft={<CheckCircle2 className="h-4 w-4" />}
                 >
-                  <X className="h-4 w-4" />
-                </button>
+                  Зафиксировать
+                </SoftPrimaryButton>
               </div>
 
-              <div className="px-5 pb-5 sm:px-6 sm:pb-6">
-                <div className="grid grid-cols-1 gap-3">
-                  {UI_ITEMS.map((it) => (
-                    <div
-                      key={it.key}
-                      className={cx(
-                        "rounded-2xl px-4 py-3",
-                        "bg-white/85 ring-1 ring-sky-200/80",
-                        "shadow-[0_14px_45px_rgba(15,23,42,0.12)]"
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <it.Icon className="h-4 w-4 text-sky-700/80" />
-                          <div className="text-sm font-medium text-slate-800">{it.label}</div>
-                        </div>
-
-                        <QtyInput
-                          value={draft[it.key]}
-                          onChange={(v) => setDraft((p) => ({ ...p, [it.key]: v }))}
-                          disabled={busy}
-                        />
+              <div className="mt-4 grid grid-cols-1 gap-2.5">
+                {UI_ITEMS.map((it) => (
+                  <div
+                    key={it.key}
+                    className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 bg-slate-50/60 ring-1 ring-sky-100"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-9 w-9 rounded-xl bg-white ring-1 ring-sky-100 grid place-items-center">
+                        <it.Icon className="h-4 w-4 text-cyan-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-slate-800">{it.label}</div>
+                        <div className="text-[11px] text-slate-500">шт</div>
                       </div>
                     </div>
-                  ))}
-                </div>
 
-                <div className="mt-4">
-                  <div className="mb-1 text-[11px] text-slate-500">Комментарий (необязательно)</div>
-                  <textarea
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    rows={2}
-                    className={cx(
-                      "w-full rounded-[14px] px-3 py-2 text-sm text-slate-900",
-                      "bg-white/90 ring-1 ring-sky-200/80",
-                      "focus:outline-none focus:ring-2 focus:ring-cyan-400/80",
-                      "shadow-[0_14px_45px_rgba(15,23,42,0.14)]",
-                      "placeholder:text-slate-400",
-                      "disabled:opacity-60 disabled:cursor-not-allowed"
-                    )}
-                    placeholder="Например: пересчёт за неделю"
-                    disabled={busy}
-                  />
-                </div>
-
-                {modalError ? (
-                  <div className="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-                    {modalError}
+                    <div className="text-base font-semibold text-slate-900 tabular-nums">
+                      {c.stock[it.key]} <span className="text-slate-400 text-sm font-medium">шт</span>
+                    </div>
                   </div>
-                ) : null}
+                ))}
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
 
-                <div className="mt-5 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={closeFix}
-                    className={cx(
-                      "rounded-xl px-3.5 py-2 text-sm font-medium text-teal-700",
-                      "bg-white/85 hover:bg-white",
-                      "ring-1 ring-teal-200",
-                      "shadow-[0_16px_55px_rgba(15,23,42,0.18)]",
-                      "focus:outline-none focus:ring-2 focus:ring-cyan-300/60",
-                      "disabled:opacity-50 disabled:cursor-not-allowed"
-                    )}
-                    disabled={busy}
-                  >
-                    Отмена
-                  </button>
-
-                  <SoftPrimaryButton onClick={() => void saveFix()} disabled={busy}>
-                    {busy ? "Сохранение…" : "Сохранить"}
-                  </SoftPrimaryButton>
+      {/* Modal */}
+      {modalOpen && selected ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+          onClick={busy ? undefined : closeFix}
+        >
+          <div
+            className="w-full max-w-[640px] rounded-3xl bg-white p-6 ring-1 ring-sky-100 shadow-[0_30px_80px_rgba(0,0,0,0.4)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.3)]">
+                  <CheckCircle2 className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <div className="text-lg font-bold tracking-tight text-slate-900">
+                    Фиксация остатков: {selected.name}
+                  </div>
+                  <div className="mt-0.5 text-[12px] text-slate-500">
+                    Введите факт после пересчёта (абсолютные числа)
+                  </div>
                 </div>
               </div>
+
+              <button
+                onClick={closeFix}
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                aria-label="close"
+                disabled={busy}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              {UI_ITEMS.map((it) => (
+                <div
+                  key={it.key}
+                  className="rounded-xl px-4 py-3 bg-slate-50/60 ring-1 ring-sky-100"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <it.Icon className="h-4 w-4 text-cyan-600" />
+                      <div className="text-sm font-medium text-slate-800">{it.label}</div>
+                    </div>
+
+                    <QtyInput
+                      value={draft[it.key]}
+                      onChange={(v) => setDraft((p) => ({ ...p, [it.key]: v }))}
+                      disabled={busy}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Комментарий (необязательно)</div>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                rows={2}
+                className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:opacity-60"
+                placeholder="Например: пересчёт за неделю"
+                disabled={busy}
+              />
+            </div>
+
+            {modalError ? (
+              <div className="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+                {modalError}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={closeFix}
+                className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
+                disabled={busy}
+              >
+                Отмена
+              </button>
+
+              <SoftPrimaryButton onClick={() => void saveFix()} disabled={busy}>
+                {busy ? "Сохранение…" : "Сохранить"}
+              </SoftPrimaryButton>
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

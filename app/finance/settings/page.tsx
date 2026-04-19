@@ -85,12 +85,12 @@ function SectionCard({
   subtitle?: string;
 }) {
   return (
-    <section className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85 ring-1 ring-sky-100/90 shadow-[0_22px_65px_rgba(15,23,42,0.35)] backdrop-blur-xl">
-      <div className="flex items-center justify-between px-5 pt-4 pb-3">
+    <section className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+      <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-sky-500/10 text-sky-600 ring-1 ring-sky-200">
-              <Icon className="h-4 w-4" />
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-50 ring-1 ring-cyan-200">
+              <Icon className="h-4 w-4 text-cyan-600" />
             </span>
             <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>
           </div>
@@ -122,9 +122,9 @@ function ToolbarButton({
       disabled={disabled}
       onClick={onClick}
       className={[
-        'inline-flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-sm transition shadow-[0_10px_30px_rgba(15,23,42,0.18)]',
+        'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition',
         variant === 'primary'
-          ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 text-white hover:from-teal-300 hover:via-cyan-300 hover:to-sky-300 disabled:opacity-50'
+          ? 'bg-cyan-500 text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] hover:bg-cyan-400 disabled:opacity-50'
           : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50',
       ].join(' ')}
     >
@@ -143,7 +143,7 @@ function IconLinkButton({
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-1.5 text-sm text-slate-800 ring-1 ring-slate-200 shadow-[0_10px_30px_rgba(15,23,42,0.18)] hover:bg-slate-50"
+      className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
     >
       {children}
     </Link>
@@ -186,11 +186,9 @@ function SummaryTile({
   subtitle?: string;
 }) {
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-sky-50 via-white to-slate-50 ring-1 ring-sky-100 shadow-[0_18px_40px_rgba(15,23,42,0.18)] px-4 py-4">
-      <div className="text-xs font-medium text-slate-600">{title}</div>
-      <div className="mt-1 text-[20px] font-semibold text-slate-900">
-        {value}
-      </div>
+    <div className="rounded-2xl bg-slate-50/60 ring-1 ring-sky-100 px-4 py-4">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</div>
+      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
       {subtitle && (
         <div className="mt-1 text-[11px] text-slate-500">{subtitle}</div>
       )}
@@ -437,41 +435,37 @@ export default function FinanceSettingsPage() {
   /* ------- Render ------- */
 
   return (
-    <div className="min-h-screen">
-      <div className="mx-auto max-w-6xl px-4 pt-8 pb-10 space-y-6">
-        {/* Header в белой плитке */}
-        <div className="rounded-3xl border border-slate-100 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.18)] px-4 py-4 sm:px-5 sm:py-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_0_25px_rgba(56,189,248,0.55)]">
-                <Settings2 className="h-5 w-5" />
+    <div className="text-slate-50">
+      <div className="space-y-5">
+        {/* Header (бренд-стандарт) */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <Settings2 className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-50">
+                Финансовые ставки филиала
               </div>
-              <div>
-                <h1 className="text-[26px] sm:text-[30px] font-semibold leading-tight">
-                  Финансовые ставки филиала
-                </h1>
-                <div className="mt-1 text-sm text-slate-500">
-                  Филиал:{' '}
-                  <span className="font-medium text-sky-700">{branchName}</span>{' '}
-                  • настройки OPEX и себестоимости для расчёта чистой прибыли.
-                </div>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">
+                Филиал: <span className="font-semibold text-cyan-300">{branchName}</span> · OPEX и себестоимость для расчёта прибыли
               </div>
             </div>
-
-            <IconLinkButton href="/admin/stats">
-              <ArrowLeft className="h-4 w-4" />
-              Назад к статистике
-            </IconLinkButton>
           </div>
+
+          <IconLinkButton href="/admin/stats">
+            <ArrowLeft className="h-4 w-4" />
+            Назад к статистике
+          </IconLinkButton>
         </div>
 
         {/* Toolbar (филиал + статус редактирования) */}
-        <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85 ring-1 ring-sky-100 px-4 py-3 sm:px-5 sm:py-4 shadow-[0_18px_45px_rgba(15,23,42,0.18)] flex flex-wrap items-center gap-4">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] px-5 py-4 flex flex-wrap items-center gap-4">
           <div className="flex flex-col">
-            <label className="text-xs font-medium text-slate-600">Филиал</label>
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Филиал</label>
             <div className="relative mt-1">
               <select
-                className="peer w-56 appearance-none rounded-xl border border-slate-300 bg-white px-3 py-2 pr-8 text-sm text-slate-900 shadow-[0_10px_25px_rgba(15,23,42,0.12)] outline-none transition focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/60"
+                className="w-56 appearance-none rounded-xl bg-white px-3 py-2.5 pr-8 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
                 value={branchId}
                 onChange={(e) => setBranchId(Number(e.target.value))}
               >
@@ -491,7 +485,7 @@ export default function FinanceSettingsPage() {
             </div>
           )}
           {err && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 shadow-[0_12px_25px_rgba(127,29,29,0.18)]">
+            <div className="rounded-xl bg-rose-50 ring-1 ring-rose-200 px-3 py-1.5 text-sm text-rose-700">
               {err}
             </div>
           )}
@@ -500,10 +494,10 @@ export default function FinanceSettingsPage() {
 
           <span
             className={[
-              'inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs shadow-[0_10px_25px_rgba(15,23,42,0.18)]',
+              'inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold ring-1',
               editingAllowed
-                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200',
+                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                : 'bg-slate-100 text-slate-500 ring-slate-200',
             ].join(' ')}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -514,11 +508,11 @@ export default function FinanceSettingsPage() {
         </div>
 
         {/* Сводка по расходам и себестоимости */}
-        <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/85 ring-1 ring-sky-100 shadow-[0_22px_45px_rgба(15,23,42,0.2)] backdrop-blur-xl px-5 py-5">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] px-5 py-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-teal-100 text-teal-700 ring-1 ring-teal-200">
-                <Settings2 className="h-4 w-4" />
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-50 ring-1 ring-cyan-200">
+                <Settings2 className="h-4 w-4 text-cyan-600" />
               </span>
               Сводка по расходам и себестоимости
             </div>
@@ -577,9 +571,9 @@ export default function FinanceSettingsPage() {
             </ToolbarButton>
           }
         >
-          <div className="overflow-hidden rounded-xl ring-1 ring-slate-200/80 bg-white/90">
+          <div className="overflow-hidden rounded-xl ring-1 ring-sky-100 bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600">
+              <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Категория</th>
                   <th className="px-3 py-2 text-right font-medium">
@@ -619,7 +613,7 @@ export default function FinanceSettingsPage() {
                         onChange={(e) =>
                           updateOpexRow(row, { is_active: e.target.checked })
                         }
-                        className="h-4 w-4 accent-teal-500"
+                        className="h-4 w-4 accent-cyan-500"
                       />
                     </td>
                     <td className="px-3 py-2 text-center">
@@ -669,9 +663,9 @@ export default function FinanceSettingsPage() {
             </ToolbarButton>
           }
         >
-          <div className="overflow-hidden rounded-xl ring-1 ring-slate-200/80 bg-white/90">
+          <div className="overflow-hidden rounded-xl ring-1 ring-sky-100 bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600">
+              <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Позиция</th>
                   <th className="px-3 py-2 text-right font-medium">
@@ -711,7 +705,7 @@ export default function FinanceSettingsPage() {
                         onChange={(e) =>
                           updateCogsRow(row, { is_active: e.target.checked })
                         }
-                        className="h-4 w-4 accent-teal-500"
+                        className="h-4 w-4 accent-cyan-500"
                       />
                     </td>
                     <td className="px-3 py-2 text-center">

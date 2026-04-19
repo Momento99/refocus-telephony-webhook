@@ -22,7 +22,13 @@ import {
   PieChart,
   Timer,
   Percent,
+  ChevronRight,
+  PiggyBank,
 } from 'lucide-react';
+
+const ChevronRightIcon = () => (
+  <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-cyan-500 transition-colors" />
+);
 
 import {
   rpcRevenueInflowByDay,
@@ -1381,15 +1387,8 @@ export default function AdminStatsPage() {
 
   /* ========== UI ========== */
   return (
-    <div className="min-h-[100dvh] bg-transparent text-slate-900">
-      {/* декоративные подсветки (фон остаётся прозрачным) */}
-      <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute -left-24 -top-20 h-72 w-72 rounded-full bg-gradient-to-br from-teal-300/30 via-cyan-300/22 to-sky-300/18 blur-3xl" />
-        <div className="absolute -right-28 top-24 h-80 w-80 rounded-full bg-gradient-to-br from-sky-300/22 via-indigo-300/16 to-violet-300/16 blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-gradient-to-br from-emerald-300/18 via-teal-300/14 to-cyan-300/16 blur-3xl" />
-      </div>
-
-      <div className="mx-auto w-full max-w-7xl px-5 pb-10 pt-8">
+    <div className="text-slate-50">
+      <div>
         {gate === 'pending' && (
           <Section tone="neutral">
             <div className="text-sm text-slate-500">Проверяю доступ…</div>
@@ -1407,29 +1406,61 @@ export default function AdminStatsPage() {
 
         {gate === 'ok' && (
           <>
-            {/* Header + Filters */}
-            <Section tone="neutral">
-              {/* Строка 1: заголовок + быстрые пресеты + настройки */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.30)]">
-                    <BarChart3 className="h-4 w-4" />
-                  </div>
-                  <h1 className="text-lg font-bold text-slate-900">Статистика</h1>
-                  <div className="hidden sm:flex items-center gap-1 ml-2">
-                    <SoftGhostButton onClick={() => applyPreset('7d')}>7д</SoftGhostButton>
-                    <SoftGhostButton onClick={() => applyPreset('month')}>Месяц</SoftGhostButton>
-                    <SoftGhostButton onClick={() => applyPreset('all')}>Всё время</SoftGhostButton>
-                  </div>
-                </div>
-                <Link href="/finance/settings" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition">
-                  <CreditCard className="h-3.5 w-3.5" />
-                  Ставки
-                </Link>
+            {/* Header (бренд-стандарт) */}
+            <div className="mb-6 flex items-start gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+                <BarChart3 className="h-5 w-5 text-white" />
               </div>
+              <div>
+                <div className="text-2xl font-bold tracking-tight text-slate-50">Статистика</div>
+                <div className="mt-0.5 text-[12px] text-cyan-300/50">
+                  Аналитика заказов, выручки и операций
+                </div>
+              </div>
+            </div>
 
-              {/* Строка 2: даты + филиалы + показать */}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+            {/* Навигация */}
+            <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Link
+                href="/finance/settings"
+                className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40"
+              >
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+                  <CreditCard className="h-5 w-5 text-white" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px] font-semibold text-slate-900">Финансовые ставки</div>
+                  <div className="mt-0.5 text-xs text-slate-500">OPEX и себестоимость по филиалам</div>
+                </div>
+                <ChevronRightIcon />
+              </Link>
+
+              <Link
+                href="/admin/budget"
+                className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40"
+              >
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+                  <PiggyBank className="h-5 w-5 text-white" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px] font-semibold text-slate-900">Бюджет расходов</div>
+                  <div className="mt-0.5 text-xs text-slate-500">План и контроль расходов по филиалам</div>
+                </div>
+                <ChevronRightIcon />
+              </Link>
+            </div>
+
+            {/* Filters */}
+            <Section tone="neutral">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <SoftGhostButton onClick={() => applyPreset('7d')}>7д</SoftGhostButton>
+                  <SoftGhostButton onClick={() => applyPreset('month')}>Месяц</SoftGhostButton>
+                  <SoftGhostButton onClick={() => applyPreset('all')}>Всё время</SoftGhostButton>
+                </div>
+
+                <div className="h-5 w-px bg-slate-200 mx-1" />
+
                 <InputDate value={fromISO} onChange={(v) => setFromISO(v.slice(0, 10))} />
                 <span className="text-slate-400 text-xs">—</span>
                 <InputDate value={toISO} onChange={(v) => setToISO(v.slice(0, 10))} />
@@ -1454,7 +1485,7 @@ export default function AdminStatsPage() {
               </div>
 
               {err && (
-                <div className="mt-4 inline-flex items-start gap-2 rounded-2xl bg-amber-50/90 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200 shadow-[0_14px_40px_rgba(245,158,11,0.18)]">
+                <div className="mt-4 inline-flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700 ring-1 ring-amber-200">
                   <AlertTriangle className="mt-0.5 h-4 w-4" />
                   <span className="leading-snug">Предупреждение: {err}</span>
                 </div>
@@ -1514,7 +1545,7 @@ export default function AdminStatsPage() {
               tone="money"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.35)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <TrendingUp className="h-4 w-4" />
                   </div>
                   Выручка / Поступления / Долг
@@ -1531,7 +1562,7 @@ export default function AdminStatsPage() {
               tone="money"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.35)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <LineChart className="h-4 w-4" />
                   </div>
                   Чистая прибыль по дням
@@ -1581,7 +1612,7 @@ export default function AdminStatsPage() {
               tone="neutral"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.30)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <Building2 className="h-4 w-4" />
                   </div>
                   Сравнение по филиалам
@@ -1591,7 +1622,7 @@ export default function AdminStatsPage() {
             >
               <GlassTable>
                 <table className="w-full text-sm">
-                  <thead className="bg-gradient-to-r from-slate-50 via-white to-sky-50/70 text-slate-600">
+                  <thead className="bg-slate-50/80 text-slate-600">
                     <tr>
                       <Th>Филиал</Th>
                       <ThRight>Заказы (orders_view)</ThRight>
@@ -1602,7 +1633,7 @@ export default function AdminStatsPage() {
                   </thead>
                   <tbody>
                     {byBranch.map((r) => (
-                      <tr key={r.branch} className="odd:bg-white/70 even:bg-slate-50/60">
+                      <tr key={r.branch} className="odd:bg-white even:bg-slate-50/60">
                         <td className="px-3 py-2 font-medium text-slate-800">{r.branch}</td>
                         <td className="px-3 py-2 text-right">{nf(r.ov_orders)}</td>
                         <td className="px-3 py-2 text-right">{nf(r.ov_revenue)}</td>
@@ -1628,7 +1659,7 @@ export default function AdminStatsPage() {
                 tone="money"
                 title={
                   <span className="inline-flex items-center gap-2">
-                    <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-400 text-white shadow-[0_10px_30px_rgba(52,211,153,0.28)]">
+                    <div className="grid h-8 w-8 place-items-center rounded-xl bg-emerald-500 text-white shadow-[0_4px_12px_rgba(16,185,129,0.28)]">
                       <HandCoins className="h-4 w-4" />
                     </div>
                     Оплаты по методам
@@ -1638,7 +1669,7 @@ export default function AdminStatsPage() {
               >
                 <GlassTable>
                   <table className="w-full text-sm">
-                    <thead className="bg-gradient-to-r from-slate-50 via-white to-emerald-50/60 text-slate-600">
+                    <thead className="bg-slate-50/80 text-slate-600">
                       <tr>
                         <Th>Метод</Th>
                         <ThRight>Кол-во</ThRight>
@@ -1647,7 +1678,7 @@ export default function AdminStatsPage() {
                     </thead>
                     <tbody>
                       {payments.map((p) => (
-                        <tr key={p.method} className="odd:bg-white/70 even:bg-slate-50/60">
+                        <tr key={p.method} className="odd:bg-white even:bg-slate-50/60">
                           <td className="px-3 py-2 font-medium text-slate-800">{paymentMethodLabel(p.method)}</td>
                           <td className="px-3 py-2 text-right">{nf(p.cnt)}</td>
                           <td className="px-3 py-2 text-right">{nf(p.sum)}</td>
@@ -1674,7 +1705,7 @@ export default function AdminStatsPage() {
                 </GlassTable>
 
                 {payments.length > 0 && (
-                  <div className="mt-3 rounded-2xl bg-white/70 px-4 py-3 text-xs text-slate-600 ring-1 ring-sky-200/50 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+                  <div className="mt-3 rounded-xl bg-slate-50/60 px-4 py-3 text-xs text-slate-600 ring-1 ring-sky-100">
                     Поступления по KPI: <b className="text-slate-900">{nf(totals.inflow)}</b> сом. Сумма по методам:{' '}
                     <b className="text-slate-900">{nf(paymentsTotals.sum)}</b> сом.
                     {Math.round(totals.inflow) !== Math.round(paymentsTotals.sum) && (
@@ -1692,7 +1723,7 @@ export default function AdminStatsPage() {
               tone="neutral"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-indigo-400 via-sky-400 to-cyan-400 text-white shadow-[0_10px_30px_rgba(129,140,248,0.28)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <Users2 className="h-4 w-4" />
                   </div>
                   Клиенты
@@ -1739,7 +1770,7 @@ export default function AdminStatsPage() {
               tone="neutral"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.28)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <BarChart3 className="h-4 w-4" />
                   </div>
                   Линзы: по видам и диоптриям
@@ -1763,7 +1794,7 @@ export default function AdminStatsPage() {
               tone="neutral"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-violet-400 via-indigo-400 to-sky-400 text-white shadow-[0_10px_30px_rgba(167,139,250,0.22)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <LineChart className="h-4 w-4" />
                   </div>
                   Покупки по возрасту (годы)
@@ -1781,7 +1812,7 @@ export default function AdminStatsPage() {
               tone="neutral"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.22)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <Timer className="h-4 w-4" />
                   </div>
                   Заказы по времени (каждые 10 минут)
@@ -1798,7 +1829,7 @@ export default function AdminStatsPage() {
               tone="neutral"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.22)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <BarChart3 className="h-4 w-4" />
                   </div>
                   Заказы по дням недели
@@ -1815,7 +1846,7 @@ export default function AdminStatsPage() {
               tone="neutral"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-400 text-white shadow-[0_10px_30px_rgba(34,211,238,0.22)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <LineChart className="h-4 w-4" />
                   </div>
                   Распределение чеков (сом)
@@ -1832,7 +1863,7 @@ export default function AdminStatsPage() {
               tone="danger"
               title={
                 <span className="inline-flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-rose-400 via-orange-300 to-amber-300 text-white shadow-[0_10px_30px_rgba(251,113,133,0.18)]">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-rose-500 text-white shadow-[0_4px_12px_rgba(244,63,94,0.28)]">
                     <ReceiptRussianRuble className="h-4 w-4" />
                   </div>
                   Возвраты по дням
@@ -1866,23 +1897,12 @@ function Section({
 }) {
   const hasHeader = title || aside;
 
-  const toneBg =
-    tone === 'money'
-      ? 'from-white via-slate-50 to-sky-50/85'
-      : tone === 'danger'
-        ? 'from-white via-rose-50 to-amber-50/80'
-        : 'from-white via-slate-50 to-sky-50/80';
-
   const toneRing =
-    tone === 'money' ? 'ring-sky-200/55' : tone === 'danger' ? 'ring-rose-200/55' : 'ring-sky-200/45';
+    tone === 'danger' ? 'ring-rose-200' : 'ring-sky-100';
 
   return (
     <section
-      className={[
-        'mt-5 rounded-3xl bg-gradient-to-br p-5 shadow-[0_22px_70px_rgba(15,23,42,0.18)] backdrop-blur-xl ring-1',
-        toneBg,
-        toneRing,
-      ].join(' ')}
+      className={`mt-5 rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)] ring-1 ${toneRing}`}
     >
       {hasHeader && (
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1909,13 +1929,13 @@ function ChartFrame({
   const Icon = icon;
   return (
     <div
-      className="rounded-2xl bg-white/70 p-2 ring-1 ring-sky-200/40 shadow-[0_20px_60px_rgba(15,23,42,0.14)] backdrop-blur-xl"
+      className="rounded-2xl bg-white p-2 ring-1 ring-sky-100"
       style={{ height } as React.CSSProperties}
     >
       {title && (
         <div className="mb-2 flex items-center gap-2 px-2 text-xs font-semibold text-slate-600">
           {Icon && (
-            <span className="grid h-7 w-7 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_10px_26px_rgba(34,211,238,0.25)]">
+            <span className="grid h-7 w-7 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
               <Icon className="h-4 w-4" />
             </span>
           )}
@@ -1929,7 +1949,7 @@ function ChartFrame({
 
 function GlassTable({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-2xl bg-white/70 ring-1 ring-sky-200/40 shadow-[0_20px_60px_rgba(15,23,42,0.14)] backdrop-blur-xl">
+    <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-sky-100">
       {children}
     </div>
   );
@@ -1946,9 +1966,7 @@ function KPI({
   label,
   value,
   icon,
-  accent = 'from-slate-200 to-slate-100',
   danger = false,
-  iconTone = 'money',
 }: {
   label: string;
   value: React.ReactNode;
@@ -1959,32 +1977,17 @@ function KPI({
 }) {
   const Icon = icon;
 
-  const iconBg =
-    iconTone === 'danger'
-      ? 'from-rose-400 via-orange-300 to-amber-300'
-      : iconTone === 'violet'
-        ? 'from-violet-400 via-indigo-400 to-sky-400'
-        : iconTone === 'neutral'
-          ? 'from-slate-700 via-slate-800 to-slate-900'
-          : 'from-teal-400 via-cyan-400 to-sky-400';
-
   return (
-    <div className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/80 p-4 ring-1 ring-sky-200/55 shadow-[0_18px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl transition hover:shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
-      <div className={`pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-gradient-to-br ${accent} blur-2xl opacity-70 group-hover:opacity-100`} />
-      <div className="relative z-10 flex items-center gap-3">
+    <div className="rounded-2xl bg-white p-4 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40">
+      <div className="flex items-center gap-3">
         {Icon && (
-          <div
-            className={[
-              'grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-[0_14px_40px_rgba(15,23,42,0.18)]',
-              iconBg,
-            ].join(' ')}
-          >
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
             <Icon className="h-5 w-5" />
           </div>
         )}
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500/90">{label}</div>
-          <div className={`mt-1 text-[22px] font-semibold ${danger ? 'text-rose-600' : 'text-slate-900'}`}>{value}</div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+          <div className={`mt-1 text-2xl font-bold ${danger ? 'text-rose-600' : 'text-slate-900'}`}>{value}</div>
         </div>
       </div>
     </div>
@@ -2004,49 +2007,29 @@ function StatBox({
 }) {
   const Icon = icon;
 
-  const bg =
-    tone === 'ok'
-      ? 'from-emerald-50 via-white to-emerald-50'
-      : tone === 'warn'
-        ? 'from-amber-50 via-white to-amber-50'
-        : tone === 'danger'
-          ? 'from-rose-50 via-white to-rose-50'
-          : 'from-sky-50 via-white to-sky-50';
-
   const ring =
-    tone === 'ok'
-      ? 'ring-emerald-200/70'
-      : tone === 'warn'
-        ? 'ring-amber-200/70'
-        : tone === 'danger'
-          ? 'ring-rose-200/70'
-          : 'ring-sky-200/70';
+    tone === 'ok'     ? 'ring-emerald-200' :
+    tone === 'warn'   ? 'ring-amber-200' :
+    tone === 'danger' ? 'ring-rose-200' :
+                        'ring-sky-100';
 
-  const iconBg =
-    tone === 'ok'
-      ? 'from-emerald-400 via-teal-400 to-cyan-400'
-      : tone === 'warn'
-        ? 'from-amber-400 via-orange-300 to-rose-300'
-        : tone === 'danger'
-          ? 'from-rose-400 via-orange-300 to-amber-300'
-          : 'from-teal-400 via-cyan-400 to-sky-400';
+  const iconColor =
+    tone === 'ok'     ? 'text-emerald-600 bg-emerald-50' :
+    tone === 'warn'   ? 'text-amber-600 bg-amber-50' :
+    tone === 'danger' ? 'text-rose-600 bg-rose-50' :
+                        'text-cyan-600 bg-cyan-50';
 
   return (
-    <div className={['rounded-2xl bg-gradient-to-br p-4 shadow-[0_16px_50px_rgba(15,23,42,0.14)] backdrop-blur-xl ring-1', bg, ring].join(' ')}>
+    <div className={`rounded-2xl bg-white p-4 ring-1 shadow-[0_8px_30px_rgba(15,23,42,0.45)] ${ring}`}>
       <div className="flex items-center gap-3">
         {Icon && (
-          <div
-            className={[
-              'grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-[0_14px_40px_rgba(15,23,42,0.14)]',
-              iconBg,
-            ].join(' ')}
-          >
+          <div className={`grid h-10 w-10 place-items-center rounded-xl ${iconColor}`}>
             <Icon className="h-5 w-5" />
           </div>
         )}
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500/90">{label}</div>
-          <div className="mt-1 text-[18px] font-semibold text-slate-900">{value}</div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+          <div className="mt-1 text-lg font-bold text-slate-900">{value}</div>
         </div>
       </div>
     </div>
@@ -2055,14 +2038,14 @@ function StatBox({
 
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/80 p-8 text-center text-sm text-slate-600 ring-1 ring-sky-200/50 shadow-[0_22px_70px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+    <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
       {children}
     </div>
   );
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <label className="mb-1 block text-xs font-semibold text-slate-600">{children}</label>;
+  return <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{children}</label>;
 }
 
 function InputDate({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -2070,7 +2053,7 @@ function InputDate({ value, onChange }: { value: string; onChange: (v: string) =
     <div className="relative">
       <input
         type="date"
-        className="w-full rounded-[14px] bg-white/90 px-3 py-2 pr-9 text-sm text-slate-900 ring-1 ring-sky-200/80 shadow-[0_14px_40px_rgba(15,23,42,0.10)] outline-none focus:ring-2 focus:ring-cyan-400/80"
+        className="w-full rounded-xl bg-white px-3 py-2.5 pr-9 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -2093,10 +2076,10 @@ function Chip({
       type="button"
       onClick={() => void onClick?.()}
       className={[
-        'h-8 rounded-full px-3 text-xs font-semibold transition shadow-[0_12px_32px_rgba(15,23,42,0.10)] ring-1',
+        'h-8 rounded-full px-3 text-xs font-semibold transition',
         active
-          ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 text-white ring-sky-200/40'
-          : 'bg-white/85 text-slate-700 ring-teal-200/60 hover:bg-white',
+          ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+          : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
       ].join(' ')}
     >
       {children}
@@ -2126,7 +2109,7 @@ function SoftPrimaryButton({
       disabled={disabled}
       onClick={() => void onClick?.()}
       className={[
-        'inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 px-4 py-2 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(34,211,238,0.35)] ring-1 ring-sky-200/40 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-teal-300/70',
+        'inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
         className,
       ].join(' ')}
     >
@@ -2150,9 +2133,9 @@ function SoftGhostButton({
     <button
       type="button"
       onClick={() => void onClick?.()}
-      className="inline-flex items-center gap-2 rounded-xl bg-white/85 px-3.5 py-2 text-xs font-semibold text-teal-700 ring-1 ring-teal-200/70 shadow-[0_14px_40px_rgba(15,23,42,0.10)] hover:bg-white focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
+      className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
     >
-      {Icon && <Icon className="h-4 w-4 text-teal-600" />}
+      {Icon && <Icon className="h-4 w-4 text-cyan-600" />}
       {children}
     </button>
   );

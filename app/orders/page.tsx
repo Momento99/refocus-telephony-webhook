@@ -148,18 +148,9 @@ function GlassCard({
   children: React.ReactNode;
   className?: string;
 }) {
-  // Полуглассморфизм: светлый градиент + ring + сильная тень + blur
   return (
     <div
-      className={[
-        'rounded-3xl',
-        'ring-1 ring-sky-200/80',
-        'bg-gradient-to-br from-white/95 via-slate-50/90 to-sky-50/80',
-        'backdrop-blur-xl',
-        'shadow-[0_22px_70px_rgba(15,23,42,0.25)]',
-        'text-slate-900',
-        className,
-      ].join(' ')}
+      className={`rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900 ${className}`}
     >
       {children}
     </div>
@@ -167,28 +158,19 @@ function GlassCard({
 }
 
 const btnBase =
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap select-none transition-all ' +
-  'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ' +
-  'disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-[0.5px]';
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap select-none transition ' +
+  'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed';
 
 const SoftPrimary =
   btnBase +
-  ' rounded-xl px-4 py-2.5 text-sm font-medium text-white ' +
-  'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 ' +
-  'shadow-[0_14px_34px_rgba(34,211,238,0.35)] ' +
-  'hover:from-teal-300 hover:via-cyan-300 hover:to-sky-300';
+  ' rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)] hover:bg-cyan-400';
 
 const SoftGhost =
   btnBase +
-  ' rounded-xl px-3.5 py-2.5 text-sm font-medium text-teal-700 ' +
-  'bg-white/85 ring-1 ring-teal-200 ' +
-  'shadow-[0_10px_26px_rgba(15,23,42,0.12)] hover:bg-white';
+  ' rounded-xl px-3.5 py-2 text-sm font-medium text-slate-700 bg-white ring-1 ring-slate-200 hover:bg-slate-50';
 
-const SoftNeutral =
-  btnBase +
-  ' rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-800 ' +
-  'bg-white/90 ring-1 ring-slate-200 ' +
-  'shadow-[0_10px_26px_rgba(15,23,42,0.10)] hover:bg-white';
+const SoftNeutral = SoftGhost;
 
 function GBtn({
   children,
@@ -216,15 +198,8 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={[
-        'w-full',
-        'rounded-[14px]',
-        'bg-white/90',
-        'px-3.5 py-2.5',
-        'text-sm text-slate-900 placeholder:text-slate-400',
-        'ring-1 ring-sky-200/80',
-        'shadow-[0_14px_40px_rgba(15,23,42,0.14)]',
-        'outline-none',
-        'focus:ring-2 focus:ring-cyan-400/80',
+        'w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400',
+        'ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70',
         props.className || '',
       ].join(' ')}
     />
@@ -236,15 +211,8 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={[
-        'w-full',
-        'rounded-[14px]',
-        'bg-white/90',
-        'px-3.5 py-2.5',
-        'text-sm text-slate-900',
-        'ring-1 ring-sky-200/80',
-        'shadow-[0_14px_40px_rgba(15,23,42,0.14)]',
-        'outline-none',
-        'focus:ring-2 focus:ring-cyan-400/80',
+        'w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900',
+        'ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70',
         props.className || '',
       ].join(' ')}
     />
@@ -255,26 +223,26 @@ function StatusPill({ status, status_ru }: { status: string; status_ru?: string 
   const label = status_ru ?? STATUS_RU[status] ?? status;
 
   let ring = 'ring-slate-200';
-  let bg = 'bg-white/85';
+  let bg = 'bg-slate-50';
   let text = 'text-slate-700';
   let Icon = Sparkles;
 
   if (status === 'READY') {
     ring = 'ring-amber-200';
-    bg = 'bg-amber-50/80';
-    text = 'text-amber-800';
+    bg = 'bg-amber-50';
+    text = 'text-amber-700';
     Icon = AlertTriangle;
   }
   if (status === 'DELIVERED') {
     ring = 'ring-emerald-200';
-    bg = 'bg-emerald-50/80';
-    text = 'text-emerald-800';
+    bg = 'bg-emerald-50';
+    text = 'text-emerald-700';
     Icon = CheckCircle2;
   }
   if (status === 'NEW') {
     ring = 'ring-sky-200';
-    bg = 'bg-sky-50/85';
-    text = 'text-sky-800';
+    bg = 'bg-sky-50';
+    text = 'text-sky-700';
     Icon = Sparkles;
   }
 
@@ -307,21 +275,21 @@ function LegendChip({
     kind === 'ok'
       ? {
           ring: 'ring-emerald-200',
-          bg: 'bg-emerald-50/80',
-          text: 'text-emerald-800',
+          bg: 'bg-emerald-50',
+          text: 'text-emerald-700',
           Icon: CheckCircle2,
         }
       : kind === 'warn'
         ? {
             ring: 'ring-amber-200',
-            bg: 'bg-amber-50/80',
-            text: 'text-amber-800',
+            bg: 'bg-amber-50',
+            text: 'text-amber-700',
             Icon: AlertTriangle,
           }
         : {
             ring: 'ring-rose-200',
-            bg: 'bg-rose-50/80',
-            text: 'text-rose-800',
+            bg: 'bg-rose-50',
+            text: 'text-rose-700',
             Icon: AlertTriangle,
           };
 
@@ -354,30 +322,16 @@ function StatBox({
   value: string;
   tone?: 'money' | 'ok' | 'warn' | 'bad';
 }) {
-  const toneCfg =
-    tone === 'ok'
-      ? { bg: 'from-emerald-50 via-white to-emerald-50', ring: 'ring-emerald-200' }
-      : tone === 'warn'
-        ? { bg: 'from-amber-50 via-white to-amber-50', ring: 'ring-amber-200' }
-        : tone === 'bad'
-          ? { bg: 'from-rose-50 via-white to-rose-50', ring: 'ring-rose-200' }
-          : { bg: 'from-sky-50 via-white to-sky-50', ring: 'ring-sky-200' };
+  const ring =
+    tone === 'ok'   ? 'ring-emerald-200' :
+    tone === 'warn' ? 'ring-amber-200' :
+    tone === 'bad'  ? 'ring-rose-200' :
+                      'ring-sky-100';
 
   return (
-    <div
-      className={[
-        'rounded-2xl p-5',
-        'bg-gradient-to-br',
-        toneCfg.bg,
-        'ring-1',
-        toneCfg.ring,
-        'shadow-[0_16px_50px_rgba(15,23,42,0.16)]',
-        'backdrop-blur-xl',
-        'flex items-center justify-between gap-4',
-      ].join(' ')}
-    >
-      <div className="text-sm text-slate-700">{label}</div>
-      <div className="text-[22px] font-semibold text-slate-900 tabular-nums">{value}</div>
+    <div className={`rounded-2xl p-4 bg-white ring-1 ${ring} shadow-[0_8px_30px_rgba(15,23,42,0.45)] flex items-center justify-between gap-4`}>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-2xl font-bold text-slate-900 tabular-nums">{value}</div>
     </div>
   );
 }
@@ -420,19 +374,18 @@ const Th = ({
 
 /* ---------- Кнопки-«пилюли» (Refocus) ---------- */
 const pillBase =
-  'h-8 px-3 inline-flex items-center justify-center rounded-full text-[12px] font-semibold tracking-wide ' +
-  'transition-all select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ' +
-  'disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_10px_26px_rgba(15,23,42,0.14)] ' +
-  'hover:shadow-[0_18px_40px_rgba(15,23,42,0.18)] active:scale-[.99]';
+  'h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-full text-[12px] font-semibold tracking-wide ' +
+  'transition select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed';
 
 const payBtn =
   pillBase +
-  ' text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 hover:from-teal-300 hover:via-cyan-300 hover:to-sky-300';
+  ' text-white bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.25)] hover:bg-cyan-400';
 
 const softDeleteBtn =
-  pillBase + ' bg-white/90 ring-1 ring-amber-200 text-amber-800 hover:bg-amber-50/70';
+  pillBase + ' bg-white ring-1 ring-amber-200 text-amber-700 hover:bg-amber-50';
 const hardDeleteBtn =
-  pillBase + ' bg-white/90 ring-1 ring-rose-200 text-rose-700 hover:bg-rose-50/70';
+  pillBase + ' bg-white ring-1 ring-rose-200 text-rose-700 hover:bg-rose-50';
 
 /* ---------- Normalize ---------- */
 function normalize(raw: RawRow): Row {
@@ -512,11 +465,7 @@ function MobileCards({
         <div
           key={r.order_no}
           className={[
-            'rounded-2xl p-4',
-            'bg-gradient-to-br from-white/95 via-slate-50/90 to-sky-50/80',
-            'ring-1 ring-sky-200/80',
-            'shadow-[0_22px_70px_rgba(15,23,42,0.20)]',
-            'backdrop-blur-xl',
+            'rounded-2xl p-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]',
           ].join(' ')}
         >
           <div className="flex items-start justify-between gap-3">
@@ -534,19 +483,19 @@ function MobileCards({
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+            <div className="rounded-xl bg-slate-50/60 ring-1 ring-slate-200 p-3">
               <div className="text-[11px] text-slate-500 uppercase tracking-wide">Сумма</div>
               <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
                 {fmtNum(r.total_amount)}
               </div>
             </div>
-            <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+            <div className="rounded-xl bg-slate-50/60 ring-1 ring-slate-200 p-3">
               <div className="text-[11px] text-slate-500 uppercase tracking-wide">Оплачено</div>
               <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
                 {fmtNum(r.paid_amount)}
               </div>
             </div>
-            <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+            <div className="rounded-xl bg-slate-50/60 ring-1 ring-slate-200 p-3">
               <div className="text-[11px] text-slate-500 uppercase tracking-wide">Долг</div>
               <div
                 className={[
@@ -561,7 +510,7 @@ function MobileCards({
 
           {r.discount_ru && (
             <div className="mt-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ring-1 ring-amber-200 bg-amber-50/80 text-amber-800 text-[11px] font-semibold">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ring-1 ring-amber-200 bg-amber-50 text-amber-700 text-[11px] font-semibold">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Скидка: {r.discount_ru}
               </span>
@@ -575,15 +524,7 @@ function MobileCards({
             </button>
             <a
               href={r.phone ? `tel:${r.phone.replace(/\D/g, '')}` : '#'}
-              className={[
-                'h-8 col-span-2',
-                'rounded-full',
-                'bg-white/85 ring-1 ring-sky-200/80',
-                'shadow-[0_12px_30px_rgba(15,23,42,0.10)]',
-                'flex items-center justify-center gap-2',
-                'text-sm font-medium text-slate-800',
-                'hover:bg-white',
-              ].join(' ')}
+              className="h-8 col-span-2 rounded-full bg-white ring-1 ring-slate-200 flex items-center justify-center gap-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               <Phone className="h-4 w-4" />
               Звонок
@@ -1101,50 +1042,43 @@ export default function OrdersPage() {
   const debtTone: 'ok' | 'bad' = totals.debt > 0 ? 'bad' : 'ok';
 
   return (
-    <div className="relative min-h-[100dvh] text-slate-900">
-      <div className="mx-auto max-w-7xl px-5 pt-8 pb-10 space-y-4">
-        {/* Header */}
-        <GlassCard className="px-6 py-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3.5">
-              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_18px_46px_rgba(34,211,238,0.45)]">
-                <Building2 className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="text-[30px] leading-[1.05] font-semibold tracking-tight text-slate-900 drop-shadow-[0_10px_30px_rgba(34,211,238,0.18)]">
-                  Заказы
-                </div>
-                <div className="mt-1 text-[13px] text-slate-600/90">
-                  Интерфейс для оплат и админских действий •{' '}
-                  <span className="font-medium text-slate-900">
-                    всего: {filtered.length}
-                  </span>
-                </div>
-              </div>
+    <div className="text-slate-50">
+      <div className="space-y-4">
+        {/* Header (бренд-стандарт) */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <Building2 className="h-5 w-5 text-white" />
             </div>
-
-            <div className="flex flex-wrap items-center gap-2 md:justify-end">
-              <GBtn variant="soft" onClick={load}>
-                <RefreshCw className="h-4 w-4" />
-                Обновить
-              </GBtn>
-              <GBtn
-                variant="outline"
-                onClick={() => {
-                  setQ('');
-                  setStatusFilter('ALL');
-                  setBranchFilter('ALL');
-                }}
-              >
-                <Filter className="h-4 w-4" />
-                Сбросить фильтры
-              </GBtn>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-50">Заказы</div>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">
+                Оплаты и админские действия · всего: {filtered.length}
+              </div>
             </div>
           </div>
-        </GlassCard>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <GBtn variant="soft" onClick={load}>
+              <RefreshCw className="h-4 w-4" />
+              Обновить
+            </GBtn>
+            <GBtn
+              variant="outline"
+              onClick={() => {
+                setQ('');
+                setStatusFilter('ALL');
+                setBranchFilter('ALL');
+              }}
+            >
+              <Filter className="h-4 w-4" />
+              Сбросить фильтры
+            </GBtn>
+          </div>
+        </div>
 
         {/* Filters + Legend */}
-        <GlassCard className="px-6 py-5">
+        <GlassCard className="px-5 py-4">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
             <div className="md:col-span-5 relative sm:w-96">
               <Input
@@ -1194,7 +1128,7 @@ export default function OrdersPage() {
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <div className="text-[12px] text-slate-600/90">Легенда:</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Легенда</div>
             <LegendChip kind="ok" label="Выдано / ОК" />
             <LegendChip kind="warn" label="Готово / внимание" />
             <LegendChip kind="bad" label="Есть долг" />
@@ -1218,7 +1152,7 @@ export default function OrdersPage() {
           <GlassCard className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full table-fixed text-[13px] text-slate-900">
-                <thead className="bg-white/70 backdrop-blur border-b border-sky-100">
+                <thead className="bg-slate-50/80 border-b border-slate-100">
                   <tr className="text-left">
                     <Th
                       label="Создан"
@@ -1260,12 +1194,12 @@ export default function OrdersPage() {
                   </tr>
                 </thead>
 
-                <tbody className="align-middle bg-white/40">
+                <tbody className="align-middle">
                   {loading &&
                     Array.from({ length: 6 }).map((_, i) => (
-                      <tr key={`skel-${i}`} className="border-t border-sky-100/60">
+                      <tr key={`skel-${i}`} className="border-t border-slate-100">
                         <td className="px-3.5 py-3" colSpan={11}>
-                          <div className="h-6 w-full bg-slate-100/80 rounded-xl animate-pulse" />
+                          <div className="h-6 w-full bg-slate-100 rounded-xl animate-pulse" />
                         </td>
                       </tr>
                     ))}
@@ -1274,7 +1208,7 @@ export default function OrdersPage() {
                     filtered.map((r) => (
                       <tr
                         key={r.order_no}
-                        className="border-t border-sky-100/60 hover:bg-white/70 transition-colors cursor-pointer"
+                        className="border-t border-slate-100 transition hover:bg-sky-50/40 cursor-pointer"
                       >
                         <td
                           className="px-3.5 py-3 w-32 whitespace-nowrap text-slate-700"
@@ -1292,7 +1226,7 @@ export default function OrdersPage() {
                         <td className="px-3.5 py-3 w-32 truncate">
                           {r.phone ? (
                             <a
-                              className="inline-flex items-center gap-1.5 text-teal-700 hover:underline font-medium"
+                              className="inline-flex items-center gap-1.5 text-cyan-700 hover:text-cyan-600 hover:underline font-medium"
                               href={`tel:${r.phone.replace(/\D/g, '')}`}
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -1331,7 +1265,7 @@ export default function OrdersPage() {
 
                         <td className="px-3.5 py-3 w-20 text-right">
                           {r.discount_ru ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full ring-1 ring-amber-200 bg-amber-50/80 text-amber-800 text-[12px] font-semibold">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full ring-1 ring-amber-200 bg-amber-50 text-amber-700 text-[12px] font-semibold">
                               {r.discount_ru}
                             </span>
                           ) : (
@@ -1360,11 +1294,9 @@ export default function OrdersPage() {
                   {!loading && !filtered.length && (
                     <tr>
                       <td colSpan={11} className="px-3.5 py-12 text-center">
-                        <div className="inline-block rounded-3xl bg-gradient-to-br from-white/95 via-slate-50/90 to-sky-50/80 ring-1 ring-sky-200/80 px-8 py-6 shadow-[0_22px_70px_rgba(15,23,42,0.16)]">
-                          <div className="text-slate-800 font-semibold">Ничего не найдено</div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            Измени фильтры или добавь заказ.
-                          </div>
+                        <div className="text-slate-700 font-semibold">Ничего не найдено</div>
+                        <div className="mt-1 text-sm text-slate-500">
+                          Измени фильтры или добавь заказ.
                         </div>
                       </td>
                     </tr>
@@ -1449,23 +1381,23 @@ function DetailsDrawer({
   return (
     <Portal>
       <div className="fixed inset-0 z-[70]">
-        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+        <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
 
         <div className="absolute right-0 top-0 h-full w-full sm:w-[480px] overflow-y-auto">
-          <div className="h-full bg-gradient-to-b from-white/92 via-slate-50/90 to-sky-50/70 backdrop-blur-2xl ring-1 ring-sky-200/70 shadow-[0_30px_120px_rgba(0,0,0,0.35)]">
-            <div className="p-5 border-b border-sky-100/70 bg-white/70 backdrop-blur">
+          <div className="h-full bg-white ring-1 ring-sky-100 shadow-[0_30px_120px_rgba(0,0,0,0.4)]">
+            <div className="p-5 border-b border-slate-100 bg-white">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_18px_46px_rgba(34,211,238,0.40)]">
-                    <Building2 className="h-5 w-5" />
+                  <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.3)]">
+                    <Building2 className="h-5 w-5 text-white" />
                   </div>
                   <div>
-                    <div className="text-[18px] font-semibold text-slate-900">Детали заказа</div>
-                    <div className="text-[12px] text-slate-600/90">
+                    <div className="text-lg font-bold tracking-tight text-slate-900">Детали заказа</div>
+                    <div className="text-[12px] text-slate-500">
                       {orderCode ? (
                         <>
-                          <span className="font-medium text-slate-900">{orderCode}</span>
-                          <span className="mx-1.5 text-slate-400">•</span>
+                          <span className="font-medium text-slate-700">{orderCode}</span>
+                          <span className="mx-1.5 text-slate-300">•</span>
                           {detail?.created_at ?? '—'}
                         </>
                       ) : (
@@ -1497,7 +1429,7 @@ function DetailsDrawer({
 
                     {/* NEW: barcode */}
                     {frameBarcodeText && (
-                      <div className="mt-3 rounded-2xl bg-white/85 ring-1 ring-sky-200/70 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                      <div className="mt-3 rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
                         <div className="text-[11px] text-slate-500 uppercase tracking-wide">
                           Штрихкод оправы
                         </div>
@@ -1538,19 +1470,19 @@ function DetailsDrawer({
 
                   <GlassCard className="p-4">
                     <div className="grid grid-cols-3 gap-2">
-                      <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                      <div className="rounded-xl bg-slate-50/60 ring-1 ring-slate-200 p-3">
                         <div className="text-[11px] text-slate-500 uppercase tracking-wide">Сумма</div>
                         <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
                           {fmtNum(detail.total_amount)}
                         </div>
                       </div>
-                      <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                      <div className="rounded-xl bg-slate-50/60 ring-1 ring-slate-200 p-3">
                         <div className="text-[11px] text-slate-500 uppercase tracking-wide">Оплачено</div>
                         <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
                           {fmtNum(detail.paid_amount)}
                         </div>
                       </div>
-                      <div className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                      <div className="rounded-xl bg-slate-50/60 ring-1 ring-slate-200 p-3">
                         <div className="text-[11px] text-slate-500 uppercase tracking-wide">Долг</div>
                         <div
                           className={[
@@ -1578,13 +1510,13 @@ function DetailsDrawer({
                       <div className="text-[11px] text-slate-500">оправа / линзы</div>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2">
-                      <div className="rounded-2xl bg-white/85 ring-1 ring-sky-200/70 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                      <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
                         <div className="text-[11px] text-slate-500 uppercase tracking-wide">Оправа</div>
                         <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
                           {fmtNum(detail.frame_amount)}
                         </div>
                       </div>
-                      <div className="rounded-2xl bg-white/85 ring-1 ring-sky-200/70 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]">
+                      <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
                         <div className="text-[11px] text-slate-500 uppercase tracking-wide">Линзы</div>
                         <div className="mt-0.5 font-semibold text-slate-900 tabular-nums">
                           {fmtNum(detail.lenses_amount)}
@@ -1627,7 +1559,7 @@ function DetailsDrawer({
                           {payments.map((p) => (
                             <div
                               key={p.payment_id}
-                              className="rounded-2xl bg-white/85 ring-1 ring-slate-200 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)]"
+                              className="rounded-xl bg-slate-50/60 ring-1 ring-slate-200 p-3"
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center                                gap-2">
@@ -1636,7 +1568,7 @@ function DetailsDrawer({
                                       <div className="text-sm font-semibold text-slate-900 tabular-nums">
                                         {fmtNum(p.amount)} с
                                       </div>
-                                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-slate-200 bg-white/80 text-slate-700">
+                                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-slate-200 bg-white text-slate-700">
                                         {PAY_LABEL[toUiMethod(p.method)]}
                                       </span>
                                     </div>
@@ -1707,17 +1639,15 @@ function PayModal({
     [
       pillBase,
       active
-        ? 'text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400'
-        : 'bg-white/90 ring-1 ring-slate-200 text-slate-800 hover:bg-white',
+        ? 'text-white bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.25)] hover:bg-cyan-400'
+        : 'bg-white ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50',
     ].join(' ');
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-[90]">
-        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-
-        <div className="absolute inset-0 grid place-items-center p-4">
-          <GlassCard className="w-full max-w-md p-5">
+      <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm" onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
+          <GlassCard className="p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold text-slate-900">Оплата</div>
@@ -1818,17 +1748,15 @@ function EditPaymentMethodModal({
     [
       pillBase,
       active
-        ? 'text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400'
-        : 'bg-white/90 ring-1 ring-slate-200 text-slate-800 hover:bg-white',
+        ? 'text-white bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.25)] hover:bg-cyan-400'
+        : 'bg-white ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50',
     ].join(' ');
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-[95]">
-        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-
-        <div className="absolute inset-0 grid place-items-center p-4">
-          <GlassCard className="w-full max-w-md p-5">
+      <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm" onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
+          <GlassCard className="p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold text-slate-900">Метод оплаты</div>
@@ -1873,14 +1801,7 @@ function EditPaymentMethodModal({
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="Например: клиент оплатил картой, кассир ошибся и выбрал наличные"
-                  className={[
-                    'mt-2 w-full',
-                    'rounded-[14px] bg-white/90 px-3.5 py-2.5',
-                    'text-sm text-slate-900 placeholder:text-slate-400',
-                    'ring-1 ring-sky-200/80 shadow-[0_14px_40px_rgba(15,23,42,0.14)]',
-                    'outline-none focus:ring-2 focus:ring-cyan-400/80',
-                    'min-h-[92px] resize-none',
-                  ].join(' ')}
+                  className="mt-2 w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 min-h-[92px] resize-none"
                 />
                 {!reason.trim() && (
                   <div className="mt-1 text-[11px] text-amber-700 flex items-center gap-1.5">

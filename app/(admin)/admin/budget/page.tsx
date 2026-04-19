@@ -83,12 +83,9 @@ function SoftPrimaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>)
     <button
       {...rest}
       className={[
-        'rounded-xl px-4 py-2 text-sm font-medium text-white',
-        'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400',
-        'shadow-[0_14px_40px_rgba(34,211,238,0.35)]',
-        'ring-1 ring-white/30',
-        'hover:brightness-[1.03] active:brightness-[0.97]',
-        'focus:outline-none focus:ring-2 focus:ring-teal-300/70',
+        'inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white',
+        'shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400',
+        'focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         className,
       ].join(' ')}
@@ -102,11 +99,9 @@ function SoftGhostButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
     <button
       {...rest}
       className={[
-        'rounded-xl px-3.5 py-2 text-sm font-medium',
-        'bg-white/85 hover:bg-white text-teal-700',
-        'ring-1 ring-teal-200',
-        'shadow-[0_10px_30px_rgba(15,23,42,0.18)]',
-        'focus:outline-none focus:ring-2 focus:ring-cyan-400/60',
+        'inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700',
+        'ring-1 ring-slate-200 transition hover:bg-slate-50',
+        'focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         className,
       ].join(' ')}
@@ -118,9 +113,9 @@ function ProgressBar({ pct }: { pct: number }) {
   const p = Math.max(0, Math.min(100, pct));
   return (
     <div className="mt-3">
-      <div className="h-2 w-full rounded-full bg-slate-200/80 overflow-hidden">
+      <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
         <div
-          className="h-2 rounded-full bg-gradient-to-r from-emerald-400 via-teal-400 to-sky-400"
+          className="h-2 rounded-full bg-cyan-500 transition-all"
           style={{ width: `${p}%` }}
         />
       </div>
@@ -131,7 +126,7 @@ function ProgressBar({ pct }: { pct: number }) {
 
 function SkeletonCard() {
   return (
-    <div className="rounded-3xl p-5 sm:p-6 bg-slate-100/80 ring-1 ring-slate-200 shadow-[0_22px_70px_rgba(15,23,42,0.18)] animate-pulse">
+    <div className="rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] animate-pulse">
       <div className="h-4 w-44 bg-slate-200 rounded" />
       <div className="mt-4 h-10 w-56 bg-slate-200 rounded" />
       <div className="mt-3 h-3 w-64 bg-slate-200 rounded" />
@@ -167,29 +162,20 @@ function NowCard({
   const remain = Math.max(0, monthly - shouldHaveToday);
   const pct = (day / Math.max(1, daysInMonth)) * 100;
 
-  const shell =
-    accent === 'emerald'
-      ? 'from-white via-emerald-50 to-sky-50/80 ring-emerald-200/70'
-      : 'from-white via-slate-50 to-sky-50/85 ring-sky-200/70';
+  const ring = accent === 'emerald' ? 'ring-emerald-200' : 'ring-sky-100';
 
   return (
     <div
       className={[
-        'rounded-3xl p-5 sm:p-6',
-        'bg-gradient-to-br',
-        shell,
+        'rounded-2xl p-5 bg-white',
         'ring-1',
-        'shadow-[0_22px_70px_rgba(15,23,42,0.25)]',
-        'backdrop-blur-xl',
-        'relative overflow-hidden',
+        ring,
+        'shadow-[0_8px_30px_rgba(15,23,42,0.45)]',
       ].join(' ')}
     >
-      <div className="pointer-events-none absolute -top-10 -right-16 h-56 w-56 rounded-full bg-gradient-to-br from-cyan-300/25 via-sky-300/15 to-transparent blur-2xl" />
-      <div className="pointer-events-none absolute -bottom-16 -left-10 h-56 w-56 rounded-full bg-gradient-to-tr from-teal-300/18 via-emerald-300/12 to-transparent blur-2xl" />
-
-      <div className="relative flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 shadow-[0_14px_40px_rgba(34,211,238,0.28)] ring-1 ring-white/40 flex items-center justify-center">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
             <div className="text-white">{icon}</div>
           </div>
           <div className="min-w-0">
@@ -213,22 +199,22 @@ function NowCard({
         </div>
       </div>
 
-      <div className="relative mt-4">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">СЕГОДНЯ ДОЛЖНО БЫТЬ ОТЛОЖЕНО</div>
-        <div className="mt-1 text-[38px] leading-tight font-semibold text-slate-900 drop-shadow-[0_1px_0_rgba(34,211,238,0.25)]">
+      <div className="mt-4">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Сегодня должно быть отложено</div>
+        <div className="mt-1 text-3xl font-bold text-slate-900">
           {nf0.format(Math.round(shouldHaveToday))} сом
         </div>
 
-        <div className="mt-2 grid grid-cols-3 gap-3">
-          <div className="rounded-2xl bg-white/75 ring-1 ring-sky-200/70 px-3 py-2">
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 px-3 py-2">
             <div className="text-[11px] text-slate-500">В месяц</div>
             <div className="mt-0.5 text-[13px] font-semibold text-slate-900">{nf0.format(Math.round(monthly))} сом</div>
           </div>
-          <div className="rounded-2xl bg-white/75 ring-1 ring-sky-200/70 px-3 py-2">
+          <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 px-3 py-2">
             <div className="text-[11px] text-slate-500">В день</div>
             <div className="mt-0.5 text-[13px] font-semibold text-slate-900">{nf0.format(Math.round(daily))} сом</div>
           </div>
-          <div className="rounded-2xl bg-white/75 ring-1 ring-sky-200/70 px-3 py-2">
+          <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 px-3 py-2">
             <div className="text-[11px] text-slate-500">Осталось до конца месяца</div>
             <div className="mt-0.5 text-[13px] font-semibold text-slate-900">{nf0.format(Math.round(remain))} сом</div>
           </div>
@@ -252,21 +238,13 @@ function SectionShell({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className={[
-        'mt-6 rounded-3xl p-5 sm:p-6',
-        'bg-gradient-to-br from-white via-slate-50 to-sky-50/85',
-        'ring-1 ring-sky-200/70',
-        'shadow-[0_22px_70px_rgba(15,23,42,0.20)]',
-        'backdrop-blur-xl',
-      ].join(' ')}
-    >
+    <div className="mt-6 rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-sky-100 ring-1 ring-sky-200 flex items-center justify-center">
+          <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-50 ring-1 ring-cyan-200">
             {icon}
           </div>
-          <div className="text-sm font-semibold text-slate-800">{title}</div>
+          <div className="text-sm font-semibold text-slate-900">{title}</div>
         </div>
         <div className="text-[11px] text-slate-500">{subtitle ?? '—'}</div>
       </div>
@@ -295,13 +273,13 @@ function MiniLine({
 }) {
   const toneCls =
     tone === 'emerald'
-      ? 'ring-emerald-200/70 bg-emerald-50/40'
+      ? 'ring-emerald-200 bg-emerald-50/40'
       : tone === 'amber'
-        ? 'ring-amber-200/70 bg-amber-50/40'
-        : 'ring-sky-200/70 bg-sky-50/40';
+        ? 'ring-amber-200 bg-amber-50/40'
+        : 'ring-sky-100 bg-slate-50/60';
 
   return (
-    <div className={['rounded-2xl px-3 py-2 ring-1', toneCls].join(' ')}>
+    <div className={['rounded-xl px-3 py-2 ring-1', toneCls].join(' ')}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-slate-700">{icon}</span>
@@ -312,17 +290,17 @@ function MiniLine({
         </div>
 
         <div className="text-right">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">на сегодня</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">на сегодня</div>
           <div className="text-[14px] font-semibold text-slate-900">{nf0.format(Math.round(today))}</div>
         </div>
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-        <div className="rounded-xl bg-white/70 ring-1 ring-slate-200/70 px-2 py-1 flex items-center justify-between">
+        <div className="rounded-lg bg-white ring-1 ring-slate-200 px-2 py-1 flex items-center justify-between">
           <span>в день</span>
           <span className="font-semibold text-slate-900">{nf0.format(Math.round(daily))}</span>
         </div>
-        <div className="rounded-xl bg-white/70 ring-1 ring-slate-200/70 px-2 py-1 flex items-center justify-between">
+        <div className="rounded-lg bg-white ring-1 ring-slate-200 px-2 py-1 flex items-center justify-between">
           <span>в месяц</span>
           <span className="font-semibold text-slate-900">{nf0.format(Math.round(monthly))}</span>
         </div>
@@ -516,99 +494,62 @@ export default function BudgetPage() {
   }, [branchOrder, lensMap, frameMap, rentMap, dim, d]);
 
   return (
-    <div className="min-h-screen bg-transparent text-slate-900">
-      <div className="mx-auto max-w-7xl px-5 pt-8 pb-10">
-        <div className="relative">
-          {/* page glow */}
-          <div className="pointer-events-none absolute -inset-x-6 -top-8 -bottom-8 -z-10">
-            <div className="absolute -top-10 left-1/4 h-72 w-72 rounded-full bg-sky-300/18 blur-3xl" />
-            <div className="absolute top-10 right-1/4 h-72 w-72 rounded-full bg-cyan-300/14 blur-3xl" />
-            <div className="absolute bottom-0 left-10 h-72 w-72 rounded-full bg-emerald-300/10 blur-3xl" />
-          </div>
-
-          {/* Header card */}
-          <div
-            className={[
-              'rounded-3xl p-5 sm:p-6',
-              'bg-gradient-to-br from-white/92 via-white/86 to-sky-50/80',
-              'ring-1 ring-sky-200/70',
-              'shadow-[0_22px_70px_rgba(15,23,42,0.22)]',
-              'backdrop-blur-xl',
-              'relative overflow-hidden',
-            ].join(' ')}
-          >
-            <div className="pointer-events-none absolute -top-16 -right-20 h-80 w-80 rounded-full bg-gradient-to-br from-cyan-300/25 via-sky-300/18 to-transparent blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-20 -left-16 h-80 w-80 rounded-full bg-gradient-to-tr from-emerald-300/14 via-teal-300/12 to-transparent blur-3xl" />
-
-            <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-start gap-3">
-                <div
-                  className={[
-                    'h-10 w-10 rounded-2xl',
-                    'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400',
-                    'shadow-[0_14px_40px_rgba(34,211,238,0.35)]',
-                    'flex items-center justify-center',
-                  ].join(' ')}
-                >
-                  <PiggyBank className="h-5 w-5 text-white" />
-                </div>
-
-                <div className="min-w-0">
-                  <div className="text-[30px] font-semibold leading-tight text-slate-900 drop-shadow-[0_1px_0_rgba(34,211,238,0.25)]">
-                    Финансовые накопления на закуп
-                  </div>
-
-                  <div className="mt-1 text-sm text-slate-600/90">
-                    Самое важное — сколько <span className="font-medium text-slate-900">на сегодня</span> должно быть отложено по каждой “коробочке”.
-                    <span className="mx-2 text-slate-400">•</span>
-                    Сегодня: <span className="font-medium text-slate-900">{`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`}</span>{' '}
-                    (<span className="font-medium text-slate-900">{d}</span> / {dim})
-                  </div>
-                </div>
+    <div className="text-slate-50">
+      <div>
+        {/* Header (бренд-стандарт) */}
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+              <PiggyBank className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-50">
+                Финансовые накопления на закуп
               </div>
-
-              <div className="flex items-center gap-2">
-                <SoftGhostButton onClick={load} disabled={loading}>
-                  <span className="inline-flex items-center gap-2">
-                    <RefreshCw className={['h-4 w-4', loading ? 'animate-spin' : ''].join(' ')} />
-                    Обновить
-                  </span>
-                </SoftGhostButton>
-                <SoftPrimaryButton disabled>
-                  <span className="inline-flex items-center gap-2">
-                    <Sparkles className="h-4 w-4" />
-                    Категории (скоро)
-                  </span>
-                </SoftPrimaryButton>
+              <div className="mt-0.5 text-[12px] text-cyan-300/50">
+                Сегодня: {`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`} · день {d} / {dim}
               </div>
             </div>
+          </div>
 
-            {err ? (
-              <div className="relative mt-4 rounded-2xl p-4 bg-rose-50/80 ring-1 ring-rose-200/80">
-                <div className="text-sm font-semibold text-rose-700">Ошибка загрузки</div>
-                <div className="mt-1 text-xs text-slate-600">{err}</div>
-              </div>
-            ) : null}
+          <div className="flex items-center gap-2">
+            <SoftGhostButton onClick={load} disabled={loading}>
+              <RefreshCw className={['h-4 w-4', loading ? 'animate-spin' : ''].join(' ')} />
+              Обновить
+            </SoftGhostButton>
+            <SoftPrimaryButton disabled>
+              <Sparkles className="h-4 w-4" />
+              Категории (скоро)
+            </SoftPrimaryButton>
+          </div>
+        </div>
 
-            {/* Overall summary */}
-            <div className="relative mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="rounded-2xl bg-white/75 ring-1 ring-sky-200/70 px-4 py-3">
-                <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">ИТОГО НА СЕГОДНЯ</div>
-                <div className="mt-1 text-[22px] font-semibold text-slate-900">
-                  {loading ? '…' : `${nf0.format(Math.round(overallToday))} сом`}
-                </div>
+        {err ? (
+          <div className="mb-4 rounded-xl bg-rose-50 ring-1 ring-rose-200 px-4 py-3">
+            <div className="text-sm font-semibold text-rose-700">Ошибка загрузки</div>
+            <div className="mt-1 text-xs text-slate-600">{err}</div>
+          </div>
+        ) : null}
+
+        <div>
+          {/* Overall summary */}
+          <div className="mb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Итого на сегодня</div>
+              <div className="mt-1 text-2xl font-bold text-slate-900">
+                {loading ? '…' : `${nf0.format(Math.round(overallToday))} сом`}
               </div>
-              <div className="rounded-2xl bg-white/75 ring-1 ring-sky-200/70 px-4 py-3">
-                <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">ИТОГО В МЕСЯЦ</div>
-                <div className="mt-1 text-[22px] font-semibold text-slate-900">
-                  {loading ? '…' : `${nf0.format(Math.round(overallMonthly))} сом`}
-                </div>
+            </div>
+            <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Итого в месяц</div>
+              <div className="mt-1 text-2xl font-bold text-slate-900">
+                {loading ? '…' : `${nf0.format(Math.round(overallMonthly))} сом`}
               </div>
-              <div className="rounded-2xl bg-white/75 ring-1 ring-sky-200/70 px-4 py-3">
-                <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">ИТОГО В ДЕНЬ</div>
-                <div className="mt-1 text-[22px] font-semibold text-slate-900">
-                  {loading ? '…' : `${nf0.format(Math.round(overallDaily))} сом`}
-                </div>
+            </div>
+            <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Итого в день</div>
+              <div className="mt-1 text-2xl font-bold text-slate-900">
+                {loading ? '…' : `${nf0.format(Math.round(overallDaily))} сом`}
               </div>
             </div>
           </div>
@@ -695,7 +636,7 @@ export default function BudgetPage() {
                 Array.from({ length: 5 }).map((_, i) => (
                   <div
                     key={i}
-                    className="rounded-2xl p-4 bg-slate-100/80 ring-1 ring-slate-200 shadow-[0_12px_40px_rgba(15,23,42,0.10)] animate-pulse"
+                    className="rounded-2xl p-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] animate-pulse"
                   >
                     <div className="h-4 w-24 bg-slate-200 rounded" />
                     <div className="mt-3 h-7 w-28 bg-slate-200 rounded" />
@@ -706,18 +647,12 @@ export default function BudgetPage() {
                 branches.map((b) => (
                   <div
                     key={b.key}
-                    className={[
-                      'rounded-2xl p-4',
-                      'bg-gradient-to-br from-white via-slate-50 to-sky-50/80',
-                      'ring-1 ring-sky-200/70',
-                      'shadow-[0_12px_40px_rgba(15,23,42,0.14)]',
-                      'backdrop-blur-xl',
-                    ].join(' ')}
+                    className="rounded-2xl p-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-[13px] font-semibold text-slate-900 truncate">{b.name}</div>
-                        <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                        <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                           итого на сегодня
                         </div>
                         <div className="mt-0.5 text-[18px] font-semibold text-slate-900">

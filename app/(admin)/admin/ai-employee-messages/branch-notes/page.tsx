@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Building2, Save, Loader2, CheckCircle2, AlertCircle, Users, Swords, Target, StickyNote } from 'lucide-react';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
+import AICenterTabs from '../AICenterTabs';
 
 type BranchRow = {
   branch_id: number;
@@ -114,20 +115,21 @@ export default function BranchNotesPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 pb-10 pt-4">
-      <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-sm">
-            <Building2 className="h-4 w-4" />
-          </div>
-          <div>
-            <h1 className="text-base font-bold text-slate-900">Заметки по филиалам</h1>
-            <p className="text-[12px] text-slate-500">
-              Эти заметки подтягиваются ассистентом автоматически при каждом вопросе о конкретном филиале. Чем подробнее — тем точнее советы.
-            </p>
+    <div className="text-slate-50">
+      {/* Header (бренд-стандарт) */}
+      <div className="mb-6 flex items-start gap-3">
+        <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+          <Building2 className="h-5 w-5 text-white" />
+        </div>
+        <div>
+          <div className="text-2xl font-bold tracking-tight text-slate-50">Заметки по филиалам</div>
+          <div className="mt-0.5 text-[12px] text-cyan-300/50">
+            Контекст филиалов для AI-советника — подтягивается автоматически
           </div>
         </div>
-      </section>
+      </div>
+
+      <AICenterTabs />
 
       {error && (
         <div className="mt-3 rounded-xl bg-rose-50 px-4 py-2 text-[12px] text-rose-700 ring-1 ring-rose-200 inline-flex items-center gap-2">
@@ -139,7 +141,7 @@ export default function BranchNotesPage() {
       {loading && (
         <div className="mt-4 space-y-3">
           {[1, 2, 3].map((k) => (
-            <div key={k} className="animate-pulse rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+            <div key={k} className="animate-pulse rounded-2xl bg-white p-4 ring-1 ring-sky-100">
               <div className="h-5 w-40 rounded bg-slate-200" />
               <div className="mt-3 h-20 w-full rounded bg-slate-200" />
             </div>
@@ -152,7 +154,7 @@ export default function BranchNotesPage() {
           const draft = drafts[row.branch_id] ?? EMPTY_DRAFT;
           const dirty = isDirty(row.branch_id, row);
           return (
-            <div key={row.branch_id} className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 shadow-sm">
+            <div key={row.branch_id} className="rounded-2xl bg-white p-4 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
               <div className="flex items-center gap-2 mb-3">
                 <Building2 className="h-4 w-4 text-cyan-600" />
                 <span className="text-sm font-semibold text-slate-900">{row.branch_name}</span>
@@ -210,7 +212,7 @@ export default function BranchNotesPage() {
                   className={classNames(
                     'inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition',
                     dirty
-                      ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_8px_20px_rgba(14,165,233,0.25)] hover:brightness-105'
+                      ? 'bg-cyan-500 text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] hover:bg-cyan-400'
                       : 'bg-slate-100 text-slate-400',
                   )}
                 >

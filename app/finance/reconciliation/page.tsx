@@ -26,6 +26,7 @@ import {
   Search,
   Building2,
   PiggyBank,
+  X,
 } from 'lucide-react';
 
 /* ====================== consts & helpers ====================== */
@@ -372,7 +373,7 @@ export default function Page() {
       const manual = p.manual_amount > 0 && f.manual_amount === 0 ? p.manual_amount : f.manual_amount;
       const expected = f.expected_amount;
       const diff = manual - expected;
-      const status = Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
+      const status: RecoRow['status'] = Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
       return { ...f, manual_amount: manual, diff, status };
     });
   }
@@ -425,7 +426,7 @@ export default function Page() {
           const manual = amount;
           const expected = r.expected_amount || 0;
           const diff = manual - expected;
-          const status = Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
+          const status: RecoRow['status'] = Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
           return { ...r, manual_amount: manual, diff, status };
         });
       });
@@ -568,23 +569,28 @@ export default function Page() {
       : DEFAULT_ACQUIRING_RATE_PCT;
 
   return (
-    <div className="min-h-screen text-slate-50">
-      <div className="mx-auto max-w-7xl px-5 pt-8 pb-10">
-        {/* header */}
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_0_25px_rgba(34,211,238,0.9)]">
-            <PiggyBank className="h-5 w-5" />
+    <div className="text-slate-50">
+      <div>
+        {/* Header (бренд-стандарт) */}
+        <div className="mb-6 flex items-start gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <PiggyBank className="h-5 w-5 text-white" />
           </div>
-          <h1 className="text-[28px] sm:text-[34px] font-semibold leading-tight text-slate-50 drop-shadow-[0_0_26px_rgba(56,189,248,0.8)]">
-            Сверка недельной выручки
-          </h1>
+          <div>
+            <div className="text-2xl font-bold tracking-tight text-slate-50">
+              Сверка недельной выручки
+            </div>
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">
+              Наличные, расходы и онлайн-оплаты по филиалам
+            </div>
+          </div>
         </div>
 
         {/* Навигация по неделям */}
-        <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/90 ring-1 ring-sky-200/80 px-4 py-3 shadow-[0_16px_45px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+        <div className="flex items-center justify-between rounded-2xl bg-white ring-1 ring-sky-100 px-4 py-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <button
             onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, -1))}
-            className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" /> Предыдущая
           </button>
@@ -602,7 +608,7 @@ export default function Page() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, +1))}
-              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors"
             >
               Следующая <ArrowRight className="h-4 w-4" />
             </button>
@@ -620,16 +626,16 @@ export default function Page() {
         <div className="mt-3">
           <Link
             href="/admin/budget"
-            className="group flex items-center gap-4 rounded-2xl px-5 py-5 bg-gradient-to-br from-white via-slate-50 to-amber-50/60 ring-1 ring-amber-200/80 shadow-[0_16px_45px_rgba(15,23,42,0.55)] hover:-translate-y-0.5 transition-all duration-150"
+            className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] hover:ring-cyan-300/40 transition"
           >
-            <div className="h-12 w-12 shrink-0 rounded-2xl grid place-items-center bg-gradient-to-br from-amber-400 to-orange-500 shadow-[0_12px_40px_rgba(251,146,60,0.40)]">
-              <PiggyBank className="h-6 w-6 text-white" />
+            <div className="h-10 w-10 shrink-0 grid place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+              <PiggyBank className="h-5 w-5 text-white" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[16px] font-semibold text-slate-900">Бюджет расходов</div>
-              <div className="mt-0.5 text-[13px] text-slate-500">Планирование и контроль расходов по филиалам</div>
+              <div className="text-[15px] font-semibold text-slate-900">Бюджет расходов</div>
+              <div className="mt-0.5 text-[12px] text-slate-500">Планирование и контроль расходов по филиалам</div>
             </div>
-            <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-amber-500 transition-colors" />
+            <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-cyan-500 transition-colors" />
           </Link>
         </div>
 
@@ -640,7 +646,7 @@ export default function Page() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Поиск филиала…"
-              className="w-full rounded-[14px] bg-white/90 px-4 py-2.5 pl-10 outline-none ring-1 ring-sky-200/80 focus:ring-2 focus:ring-cyan-400/80 shadow-[0_16px_40px_rgba(15,23,42,0.55)] placeholder:text-slate-400 text-slate-900 backdrop-blur-xl"
+              className="w-full rounded-xl bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
             />
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           </div>
@@ -651,8 +657,8 @@ export default function Page() {
           </div>
         </div>
 
-        {/* сводка по НАЛИЧНЫМ — уровень 2 */}
-        <div className="mt-6 rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 backdrop-blur-xl ring-1 ring-sky-200/90 shadow-[0_22px_70px_rgba(15,23,42,0.6)] text-slate-900">
+        {/* сводка по НАЛИЧНЫМ */}
+        <div className="mt-6 rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
           <div className="mb-3 text-sm font-semibold text-slate-800">Наличные по филиалам</div>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
             <StatBox
@@ -676,7 +682,7 @@ export default function Page() {
               <div className="text-sm text-slate-700 mb-2">Совпадение по филиалам</div>
               <div className="h-2 w-full rounded-full bg-slate-200/80 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-emerald-400 via-teal-400 to-sky-400"
+                  className="h-full bg-cyan-500"
                   style={{ width: `${cashSummary.percent}%` }}
                 />
               </div>
@@ -690,7 +696,7 @@ export default function Page() {
         </div>
 
         {/* блок по РАСХОДАМ (наличные) */}
-        <div className="mt-6 rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-white via-rose-50 to-amber-50/85 backdrop-blur-xl ring-1 ring-rose-200/90 shadow-[0_22px_70px_rgba(15,23,42,0.6)] text-slate-900">
+        <div className="mt-6 rounded-2xl p-5 bg-white ring-1 ring-rose-200 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-200">
@@ -710,7 +716,7 @@ export default function Page() {
             />
             <div className="sm:col-span-3 flex flex-col gap-2">
               {expensesSummary.list.length === 0 ? (
-                <div className="rounded-xl bg-white/80 ring-1 ring-slate-200 px-3 py-2 text-xs text-slate-500">
+                <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 px-3 py-2 text-xs text-slate-500">
                   Нет расходов по филиалам за эту неделю.
                 </div>
               ) : (
@@ -718,7 +724,7 @@ export default function Page() {
                   {expensesSummary.list.map((item) => (
                     <div
                       key={item.branch_id}
-                      className="rounded-xl ring-1 ring-rose-200 bg-gradient-to-r from-rose-50 via-white to-amber-50 px-3 py-2 flex items-center justify-between text-sm"
+                      className="rounded-xl bg-rose-50 ring-1 ring-rose-200 px-3 py-2 flex items-center justify-between text-sm"
                     >
                       <div className="font-medium text-slate-900">{item.branch_name}</div>
                       <div className="font-semibold text-rose-700">{fmtKGS(item.cash_expenses)}</div>
@@ -731,7 +737,7 @@ export default function Page() {
         </div>
 
         {/* блок по ОНЛАЙН-оплатам (вся сеть) */}
-        <div className="mt-6 rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 backdrop-blur-xl ring-1 ring-sky-200/90 shadow-[0_22px_70px_rgba(15,23,42,0.6)] text-slate-900">
+        <div className="mt-6 rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-teal-100 text-teal-700 ring-1 ring-teal-200">
@@ -780,7 +786,7 @@ export default function Page() {
             </div>
 
             {onlinePosByBranch.list.length === 0 ? (
-              <div className="rounded-xl bg-white/80 ring-1 ring-slate-200 px-3 py-2 text-xs text-slate-500">
+              <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 px-3 py-2 text-xs text-slate-500">
                 Нет POS-онлайна по филиалам за эту неделю.
               </div>
             ) : (
@@ -788,7 +794,7 @@ export default function Page() {
                 {onlinePosByBranch.list.map((item) => (
                   <div
                     key={item.branch_id}
-                    className="rounded-xl ring-1 ring-sky-200 bg-gradient-to-r from-sky-50 via-white to-sky-50 px-3 py-2 flex items-center justify-between text-sm"
+                    className="rounded-xl bg-sky-50 ring-1 ring-sky-200 px-3 py-2 flex items-center justify-between text-sm"
                   >
                     <div className="font-medium text-slate-900">{item.branch_name}</div>
                     <div className="font-semibold text-slate-900">{fmtKGS(item.pos_amount)}</div>
@@ -802,7 +808,7 @@ export default function Page() {
         {/* карточки по филиалам */}
         <div className="mt-7">
           {err && (
-            <div className="mb-4 rounded-xl bg-red-50 text-red-800 ring-1 ring-red-300 px-4 py-3 shadow-[0_10px_35px_rgba(15,23,42,0.4)]">
+            <div className="mb-4 rounded-xl bg-rose-50 text-rose-800 ring-1 ring-rose-200 px-4 py-3">
               {err}
             </div>
           )}
@@ -835,7 +841,7 @@ export default function Page() {
         {onlineRow && (
           <div className="mt-10">
             <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-100">
-              <PiggyBank className="h-4 w-4 text-teal-300" />
+              <PiggyBank className="h-4 w-4 text-cyan-300" />
               Онлайн-оплаты за неделю
             </h2>
             <OnlineCard
@@ -863,11 +869,11 @@ export default function Page() {
                 Переплаты (наличные) • всего {cashSummary.overList.length} • сумма {fmtKGS(cashSummary.overpayTotal)}
               </div>
             </div>
-            <div className="rounded-2xl ring-1 ring-amber-200 bg-amber-50/95 p-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 backdrop-blur-xl shadow-[0_18px_55px_rgba(15,23,42,0.55)]">
+            <div className="rounded-2xl ring-1 ring-amber-200 bg-white p-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
               {cashSummary.overList.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-xl ring-1 ring-amber-300 bg-gradient-to-r from-amber-50 via-white to-amber-100 px-3 py-2 flex items-center justify-between text-sm"
+                  className="rounded-xl bg-amber-50 ring-1 ring-amber-200 px-3 py-2 flex items-center justify-between text-sm"
                 >
                   <div className="font-medium text-slate-900">{item.name}</div>
                   <div className="font-semibold text-amber-700">{fmtKGS(item.delta)}</div>
@@ -887,7 +893,7 @@ export default function Page() {
           }}
         >
           <div className="flex items-center gap-2 mb-4">
-            <Clock className="h-5 w-5 text-teal-400" />
+            <Clock className="h-5 w-5 text-cyan-500" />
             <div className="font-semibold text-slate-900">История фиксаций: {histOpen.branchName}</div>
           </div>
           {histLoading && <div className="text-sm text-slate-500">Загрузка…</div>}
@@ -924,12 +930,10 @@ function SoftPrimaryBtn({
     <button
       {...p}
       className={
-        'inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white shadow-md ' +
-        'focus:outline-none focus:ring-2 focus:ring-teal-300/70 ' +
+        'inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white ' +
+        'shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 ' +
+        'focus:outline-none focus:ring-2 focus:ring-cyan-300/70 ' +
         'disabled:opacity-50 disabled:cursor-not-allowed ' +
-        'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 ' +
-        'hover:from-teal-300 hover:via-cyan-300 hover:to-sky-300 ' +
-        'active:from-teal-500 active:via-cyan-500 active:to-sky-500 ' +
         className
       }
     >
@@ -947,9 +951,8 @@ function SoftGhostBtn({
     <button
       {...p}
       className={
-        'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium ' +
-        'bg-white/85 hover:bg-white text-teal-700 ' +
-        'ring-1 ring-teal-200 shadow-[0_10px_30px_rgba(15,23,42,0.45)] ' +
+        'inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ' +
+        'ring-1 ring-slate-200 transition hover:bg-slate-50 ' +
         'disabled:opacity-50 disabled:cursor-not-allowed ' +
         className
       }
@@ -988,29 +991,18 @@ function StatBox({
 }) {
   const ring =
     tone === 'bad'
-      ? 'ring-red-200'
+      ? 'ring-rose-200'
       : tone === 'warn'
       ? 'ring-amber-200'
       : tone === 'ok'
       ? 'ring-emerald-200'
-      : 'ring-sky-200';
-
-  const bg =
-    tone === 'bad'
-      ? 'from-red-50 via-white to-rose-50'
-      : tone === 'warn'
-      ? 'from-amber-50 via-white to-amber-50'
-      : tone === 'ok'
-      ? 'from-emerald-50 via-white to-emerald-50'
-      : 'from-sky-50 via-white to-sky-50';
+      : 'ring-sky-100';
 
   return (
-    <div
-      className={`rounded-2xl p-5 ring-1 ${ring} bg-gradient-to-br ${bg} shadow-[0_16px_45px_rgba(15,23,42,0.35)] backdrop-blur-lg`}
-    >
-      <div className="text-sm text-slate-700">{title}</div>
-      <div className="text-[22px] font-semibold mt-1 text-slate-900">{value}</div>
-      {subtitle && <div className="text-xs text-slate-500 mt-1">{subtitle}</div>}
+    <div className={`rounded-2xl p-4 bg-white ring-1 ${ring} shadow-[0_8px_30px_rgba(15,23,42,0.45)]`}>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{title}</div>
+      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
+      {subtitle && <div className="mt-1 text-[11px] text-slate-500">{subtitle}</div>}
     </div>
   );
 }
@@ -1048,7 +1040,7 @@ function BranchCard({
         icon: <CheckCircle2 className="h-4 w-4" />,
       },
       shortage: {
-        chip: 'bg-red-50 text-red-700 ring-red-200',
+        chip: 'bg-rose-50 text-rose-700 ring-rose-200',
         label: 'Недостача',
         icon: <AlertTriangle className="h-4 w-4" />,
       },
@@ -1082,7 +1074,7 @@ function BranchCard({
   }
 
   return (
-    <div className="rounded-2xl p-5 ring-1 ring-sky-200 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 shadow-[0_22px_65px_rgба(15,23,42,0.55)] backdrop-blur-xl text-slate-900">
+    <div className="rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="font-semibold text-slate-900">{row.branch_name}</div>
@@ -1115,9 +1107,9 @@ function BranchCard({
 
       {/* Progress */}
       <div className="mt-3">
-        <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-teal-400 via-cyan-300 to-emerald-300"
+            className="h-full bg-cyan-500"
             style={{ width: `${percent}%` }}
           />
         </div>
@@ -1132,7 +1124,7 @@ function BranchCard({
             onChange={(e) => setInput(e.target.value)}
             placeholder="Факт, сом (наличные)"
             inputMode="numeric"
-            className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
+            className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
           />
           <SoftPrimaryBtn onClick={handleSave} disabled={saving}>
             {saving ? 'Сохраняю…' : 'Сохранить'}
@@ -1143,7 +1135,7 @@ function BranchCard({
           onChange={(e) => setComment(e.target.value)}
           placeholder="Комментарий"
           rows={2}
-          className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
+          className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
         />
       </div>
 
@@ -1202,7 +1194,7 @@ function OnlineCard({
   const theme =
     {
       match: { chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200', label: 'Совпадает' },
-      shortage: { chip: 'bg-red-50 text-red-700 ring-red-200', label: 'Недостача' },
+      shortage: { chip: 'bg-rose-50 text-rose-700 ring-rose-200', label: 'Недостача' },
       overpay: { chip: 'bg-amber-50 text-amber-700 ring-amber-200', label: 'Переплата' },
     }[row.status] || { chip: 'bg-slate-100 text-slate-700 ring-slate-200', label: '—' };
 
@@ -1213,7 +1205,7 @@ function OnlineCard({
     row.expected_amount > 0 ? fmtKGS((row.expected_amount * ratePct) / 100) : fmtKGS(0);
 
   return (
-    <div className="rounded-2xl p-5 ring-1 ring-sky-200 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 shadow-[0_22px_65px_rgба(15,23,42,0.55)] backdrop-blur-xl text-slate-900">
+    <div className="rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1243,9 +1235,9 @@ function OnlineCard({
 
       {/* Progress */}
       <div className="mt-3">
-        <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-teal-400 via-cyan-300 to-emerald-300"
+            className="h-full bg-cyan-500"
             style={{ width: `${percent}%` }}
           />
         </div>
@@ -1256,18 +1248,18 @@ function OnlineCard({
       <div className="mt-4 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <div className="text-[11px] text-slate-500 mb-1">Факт по банку, сом</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Факт по банку, сом</div>
             <input
               value={inputAmount}
               onChange={(e) => onChangeAmount(e.target.value)}
               placeholder="Сколько реально пришло на счёт"
               inputMode="numeric"
-              className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
+              className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
             />
           </div>
 
           <div>
-            <div className="text-[11px] text-slate-500 mb-1">Комиссия эквайринга</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Комиссия эквайринга</div>
 
             {/* ставка + сумма */}
             <div className="flex items-end gap-2">
@@ -1278,7 +1270,7 @@ function OnlineCard({
                   onChange={(e) => onChangeCommissionRate(e.target.value)}
                   placeholder={String(DEFAULT_ACQUIRING_RATE_PCT)}
                   inputMode="decimal"
-                  className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
+                  className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
                 />
               </div>
 
@@ -1289,7 +1281,7 @@ function OnlineCard({
                   onChange={(e) => onChangeCommission(e.target.value)}
                   placeholder="Авто от ставки"
                   inputMode="numeric"
-                  className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
+                  className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
                 />
               </div>
             </div>
@@ -1301,13 +1293,13 @@ function OnlineCard({
         </div>
 
         <div>
-          <div className="text-[11px] text-slate-500 mb-1">Комментарий</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Комментарий</div>
           <textarea
             value={comment}
             onChange={(e) => onChangeComment(e.target.value)}
             rows={2}
             placeholder="Например: «Много возвратов по онлайну»"
-            className="w-full rounded-xl bg-white/90 px-3 py-2 ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400 outline-none placeholder:text-slate-400 text-slate-900"
+            className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
           />
         </div>
       </div>
@@ -1324,7 +1316,7 @@ function OnlineCard({
 
 function EmptyState() {
   return (
-    <div className="rounded-3xl ring-1 ring-sky-200 bg-gradient-to-br from-white via-slate-50 to-sky-50/85 p-10 text-center text-slate-700 shadow-[0_22px_60px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+    <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-10 text-center text-slate-500 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
       Нет филиалов по фильтру.
     </div>
   );
@@ -1332,7 +1324,7 @@ function EmptyState() {
 
 function SkeletonCard() {
   return (
-    <div className="rounded-2xl p-5 ring-1 ring-sky-200/70 bg-slate-100/80 shadow-[0_18px_50px_rgба(15,23,42,0.45)] animate-pulse">
+    <div className="rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] animate-pulse">
       <div className="h-6 rounded bg-slate-200" />
       <div className="mt-4 grid grid-cols-3 gap-3">
         <div className="h-8 rounded bg-slate-200" />
@@ -1347,14 +1339,21 @@ function SkeletonCard() {
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="absolute left-1/2 top-1/2 w-[min(92vw,640px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white/95 p-5 ring-1 ring-sky-200 shadow-[0_30px_120px_rgba(0,0,0,0.65)]">
-        <div className="absolute right-3 top-3">
-          <button onClick={onClose} className="rounded-full px-2 py-1 text-slate-500 hover:bg-slate-100">
-            ✕
-          </button>
-        </div>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-2xl rounded-3xl bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Закрыть"
+        >
+          <X className="h-5 w-5" />
+        </button>
         {children}
       </div>
     </div>

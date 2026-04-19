@@ -151,9 +151,7 @@ function BranchCard({ branch }: { branch: BranchStats }) {
 
   return (
     <div
-      className="rounded-2xl bg-white ring-1 ring-sky-200/70 p-4
-                 shadow-[0_8px_30px_rgba(15,23,42,0.45)]
-                 text-slate-900 transition-transform duration-200 hover:-translate-y-0.5"
+      className="rounded-2xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900 transition hover:ring-cyan-300/40"
     >
       {/* Name + status */}
       <div className="flex items-center justify-between gap-2">
@@ -467,24 +465,13 @@ export default function BarcodesOverviewPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-transparent text-slate-50">
-      {/* ВАЖНО: убран прямоугольный фон-оверлей (inset-0 radial-gradient). Оставили только «точечные» свечения (не прямоугольник). */}
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-44 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-cyan-500/12 blur-[90px]" />
-        <div className="absolute -bottom-44 right-0 h-[520px] w-[520px] rounded-full bg-teal-500/10 blur-[100px]" />
-      </div>
-
-      <div className="relative mx-auto max-w-7xl px-5 pt-8 pb-10">
-        {/* Header (прозрачный, без подложки) */}
+    <div className="text-slate-50">
+      <div>
+        {/* Header (бренд-стандарт) */}
         <div className="mb-6 flex items-start gap-3">
-          <div
-            className="grid h-10 w-10 place-items-center rounded-2xl
-                       bg-cyan-500
-                       shadow-[0_4px_20px_rgba(34,211,238,0.40)]"
-          >
-            <Barcode className="h-5 w-5 text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]" />
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <Barcode className="h-5 w-5 text-white" />
           </div>
-
           <div>
             <div className="text-2xl font-bold tracking-tight text-slate-50">
               Оправы и штрих-коды
@@ -548,9 +535,7 @@ export default function BarcodesOverviewPage() {
                 value={rbBarcode}
                 onChange={(e) => setRbBarcode(e.target.value)}
                 placeholder="Напр. KBRPF250117"
-                className="mt-1 w-full rounded-2xl bg-white/90 px-3 py-2.5 text-sm text-slate-900
-                           ring-1 ring-sky-200/80 shadow-[0_14px_40px_rgba(15,23,42,0.14)]
-                           outline-none focus:ring-2 focus:ring-cyan-400/70"
+                className="mt-1 w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
               />
 
               <div className="mt-2 flex items-center gap-2">
@@ -595,7 +580,7 @@ export default function BarcodesOverviewPage() {
           ) : null}
 
           {rbJson ? (
-            <pre className="mt-4 max-h-60 overflow-auto rounded-2xl bg-white/85 p-3 text-[11px] text-slate-800 ring-1 ring-slate-200 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+            <pre className="mt-4 max-h-60 overflow-auto rounded-xl bg-slate-50/60 p-3 text-[11px] text-slate-800 ring-1 ring-slate-200">
               {JSON.stringify(rbJson, null, 2)}
             </pre>
           ) : null}

@@ -63,9 +63,9 @@ function cx(...a: (string | false | null | undefined)[]) {
 }
 
 const CATEGORY_LABELS: Record<string, { label: string; desc: string; accent: string; accentBg: string; icon: 'layers' | 'star' | 'crown' }> = {
-  basic:   { label: 'Базовые',      desc: 'Стандартные линзы',    accent: 'text-white', accentBg: 'bg-gradient-to-br from-[#22d3ee] to-cyan-500', icon: 'layers' },
-  special: { label: 'Специальные',  desc: 'Линзы с покрытиями',   accent: 'text-white', accentBg: 'bg-gradient-to-br from-sky-400 to-blue-500', icon: 'star' },
-  premium: { label: 'Премиум',      desc: 'Топовые линзы',        accent: 'text-white', accentBg: 'bg-gradient-to-br from-slate-600 to-slate-800', icon: 'crown' },
+  basic:   { label: 'Базовые',      desc: 'Стандартные линзы',    accent: 'text-white', accentBg: 'bg-cyan-500',    icon: 'layers' },
+  special: { label: 'Специальные',  desc: 'Линзы с покрытиями',   accent: 'text-white', accentBg: 'bg-sky-500',     icon: 'star' },
+  premium: { label: 'Премиум',      desc: 'Топовые линзы',        accent: 'text-white', accentBg: 'bg-slate-800',   icon: 'crown' },
 };
 
 const CATEGORY_ORDER = ['basic', 'special', 'premium'];
@@ -116,7 +116,7 @@ function getBeautifulName(lensId: string, lensName: string | null | undefined): 
 function GlassCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={cx(
-      'rounded-2xl border border-slate-200 bg-white shadow-sm',
+      'rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]',
       className,
     )}>
       {children}
@@ -137,13 +137,13 @@ function GBtn({
   title?: string;
 }) {
   const base = cx(
-    'inline-flex items-center gap-1.5 rounded-xl font-medium transition-all focus:outline-none focus:ring-2 focus:ring-sky-300',
-    'disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap',
-    size === 'sm' ? 'px-2.5 py-1.5 text-[11px]' : 'px-4 py-2.5 text-[13px]',
+    'inline-flex items-center gap-1.5 rounded-xl font-semibold transition focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
+    'disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap',
+    size === 'sm' ? 'px-2.5 py-1.5 text-[11px]' : 'px-4 py-2.5 text-sm',
   );
-  const solid   = 'bg-gradient-to-r from-sky-500 to-cyan-500 text-white hover:from-sky-600 hover:to-cyan-600 shadow-sm';
-  const outline = 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300';
-  const ghost   = 'text-slate-600 hover:bg-slate-100';
+  const solid   = 'bg-cyan-500 text-white hover:bg-cyan-400 shadow-[0_4px_16px_rgba(34,211,238,0.28)]';
+  const outline = 'bg-white ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50';
+  const ghost   = 'text-slate-600 hover:bg-slate-50';
   return (
     <button type={type} onClick={onClick} disabled={disabled} title={title}
       className={cx(base, variant === 'solid' ? solid : variant === 'outline' ? outline : ghost, className)}>
@@ -157,9 +157,8 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cx(
-        'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white',
-        'text-sm text-slate-900 placeholder:text-slate-400 outline-none',
-        'focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition',
+        'w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400',
+        'ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70',
         props.className,
       )}
     />
@@ -171,8 +170,8 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={cx(
-        'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white',
-        'text-sm text-slate-900 outline-none focus:ring-2 focus:ring-sky-400 transition',
+        'w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900',
+        'ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70',
         props.className,
       )}
     />
@@ -281,7 +280,7 @@ function CostRow({ lens, draft, isSaving, onChange, onSave }: CostRowProps) {
           type="button"
           onClick={onSave}
           disabled={isSaving || !isDirty}
-          className="rounded-lg bg-gradient-to-r from-emerald-400 to-teal-500 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition"
+          className="rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_4px_12px_rgba(16,185,129,0.28)] hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
         >
           {isSaving ? '…' : 'OK'}
         </button>
@@ -616,51 +615,48 @@ export default function LensPricesSettingsPage() {
   const otherCountries    = countries.filter(c => c.id !== 'kg');
 
   return (
-    <div className="min-h-[100dvh] text-slate-900">
+    <div className="text-slate-50">
       <Toaster position="top-right" />
 
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-5">
+      <div className="space-y-5">
 
-        {/* ── Header ── */}
-        <div className="rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_8px_32px_rgba(15,23,42,0.08)] overflow-hidden">
-          <div className="h-1.5 w-full bg-gradient-to-r from-[#22d3ee] via-cyan-400 to-sky-500" />
-          <div className="px-6 py-5 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3.5">
-              <div className="w-13 h-13 w-[52px] h-[52px] rounded-2xl bg-gradient-to-br from-[#22d3ee] to-cyan-500 flex items-center justify-center shadow-[0_4px_20px_rgba(34,211,238,0.4)] shrink-0">
-                <Sparkles size={22} className="text-white" />
-              </div>
-              <div>
-                <h1 className="text-[20px] font-bold text-[#0f172a] tracking-tight">Цены на линзы</h1>
-                <p className="text-[12px] text-slate-500 mt-0.5">Мультивалютный каталог · цены синхронизируются на кассу и тач-экран</p>
-              </div>
+        {/* Header (бренд-стандарт) */}
+        <div className="flex items-start gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <div className="text-2xl font-bold tracking-tight text-slate-50">Цены на линзы</div>
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">
+              Мультивалютный каталог · цены синхронизируются на кассу и тач-экран
             </div>
           </div>
         </div>
 
         {/* ── Себестоимость линз (KGS, за одну линзу) ── */}
-        <div className="px-2">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
           <button
             type="button"
             onClick={() => setShowCosts((s) => !s)}
-            className="w-full flex items-center gap-3 py-3 hover:opacity-80 transition"
+            className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50/60 transition"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-[0_2px_10px_rgba(16,185,129,0.3)] shrink-0">
-              <Calculator size={18} className="text-white" />
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.28)]">
+              <Calculator className="h-4 w-4 text-white" />
             </div>
             <div className="flex-1 text-left">
-              <div className="text-[15px] font-bold text-white">Себестоимость линз</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
+              <div className="text-[15px] font-semibold text-slate-900">Себестоимость линз</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
                 За одну линзу в сомах · маржа и наценка считаются автоматически
               </div>
             </div>
-            <span className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-slate-300 ring-1 ring-white/10">
+            <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
               {costs.filter((c) => c.cost_price_from != null || c.cost_price_to != null).length}/{costs.length} заполнено
             </span>
             {showCosts ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
           </button>
 
           {showCosts && (
-            <div className="mt-3 space-y-5">
+            <div className="border-t border-slate-100 p-5 space-y-4">
               {CATEGORY_ORDER.map((cat) => {
                 const meta = CATEGORY_LABELS[cat];
                 const items = costs.filter((c) => c.category === cat);
@@ -669,7 +665,7 @@ export default function LensPricesSettingsPage() {
                 const CatIcon = meta?.icon === 'layers' ? Layers : meta?.icon === 'star' ? Star : Crown;
 
                 return (
-                  <div key={cat} className="rounded-2xl border border-slate-100 bg-white overflow-hidden">
+                  <div key={cat} className="rounded-xl ring-1 ring-slate-200 overflow-hidden">
                     {/* Category header */}
                     <div className={cx('flex items-center gap-2.5 px-4 py-2.5', meta?.accentBg ?? 'bg-slate-500')}>
                       <CatIcon size={16} className="text-white" />
@@ -730,18 +726,18 @@ export default function LensPricesSettingsPage() {
         </div>
 
         {/* ── Предпросмотр формулы v6 (без записи в БД) ── */}
-        <div className="px-2">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
           <button
             type="button"
             onClick={() => setShowFormula((s) => !s)}
-            className="w-full flex items-center gap-3 py-3 hover:opacity-80 transition"
+            className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50/60 transition"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-fuchsia-400 to-pink-500 flex items-center justify-center shadow-[0_2px_10px_rgba(236,72,153,0.3)] shrink-0">
-              <Wand2 size={18} className="text-white" />
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+              <Wand2 className="h-4 w-4 text-white" />
             </div>
             <div className="flex-1 text-left">
-              <div className="text-[15px] font-bold text-white">Предпросмотр формулы v6</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
+              <div className="text-[15px] font-semibold text-slate-900">Предпросмотр формулы v6</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
                 Считается из себестоимости · НЕ сохраняется в БД · только для просмотра
               </div>
             </div>
@@ -749,7 +745,7 @@ export default function LensPricesSettingsPage() {
               value={formulaCity}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => setFormulaCity(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-700 outline-none focus:ring-2 focus:ring-fuchsia-300"
+              className="rounded-lg bg-white ring-1 ring-sky-200 px-2.5 py-1 text-[11px] text-slate-700 outline-none focus:ring-2 focus:ring-cyan-400/70"
             >
               {(['KG', 'UZ', 'KZ', 'RU'] as const).map((cc) => {
                 const cities = Object.entries(CITY_INDEX).filter(([, v]) => v.country === cc);
@@ -764,8 +760,8 @@ export default function LensPricesSettingsPage() {
           </button>
 
           {showFormula && (
-            <div className="mt-3 rounded-2xl border border-slate-100 bg-white overflow-hidden">
-              <div className="px-4 py-3 bg-gradient-to-r from-fuchsia-50 to-pink-50 border-b border-slate-100 flex flex-wrap items-center gap-3">
+            <div className="border-t border-slate-100">
+              <div className="px-4 py-3 bg-cyan-50 border-b border-cyan-100 flex flex-wrap items-center gap-3">
                 <div className="text-[12px] text-slate-600">
                   Город: <span className="font-bold text-slate-800">{formulaCity}</span>
                   {formulaCityEntry && (
@@ -916,7 +912,7 @@ export default function LensPricesSettingsPage() {
               </div>
 
               <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 text-[10.5px] text-slate-500 flex items-center gap-2">
-                <Sparkles size={11} className="text-fuchsia-500" />
+                <Sparkles size={11} className="text-cyan-500" />
                 Цены рассчитаны формулой v6 из себестоимостей. Ничего в базу не записано.
                 Пустое «—» = не заполнена себестоимость или линза вне формулы.
               </div>
@@ -925,32 +921,32 @@ export default function LensPricesSettingsPage() {
         </div>
 
         {/* ── Филиальные цены по формуле ── */}
-        <div className="px-2">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
           <button
             type="button"
             onClick={() => setShowBranches((s) => !s)}
-            className="w-full flex items-center gap-3 py-3 hover:opacity-80 transition"
+            className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50/60 transition"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shadow-[0_2px_10px_rgba(99,102,241,0.3)] shrink-0">
-              <MapPin size={18} className="text-white" />
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+              <MapPin className="h-4 w-4 text-white" />
             </div>
             <div className="flex-1 text-left">
-              <div className="text-[15px] font-bold text-white">Филиальные цены по формуле</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
+              <div className="text-[15px] font-semibold text-slate-900">Филиальные цены по формуле</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
                 По умолчанию филиал использует цены страны. Формулу можно включить как исключение (например, для Токмока).
               </div>
             </div>
-            <span className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-slate-300 ring-1 ring-white/10">
+            <span className="rounded-lg bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold text-cyan-700 ring-1 ring-cyan-200">
               {branchStatuses.filter(b => b.is_enabled).length}/{branchStatuses.length} с формулой
             </span>
             {showBranches ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
           </button>
 
           {showBranches && (
-            <div className="mt-3 rounded-2xl border border-slate-100 bg-white overflow-hidden">
+            <div className="border-t border-slate-100">
               {loadingBranchStatus ? (
                 <div className="p-8 text-center text-sm text-slate-400">
-                  <Sparkles className="mx-auto mb-2 h-5 w-5 animate-spin text-indigo-400" />
+                  <Sparkles className="mx-auto mb-2 h-5 w-5 animate-spin text-cyan-500" />
                   Загрузка…
                 </div>
               ) : branchStatuses.length === 0 ? (
@@ -1008,7 +1004,7 @@ export default function LensPricesSettingsPage() {
                                     type="button"
                                     onClick={() => applyFormulaToBranch(b.branch_id, b.city!)}
                                     disabled={applyingBranchId === b.branch_id}
-                                    className="rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                                    className="rounded-lg bg-cyan-500 px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)] hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
                                   >
                                     {applyingBranchId === b.branch_id
                                       ? '…'
@@ -1035,7 +1031,7 @@ export default function LensPricesSettingsPage() {
                 </div>
               )}
               <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 text-[10.5px] text-slate-500 flex items-center gap-2">
-                <Sparkles size={11} className="text-indigo-500" />
+                <Sparkles size={11} className="text-cyan-500" />
                 При нажатии «Применить» формула пересчитает цены из себестоимости и запишет их в БД. POS/Kiosk филиала увидят их при следующем запросе.
               </div>
             </div>
@@ -1044,23 +1040,23 @@ export default function LensPricesSettingsPage() {
 
         {/* ── Вкладки стран ── */}
         <div className="px-2 py-4">
-          <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.15em] text-cyan-500/70">Страна</p>
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/60">Страна</p>
           <div className="flex flex-wrap gap-2">
             {countries.map(c => (
               <button
                 key={c.id}
                 onClick={() => setActiveCountry(c.id)}
                 className={cx(
-                  'flex items-center gap-2 rounded-xl px-5 py-3 text-[13px] font-semibold transition-all',
+                  'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition',
                   activeCountry === c.id
-                    ? 'bg-gradient-to-r from-[#22d3ee] via-cyan-400 to-sky-400 text-[#0f172a] shadow-[0_4px_20px_rgba(34,211,238,0.3)]'
-                    : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:ring-cyan-300 hover:text-cyan-700',
+                    ? 'bg-cyan-500 text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)]'
+                    : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
                 )}
               >
                 <span>{c.name}</span>
                 <span className={cx(
                   'rounded-lg px-2 py-0.5 text-[10px] font-bold',
-                  activeCountry === c.id ? 'bg-[#0f172a]/15 text-[#0f172a]' : 'bg-slate-100 text-slate-400',
+                  activeCountry === c.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400',
                 )}>
                   {c.currency}
                 </span>
@@ -1096,7 +1092,7 @@ export default function LensPricesSettingsPage() {
           ) : (
             <div className="space-y-6">
               {grouped.map(({ cat, meta, items }) => (
-                <div key={cat} className="overflow-hidden rounded-2xl ring-1 ring-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.12)]">
+                <div key={cat} className="overflow-hidden rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
                   {/* Заголовок категории */}
                   <div className={cx('px-4 py-3.5 flex items-center gap-3', meta.accentBg)}>
                     <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
@@ -1152,7 +1148,7 @@ export default function LensPricesSettingsPage() {
                               <td className="px-3 py-2.5 text-right">
                                 <div className="flex items-center justify-end gap-1">
                                   <input
-                                    className="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-right text-[12px] text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400 focus:border-cyan-400 focus:bg-white transition"
+                                    className="w-20 rounded-lg bg-white ring-1 ring-sky-200 px-2 py-1 text-right text-[12px] text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400/70 transition"
                                     value={ep.from}
                                     onChange={e => setEditPrices(p => ({ ...p, [lens.lens_id]: { ...ep, from: e.target.value } }))}
                                   />
@@ -1163,7 +1159,7 @@ export default function LensPricesSettingsPage() {
                               <td className="px-3 py-2.5 text-right">
                                 <div className="flex items-center justify-end gap-1">
                                   <input
-                                    className="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-right text-[12px] text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400 focus:border-cyan-400 focus:bg-white transition"
+                                    className="w-20 rounded-lg bg-white ring-1 ring-sky-200 px-2 py-1 text-right text-[12px] text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400/70 transition"
                                     value={ep.to}
                                     onChange={e => setEditPrices(p => ({ ...p, [lens.lens_id]: { ...ep, to: e.target.value } }))}
                                   />
@@ -1211,14 +1207,14 @@ export default function LensPricesSettingsPage() {
               {otherCountries.map(c => (
                 <div
                   key={c.id}
-                  className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50/80 p-4"
+                  className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-4"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="text-[13px] font-semibold text-slate-800">{c.name}</div>
                       <div className="text-[11px] text-slate-400 mt-0.5">{c.currency} · {c.currency_symbol}</div>
                     </div>
-                    <span className="rounded-xl bg-sky-50 border border-sky-100 px-2.5 py-1 text-[12px] font-mono font-semibold text-sky-700">
+                    <span className="rounded-xl bg-cyan-50 ring-1 ring-cyan-200 px-2.5 py-1 text-[12px] font-mono font-semibold text-cyan-700">
                       {c.exchange_rate?.toFixed(4) ?? '—'}
                     </span>
                   </div>
@@ -1248,7 +1244,7 @@ export default function LensPricesSettingsPage() {
           onClick={() => setShowAdd(false)}
         >
           <div
-            className="w-[540px] max-w-[95vw] rounded-3xl border border-slate-100 bg-white p-6 shadow-2xl"
+            className="w-[540px] max-w-[95vw] rounded-3xl bg-white ring-1 ring-sky-100 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)]"
             onClick={e => e.stopPropagation()}
           >
             <h3 className="mb-1 text-base font-semibold text-slate-900">Добавить линзу</h3>

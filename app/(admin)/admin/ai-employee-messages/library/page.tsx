@@ -11,6 +11,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
+import AICenterTabs from '../AICenterTabs';
 
 type Book = {
   id: string;
@@ -88,27 +89,32 @@ export default function LibraryPage() {
   }, [books]);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 pb-10 pt-4">
-      <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-sm">
-            <BookOpen className="h-4 w-4" />
+    <div className="text-slate-50">
+      {/* Header (бренд-стандарт) */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <BookOpen className="h-5 w-5 text-white" />
           </div>
-          <div className="flex-1">
-            <h1 className="text-base font-bold text-slate-900">Библиотека знаний</h1>
-            <p className="text-[12px] text-slate-500">
-              Бизнес-книги, по которым советник ищет принципы и цитаты. Индексация — через локальный скрипт.
-            </p>
-          </div>
-          <div className="flex items-center gap-4 text-sm">
-            <Stat label="Всего книг" value={stats.total} />
-            <Stat label="Готовы" value={stats.indexed} tone="emerald" />
-            <Stat label="Фрагментов" value={stats.totalChunks.toLocaleString('ru-RU')} />
+          <div>
+            <div className="text-2xl font-bold tracking-tight text-slate-50">Библиотека знаний</div>
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">
+              Бизнес-книги для AI-советника
+            </div>
           </div>
         </div>
-      </section>
+        <div className="flex items-center gap-3 rounded-2xl bg-white p-3 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+          <Stat label="Всего книг" value={stats.total} />
+          <div className="h-6 w-px bg-slate-200" />
+          <Stat label="Готовы" value={stats.indexed} tone="emerald" />
+          <div className="h-6 w-px bg-slate-200" />
+          <Stat label="Фрагментов" value={stats.totalChunks.toLocaleString('ru-RU')} />
+        </div>
+      </div>
 
-      <section className="mt-3 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200 text-[12.5px] leading-6 text-amber-900">
+      <AICenterTabs />
+
+      <section className="rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200 text-[12.5px] leading-6 text-amber-900">
         <div className="flex items-center gap-2 font-semibold">
           <Terminal className="h-4 w-4" />
           Как добавить или переиндексировать книги
@@ -131,7 +137,7 @@ export default function LibraryPage() {
       {loading && (
         <div className="mt-4 space-y-3">
           {[1, 2].map((k) => (
-            <div key={k} className="animate-pulse rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+            <div key={k} className="animate-pulse rounded-2xl bg-white p-4 ring-1 ring-sky-100">
               <div className="h-5 w-40 rounded bg-slate-200" />
               <div className="mt-3 h-12 w-full rounded bg-slate-200" />
             </div>
@@ -140,7 +146,7 @@ export default function LibraryPage() {
       )}
 
       {!loading && books.length === 0 && (
-        <div className="mt-4 rounded-2xl bg-white px-5 py-10 text-center ring-1 ring-slate-200/80 shadow-sm">
+        <div className="mt-4 rounded-2xl bg-white px-5 py-10 text-center ring-1 ring-sky-100 shadow-sm">
           <BookOpen className="h-8 w-8 mx-auto text-slate-300" />
           <div className="mt-2 text-sm font-semibold text-slate-700">Библиотека пока пуста</div>
           <div className="mt-1 text-[12px] text-slate-500">После первого запуска <code className="rounded bg-slate-100 px-1">npm run index-books</code> список появится здесь.</div>
@@ -161,7 +167,7 @@ export default function LibraryPage() {
               const meta = STATUS_META[b.status];
               const Icon = meta.icon;
               return (
-                <div key={b.id} className="flex items-center gap-3 rounded-xl bg-white px-3 py-2.5 ring-1 ring-slate-200/80 shadow-sm">
+                <div key={b.id} className="flex items-center gap-3 rounded-xl bg-white px-3 py-2.5 ring-1 ring-sky-100 shadow-sm">
                   <BookOpen className="h-4 w-4 shrink-0 text-cyan-600" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[13px] font-semibold text-slate-900 truncate">{b.title}</div>

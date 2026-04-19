@@ -38,3 +38,5 @@ desktop/build/
 # secrets
 .env
 .env.*
+
+.vercel
