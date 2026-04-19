@@ -227,10 +227,11 @@ async function ingestInbound(m: IgMessage, senderId: string, ts: number | undefi
 
 async function ingestEchoOutbound(m: IgMessage, recipientId: string, ts: number | undefined) {
   // Echo = we sent via Graph API or via IG mobile app. Avoid duplicating messages
-  // we already inserted from the scheduler (they have ig_message_id after send).
+  // already inserted from /api/instagram/send (it sets ig_message_id synchronously).
   if (!m.mid) return;
   const admin = getSupabaseAdmin();
 
+  // Primary match: by ig_message_id (set by /api/instagram/send immediately after Meta responds).
   const { data: existing } = await admin
     .from('instagram_messages')
     .select('id, status')
@@ -244,13 +245,43 @@ async function ingestEchoOutbound(m: IgMessage, recipientId: string, ts: number 
     return;
   }
 
-  // Not our send → seller used Instagram mobile app directly. Mirror into thread.
+  // Fallback: echo could arrive before /api/instagram/send's UPDATE lands.
+  // Find a recent pending/sent outbound in the same thread with matching body.
   const threadId = await findOrCreateThread(recipientId, null);
   if (!threadId) return;
 
-  const createdAt = ts ? new Date(ts).toISOString() : new Date().toISOString();
   const { type, body, mediaUrl } = pickMessageType(m);
+  const createdAt = ts ? new Date(ts).toISOString() : new Date().toISOString();
 
+  if (body) {
+    const raceCutoff = new Date(Date.now() - 60_000).toISOString();
+    const { data: raceRow } = await admin
+      .from('instagram_messages')
+      .select('id')
+      .eq('thread_id', threadId)
+      .eq('direction', 'outbound')
+      .in('status', ['pending', 'sent'])
+      .eq('body', body)
+      .is('ig_message_id', null)
+      .gte('created_at', raceCutoff)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (raceRow?.id) {
+      await admin
+        .from('instagram_messages')
+        .update({ status: 'delivered', ig_message_id: m.mid })
+        .eq('id', raceRow.id);
+      await admin
+        .from('instagram_threads')
+        .update({ last_message_at: createdAt, status: 'waiting_customer' })
+        .eq('id', threadId);
+      return;
+    }
+  }
+
+  // Truly external send (e.g. seller used Instagram mobile app). Mirror into thread.
   await admin.from('instagram_messages').insert({
     thread_id: threadId,
     direction: 'outbound',
