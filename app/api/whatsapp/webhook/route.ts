@@ -111,14 +111,13 @@ async function findOrCreateThread(phone: string): Promise<string | null> {
 
   if (existing?.id) return existing.id as string;
 
-  // Найти клиента по телефону
+  // Try to match customer by phone. If not found → unassigned thread (no customer, no branch).
   const { data: customer } = await admin
     .from('customers')
     .select('id')
     .eq('phone', phone)
     .maybeSingle();
 
-  // Последний заказ → branch_id + seller
   let branchId: number | null = null;
   let sellerEmployeeId: number | null = null;
   let orderId: number | null = null;
@@ -137,17 +136,10 @@ async function findOrCreateThread(phone: string): Promise<string | null> {
     }
   }
 
-  // Если не нашли филиал — нельзя создавать тред (branch_id NOT NULL).
-  // В будущем: bucket "unassigned" с fallback_branch_id. Сейчас — логируем и выходим.
-  if (!customer?.id || !branchId) {
-    console.warn('[whatsapp webhook] cannot route thread — no customer or no branch for phone', phone);
-    return null;
-  }
-
   const { data: newThread, error } = await admin
     .from('whatsapp_threads')
     .insert({
-      customer_id: customer.id,
+      customer_id: customer?.id ?? null,
       phone_number: phone,
       branch_id: branchId,
       order_id: orderId,
