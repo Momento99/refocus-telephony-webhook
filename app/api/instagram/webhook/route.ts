@@ -177,16 +177,49 @@ async function findOrCreateThread(
   return newThread.id as string;
 }
 
+async function fetchIgUserProfile(
+  senderId: string,
+  token: string,
+): Promise<{ username: string | null; name: string | null }> {
+  try {
+    const r = await fetch(
+      `https://graph.instagram.com/v21.0/${senderId}?fields=name,username&access_token=${encodeURIComponent(token)}`,
+    );
+    if (!r.ok) return { username: null, name: null };
+    const data: any = await r.json().catch(() => ({}));
+    return {
+      username: typeof data?.username === 'string' ? data.username : null,
+      name: typeof data?.name === 'string' ? data.name : null,
+    };
+  } catch {
+    return { username: null, name: null };
+  }
+}
+
 async function ingestInbound(m: IgMessage, senderId: string, ts: number | undefined) {
   const admin = getSupabaseAdmin();
   const createdAt = ts ? new Date(ts).toISOString() : new Date().toISOString();
 
-  // Try to resolve username via Graph API lookup if we have access token.
-  // Skip for MVP — use null, user appears as "@<igsid>" in UI. Can add enrichment later.
-  const igUsername: string | null = null;
+  // Best-effort profile enrichment. Non-fatal if it fails.
+  let igUsername: string | null = null;
+  let displayName: string | null = null;
+  const { data: cfg } = await admin
+    .from('instagram_api_config')
+    .select('page_access_token')
+    .eq('id', 1)
+    .maybeSingle();
+  if (cfg?.page_access_token) {
+    const p = await fetchIgUserProfile(senderId, cfg.page_access_token as string);
+    igUsername = p.username;
+    displayName = p.name;
+  }
 
   const threadId = await findOrCreateThread(senderId, igUsername);
   if (!threadId) return;
+
+  if (displayName) {
+    await admin.from('instagram_threads').update({ display_name: displayName }).eq('id', threadId);
+  }
 
   const { type, body, mediaUrl } = pickMessageType(m);
 
