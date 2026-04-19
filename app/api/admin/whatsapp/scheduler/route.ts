@@ -457,8 +457,10 @@ async function runInstagramOutbound(
     }
 
     try {
+      // Instagram Login path — endpoint is graph.instagram.com/me/messages,
+      // not graph.facebook.com/{ig-id}/messages as in the old FB Login flow.
       const r = await fetch(
-        `${CLOUD_API_BASE}/${cfg.ig_business_account_id}/messages?access_token=${encodeURIComponent(cfg.page_access_token)}`,
+        `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(cfg.page_access_token)}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
