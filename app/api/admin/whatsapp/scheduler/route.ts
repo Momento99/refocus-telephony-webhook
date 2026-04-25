@@ -244,22 +244,9 @@ async function runScheduler(req: Request) {
   for (const raw of items) {
     const item = raw as QueueItem;
 
-    // Проверяем, что согласие ещё активно (мог отозвать до отправки)
-    const { data: consent } = await admin
-      .from('whatsapp_consents')
-      .select('id')
-      .eq('order_id', item.order_id)
-      .is('revoked_at', null)
-      .limit(1)
-      .maybeSingle();
-    if (!consent) {
-      await admin
-        .from('whatsapp_followup_queue')
-        .update({ status: 'cancelled', error_message: 'consent revoked or missing' })
-        .eq('id', item.id);
-      continue;
-    }
-
+    // Note (2026-04-25): consent re-check removed per business decision —
+    // we send Utility templates to all customers without explicit opt-in.
+    // See migration 20260425b_drop_whatsapp_optin_requirement.sql.
     const result = await sendTemplate(cfg, item);
 
     if (result.ok) {

@@ -2,7 +2,19 @@
   "crons": [
     {
       "path": "/api/admin/whatsapp/scheduler",
-      "schedule": "0 7 * * *"
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/admin/whatsapp/enqueue-aftercare",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/admin/whatsapp/analyze-weekly",
+      "schedule": "30 7 * * 1"
+    },
+    {
+      "path": "/api/admin/instagram/analyze-weekly",
+      "schedule": "45 7 * * 1"
     }
   ]
 }

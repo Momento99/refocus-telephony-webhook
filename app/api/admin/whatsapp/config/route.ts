@@ -40,6 +40,7 @@ export async function POST(req: Request) {
     access_token,
     webhook_verify_token,
     is_active,
+    customer_messaging_enabled,
   } = body ?? {};
 
   const update: Record<string, unknown> = {
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
   if (typeof display_name === 'string') update.display_name = display_name.trim() || null;
   if (typeof webhook_verify_token === 'string') update.webhook_verify_token = webhook_verify_token.trim() || null;
   if (typeof is_active === 'boolean') update.is_active = is_active;
+  if (typeof customer_messaging_enabled === 'boolean') update.customer_messaging_enabled = customer_messaging_enabled;
 
   // Токен обновляем ТОЛЬКО если пришла непустая строка — иначе оставляем как есть.
   if (typeof access_token === 'string' && access_token.trim().length > 0) {
