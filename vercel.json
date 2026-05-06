@@ -1,10 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/admin/whatsapp/scheduler",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/admin/whatsapp/enqueue-aftercare",
       "schedule": "0 8 * * *"
     },
