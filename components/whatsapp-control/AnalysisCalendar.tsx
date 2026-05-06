@@ -284,35 +284,37 @@ export default function AnalysisCalendar({
                   </div>
                 </div>
 
-                {/* Мини-плитки по филиалам с объединённой WA+IG оценкой */}
-                {cell.isCurrentMonth && !cell.isFuture && !cell.tooOld && bucket && branchesToRender.length > 0 && (
+                {/* Мини-плитки по 5 филиалам с объединённой WA+IG оценкой.
+                    Показываем ВСЕГДА для текущего/прошлого дня этого месяца,
+                    чтобы было видно «общались/не общались» по каждому филиалу. */}
+                {cell.isCurrentMonth && !cell.isFuture && !cell.tooOld && branchesToRender.length > 0 && (
                   <div className="mt-1.5 grid grid-cols-3 gap-0.5">
                     {branchesToRender.map((b) => {
-                      const data = combinedBranchScore(bucket, b.id);
-                      const hasActivity = data && data.threads > 0;
+                      const data = bucket ? combinedBranchScore(bucket, b.id) : null;
+                      const hasActivity = !!data && data.threads > 0;
                       const score = data?.score ?? null;
                       const colors = scoreColorClasses(hasActivity ? score : null);
                       const label = b.code || (b.name ? b.name.slice(0, 2).toUpperCase() : `#${b.id}`);
                       return (
                         <div
                           key={b.id}
-                          title={`${b.name}${
+                          title={
                             hasActivity
-                              ? `: ${data!.threads} диал.${score != null ? `, оценка ${score.toFixed(1)}` : ', не оценено'}`
-                              : ': без активности'
-                          }`}
+                              ? `${b.name}: ${data!.threads} диал.${score != null ? `, оценка ${score.toFixed(1)}` : ', не оценено'}`
+                              : `${b.name}: без активности`
+                          }
                           className={[
-                            'flex items-center justify-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold leading-tight',
-                            hasActivity ? colors.bg : 'bg-white/60 ring-1 ring-slate-100',
+                            'flex items-center justify-between gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold leading-tight',
+                            hasActivity ? colors.bg : 'bg-white/40 ring-1 ring-slate-200/60',
                             hasActivity ? colors.text : 'text-slate-300',
                           ].join(' ')}
                         >
                           <span className="truncate">{label}</span>
-                          {hasActivity && (
-                            <span className="tabular-nums">
-                              {score != null ? score.toFixed(1) : '·'}
-                            </span>
-                          )}
+                          <span className="tabular-nums shrink-0">
+                            {hasActivity
+                              ? (score != null ? score.toFixed(1) : '·')
+                              : '—'}
+                          </span>
                         </div>
                       );
                     })}
