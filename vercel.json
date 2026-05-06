@@ -15,6 +15,14 @@
     {
       "path": "/api/admin/instagram/analyze-weekly",
       "schedule": "45 7 * * 1"
+    },
+    {
+      "path": "/api/admin/whatsapp/analyze-daily",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/admin/instagram/analyze-daily",
+      "schedule": "15 21 * * *"
     }
   ]
 }

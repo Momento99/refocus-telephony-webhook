@@ -57,6 +57,20 @@ export async function POST(req: Request) {
   if (msg.wa_message_id) return json({ ok: true, already_sent: true, wa_message_id: msg.wa_message_id });
   if (msg.status !== 'pending') return json({ ok: false, error: `BAD_STATUS:${msg.status}` }, 400);
   if (msg.message_type !== 'text' || !msg.body) return json({ ok: false, error: 'UNSUPPORTED_MESSAGE_TYPE' }, 400);
+  // WhatsApp Cloud API hard limit
+  if (msg.body.length > 4096) return json({ ok: false, error: 'BODY_TOO_LONG', details: `Max 4096 chars, got ${msg.body.length}` }, 400);
+
+  // ✅ Атомарный «захват» сообщения: меняем pending → sending по WHERE status='pending'.
+  // Если затронуто 0 строк — уже кто-то взял (cron-safety-net или параллельный POST).
+  const { data: claimed, error: eClaim } = await admin
+    .from('whatsapp_messages')
+    .update({ status: 'sending' })
+    .eq('id', msg.id)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (eClaim) return json({ ok: false, error: 'CLAIM_ERROR', details: eClaim.message }, 500);
+  if (!claimed) return json({ ok: true, already_being_sent: true });
 
   const { data: thread, error: eThread } = await admin
     .from('whatsapp_threads')
@@ -76,8 +90,10 @@ export async function POST(req: Request) {
   if (!cfg.is_active) return json({ ok: false, error: 'INTEGRATION_INACTIVE' }, 400);
 
   try {
+    // ✅ Timeout, чтобы worker не висел вечно при сбое Meta
     const r = await fetch(`https://graph.facebook.com/v21.0/${cfg.phone_number_id}/messages`, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Bearer ${cfg.access_token}`,
         'Content-Type': 'application/json',

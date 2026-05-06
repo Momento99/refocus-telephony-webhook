@@ -56,6 +56,8 @@ export async function POST(req: Request) {
   if (msg.ig_message_id) return json({ ok: true, already_sent: true, ig_message_id: msg.ig_message_id });
   if (msg.status !== 'pending') return json({ ok: false, error: `BAD_STATUS:${msg.status}` }, 400);
   if (msg.message_type !== 'text' || !msg.body) return json({ ok: false, error: 'UNSUPPORTED_MESSAGE_TYPE' }, 400);
+  // Instagram Direct Messages text limit
+  if (msg.body.length > 1000) return json({ ok: false, error: 'BODY_TOO_LONG', details: `Max 1000 chars, got ${msg.body.length}` }, 400);
 
   const { data: thread, error: eThread } = await admin
     .from('instagram_threads')
@@ -66,20 +68,37 @@ export async function POST(req: Request) {
 
   const { data: cfgRow } = await admin
     .from('instagram_api_config')
-    .select('ig_business_account_id, page_access_token, is_active')
+    .select('fb_page_id, page_access_token, is_active')
     .eq('id', 1)
     .maybeSingle();
   const cfg = (cfgRow as IgConfig | null) ?? null;
 
   if (!cfg?.page_access_token) return json({ ok: false, error: 'CONFIG_MISSING' }, 500);
+  if (!cfg?.fb_page_id)        return json({ ok: false, error: 'CONFIG_MISSING_PAGE_ID' }, 500);
   if (!cfg.is_active) return json({ ok: false, error: 'INTEGRATION_INACTIVE' }, 400);
 
+  // ✅ Атомарный «захват»: pending → sending по WHERE status='pending'.
+  const { data: claimed, error: eClaim } = await admin
+    .from('instagram_messages')
+    .update({ status: 'sending' })
+    .eq('id', msg.id)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (eClaim) return json({ ok: false, error: 'CLAIM_ERROR', details: eClaim.message }, 500);
+  if (!claimed) return json({ ok: true, already_being_sent: true });
+
   try {
+    // ✅ Эндпоинт через Page (System User token + Authorization header)
     const r = await fetch(
-      `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(cfg.page_access_token)}`,
+      `https://graph.facebook.com/v21.0/${cfg.fb_page_id}/messages`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cfg.page_access_token}`,
+        },
         body: JSON.stringify({
           recipient: { id: thread.ig_user_id },
           message: { text: msg.body },
