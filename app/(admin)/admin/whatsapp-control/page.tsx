@@ -7,6 +7,8 @@ import {
 import toast from 'react-hot-toast';
 import AnalysisCalendar, { type DayBucket, type HeatmapMode } from '@/components/whatsapp-control/AnalysisCalendar';
 import DayDrawer from '@/components/whatsapp-control/DayDrawer';
+import BranchBonusPanel from '@/components/whatsapp-control/BranchBonusPanel';
+import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 
 type Branch = { id: number; name: string; code: string | null };
 
@@ -24,18 +26,30 @@ export default function WhatsAppControlPage() {
 
   const [openDate, setOpenDate] = useState<string | null>(null);
 
+  const [slaScore, setSlaScore] = useState<number | null>(null);
+  const [slaPct, setSlaPct] = useState<number | null>(null);
+
   const loadBranches = useCallback(async () => {
     try {
-      const r = await fetch('/api/branches');
-      const j = await r.json();
-      const list = Array.isArray(j) ? j : (j.branches ?? []);
+      // /api/branches идёт через Prisma, у которой Branch.id типизирован как
+      // String (cuid), а в БД bigint — поэтому findMany() возвращает пустоту.
+      // Здесь берём напрямую из Supabase, где типы согласованы со schema.
+      const sb = getBrowserSupabase();
+      // Сортируем по id, чтобы порядок был стабильный: 1=SK, 2=BV, 3=KB, 4=KT, 5=TK.
+      // Алфавитная сортировка ставила Беловодск раньше Сокулука — это путало.
+      const { data, error } = await sb
+        .from('branches')
+        .select('id, name, code, is_workshop')
+        .order('id', { ascending: true });
+      if (error) throw error;
       setBranches(
-        (list as any[])
-          .filter((b) => !b.is_workshop)
-          .map((b) => ({ id: Number(b.id), name: String(b.name), code: b.code ?? null }))
+        (data ?? [])
+          .filter((b: any) => !b.is_workshop)
+          .map((b: any) => ({ id: Number(b.id), name: String(b.name), code: b.code ?? null }))
           .filter((b) => !isNaN(b.id)),
       );
-    } catch {
+    } catch (e) {
+      console.error('loadBranches failed:', e);
       setBranches([]);
     }
   }, []);
@@ -61,6 +75,46 @@ export default function WhatsAppControlPage() {
   useEffect(() => { void loadMonth(); }, [loadMonth]);
 
   const branchFilter = useMemo(() => activeBranches.size === 0 ? null : Array.from(activeBranches), [activeBranches]);
+
+  // SLA-балл (скорость ответа) — независимая метрика, в отличие от AI-качества из календаря.
+  // Грузим через rpc_operator_messaging_scores и взвешиваем по threads.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const sb = getBrowserSupabase();
+      const first = `${viewYear}-${pad2(viewMonth + 1)}-01T00:00:00Z`;
+      const lastDay = new Date(viewYear, viewMonth + 1, 0).getDate();
+      const last = `${viewYear}-${pad2(viewMonth + 1)}-${pad2(lastDay)}T23:59:59Z`;
+      try {
+        const { data } = await sb.rpc('rpc_operator_messaging_scores', {
+          p_from: first,
+          p_to: last,
+          p_branch_id: branchFilter && branchFilter.length === 1 ? branchFilter[0] : null,
+          p_channel: null,
+        });
+        if (cancelled) return;
+        const rows = (Array.isArray(data) ? data : []) as Array<{
+          branch_id: number; threads: number; sla_pct: number; score: number;
+        }>;
+        let sumT = 0, wScore = 0, wSla = 0;
+        for (const r of rows) {
+          if (branchFilter && branchFilter.length > 1 && !branchFilter.includes(Number(r.branch_id))) continue;
+          const t = Number(r.threads ?? 0);
+          sumT += t;
+          wScore += Number(r.score ?? 0) * t;
+          wSla += Number(r.sla_pct ?? 0) * t;
+        }
+        setSlaScore(sumT > 0 ? wScore / sumT : null);
+        setSlaPct(sumT > 0 ? wSla / sumT : null);
+      } catch {
+        if (!cancelled) {
+          setSlaScore(null);
+          setSlaPct(null);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [viewYear, viewMonth, branchFilter]);
 
   const toggleBranch = (id: number) => {
     setActiveBranches((prev) => {
@@ -198,11 +252,17 @@ export default function WhatsAppControlPage() {
         </div>
       )}
 
-      {/* Summary strip */}
-      <div className="mb-4 grid grid-cols-2 md:grid-cols-5 gap-2">
+      {/* Summary strip — две метрики раздельно: AI-качество и SLA-скорость */}
+      <div className="mb-4 grid grid-cols-2 md:grid-cols-6 gap-2">
         <StripTile icon={MessageCircle} label="Всего диалогов за месяц" value={String(monthStrip.totalThreads)} />
-        <StripTile icon={Sparkles} label="Средний WA-балл" value={monthStrip.waAvg != null ? monthStrip.waAvg.toFixed(1) : '—'} />
-        <StripTile icon={Sparkles} label="Средний IG-балл" value={monthStrip.igAvg != null ? monthStrip.igAvg.toFixed(1) : '—'} />
+        <StripTile icon={Sparkles} label="Качество AI · WA" value={monthStrip.waAvg != null ? monthStrip.waAvg.toFixed(1) : '—'} />
+        <StripTile icon={Sparkles} label="Качество AI · IG" value={monthStrip.igAvg != null ? monthStrip.igAvg.toFixed(1) : '—'} />
+        <StripTile
+          icon={Clock}
+          label="Скорость SLA"
+          value={slaScore != null ? `${slaScore.toFixed(1)} / 10` : '—'}
+          sub={slaPct != null ? `${slaPct.toFixed(0)}% за 10 мин` : undefined}
+        />
         <StripTile icon={CalendarDays} label="Дней проанализировано" value={`${monthStrip.analyzedDays} из ${monthStrip.totalDaysWithActivity}`} />
         <StripTile icon={Sparkles} label="Стоимость анализов" value={monthStrip.cost > 0 ? `$${monthStrip.cost.toFixed(2)}` : '—'} />
       </div>
@@ -222,6 +282,11 @@ export default function WhatsAppControlPage() {
         allBranches={branches}
       />
 
+      {/* Премия за качество общения */}
+      <div className="mt-4">
+        <BranchBonusPanel year={viewYear} month={viewMonth} />
+      </div>
+
       {/* Drawer */}
       {openDate && (
         <DayDrawer
@@ -235,7 +300,7 @@ export default function WhatsAppControlPage() {
   );
 }
 
-function StripTile({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+function StripTile({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-xl bg-white/95 backdrop-blur px-3 py-2 ring-1 ring-sky-100 shadow-[0_4px_14px_rgba(15,23,42,0.2)]">
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -243,6 +308,7 @@ function StripTile({ icon: Icon, label, value }: { icon: any; label: string; val
         {label}
       </div>
       <div className="mt-0.5 text-lg font-bold text-slate-900">{value}</div>
+      {sub && <div className="text-[10px] text-slate-500 leading-tight">{sub}</div>}
     </div>
   );
 }

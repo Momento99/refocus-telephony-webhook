@@ -6,8 +6,10 @@ import { useParams } from 'next/navigation';
 import getSupabase from '@/lib/supabaseClient';
 import { ArrowLeft, Barcode, Printer } from 'lucide-react';
 import {
+  BRANCHES_WITHOUT_AUTO_REPLENISH,
   BUCKET_STEP,
   COUNTRIES,
+  LEGACY_BRANCH_CAPACITY,
   computeBranchTotalCount,
   computeSectionPrices,
   computeSectionSlotCount,
@@ -38,25 +40,9 @@ const BUCKETS = [
 /** проценты по ценовым корзинам (по слотам): 16 / 38 / 28 / 12 / 6 */
 const PCT = { b1: 16, b2: 38, b3: 28, b4: 12, b5: 6 } as const;
 
-/**
- * Дефолтная ёмкость витрин по названию филиала — для legacy-логики
- * (филиалы без формулы: Кант, Сокулук, Беловодск, Кара-Балта).
- * Филиалы с формулой (Токмок и новые) — ёмкость берётся из BRANCH_TOTAL_SLOTS
- * в lib/framePricingFormula.ts.
- */
-const BRANCH_CAPACITY: Record<string, number> = {
-  Сокулук: 120,
-  Беловодск: 100,
-  'Кара-Балта': 168,
-  Кант: 120,
-};
-
-/** Филиалы, где не используем автоматическую «допечатку по продажам» */
-const BRANCHES_WITHOUT_AUTO_REPLENISH: string[] = ['Кант', 'Токмок'];
-
 /* ────────── типы оправ и правила цен ────────── */
 
-type FrameTypeCode = 'RP' | 'RM' | 'KD' | 'PA' | 'MA';
+type FrameTypeCode = 'RP' | 'RM' | 'KD' | 'PA' | 'MA' | 'RL';
 type GenderCode = 'F' | 'M';
 
 type TypeKey = `${FrameTypeCode}_${GenderCode}`;
@@ -71,6 +57,7 @@ const FRAME_TYPES: { code: FrameTypeCode; label: string; description: string }[]
   { code: 'KD', label: 'Детские', description: 'М/Ж, 800–3500' },
   { code: 'PA', label: 'Пластик (взрослый)', description: 'М/Ж, 1000–3200' },
   { code: 'MA', label: 'Металл (взрослый)', description: 'М/Ж, 1200–10000' },
+  { code: 'RL', label: 'Безоправные', description: 'М/Ж, премиум, плоская ~6000с' },
 ];
 
 /** Жёсткие границы цен по каждому типу */
@@ -80,6 +67,7 @@ const FRAME_TYPE_PRICE_RULES: Record<FrameTypeCode, { min: number; max: number }
   KD: { min: 800, max: 3500 },
   PA: { min: 1000, max: 3200 },
   MA: { min: 1200, max: 10000 },
+  RL: { min: 5500, max: 6500 }, // плоский диапазон ±500с от базы 6000
 };
 
 /** Границы цен с учётом типа И пола (одна точка правды) */
@@ -117,6 +105,16 @@ function getTypePriceBounds(type: FrameTypeCode, gender: GenderCode): { min: num
     } else {
       min = 1400;
       max = 10000;
+    }
+  }
+  if (type === 'RL') {
+    // Безоправные — плоский диапазон ±500с от 6000, без сильной разницы по полу
+    if (gender === 'F') {
+      min = 5500;
+      max = 6500;
+    } else {
+      min = 5500;
+      max = 6500;
     }
   }
 
@@ -193,7 +191,7 @@ async function ensureQZSecurity() {
 
 /* ────────── barcode inference (для диагностики "тип/пол читаются неверно") ────────── */
 
-const KNOWN_TYPES: FrameTypeCode[] = ['RP', 'RM', 'KD', 'PA', 'MA'];
+const KNOWN_TYPES: FrameTypeCode[] = ['RP', 'RM', 'KD', 'PA', 'MA', 'RL'];
 
 function inferFromBarcode(barcodeRaw: string): {
   branchCode: string;
@@ -592,11 +590,17 @@ const TYPE_SECTIONS = [
   { id: 'PA_M', title: 'Взрослый пластик · Мужские', typeCode: 'PA' as FrameTypeCode, gender: 'M' as GenderCode },
   { id: 'MA_F', title: 'Взрослый металл · Женские', typeCode: 'MA' as FrameTypeCode, gender: 'F' as GenderCode },
   { id: 'MA_M', title: 'Взрослый металл · Мужские', typeCode: 'MA' as FrameTypeCode, gender: 'M' as GenderCode },
+  { id: 'RL_F', title: 'Безоправные · Женские', typeCode: 'RL' as FrameTypeCode, gender: 'F' as GenderCode },
+  { id: 'RL_M', title: 'Безоправные · Мужские', typeCode: 'RL' as FrameTypeCode, gender: 'M' as GenderCode },
 ] as const;
 
 type TypeSection = (typeof TYPE_SECTIONS)[number];
 type TypeSectionId = TypeSection['id'];
 
+// Legacy-распределение слотов (для филиалов без формулы — Кант, Сокулук,
+// Беловодск, Кара-Балта). RL у legacy-филиалов нет; для них RL_F/RL_M = 0.
+// Филиалы с формулой (Токмок и др.) берут слоты из computeSectionSlotCount,
+// этот объект там игнорируется.
 const TYPE_SLOT_SHARE: Record<TypeSectionId, number> = {
   RD_PL_F: 14 / 168,
   RD_MT_F: 14 / 168,
@@ -606,6 +610,8 @@ const TYPE_SLOT_SHARE: Record<TypeSectionId, number> = {
   PA_M: 28 / 168,
   MA_F: 35 / 168,
   MA_M: 28 / 168,
+  RL_F: 0,
+  RL_M: 0,
 };
 
 type SectionVariant = 'default' | 'female' | 'male';
@@ -631,7 +637,7 @@ export default function BranchBarcodesPage() {
   const [branchError, setBranchError] = useState<string | null>(null);
 
   const disableAutoSuggest = useMemo(
-    () => branch != null && BRANCHES_WITHOUT_AUTO_REPLENISH.includes(branch.name),
+    () => branch != null && BRANCHES_WITHOUT_AUTO_REPLENISH.has(branch.name),
     [branch],
   );
 
@@ -750,7 +756,7 @@ export default function BranchBarcodesPage() {
         return;
       }
 
-      // 2) Legacy-филиалы: localStorage → BRANCH_CAPACITY
+      // 2) Legacy-филиалы: localStorage → LEGACY_BRANCH_CAPACITY
       try {
         const saved = localStorage.getItem(`ui.branchSlots.${branchId}`);
         if (saved != null) {
@@ -761,7 +767,7 @@ export default function BranchBarcodesPage() {
           }
         }
         if (branch?.name) {
-          const def = BRANCH_CAPACITY[branch.name] ?? 0;
+          const def = LEGACY_BRANCH_CAPACITY[branch.name] ?? 0;
           if (!cancelled && def > 0) setTotalSlots(def);
         }
       } catch {
@@ -1244,6 +1250,10 @@ export default function BranchBarcodesPage() {
         } else {
           if (p < 1400 || p > 10000) throw new Error('Для мужских металлических оправ допустимы цены от 1400 до 10000 сом.');
         }
+      }
+      if (actualType === 'RL') {
+        // Безоправные — премиум-фикс ~6000с, диапазон ±500с от базы
+        if (p < 5500 || p > 6500) throw new Error('Для безоправных оправ допустимы цены от 5500 до 6500 сом.');
       }
 
       const sb = getSupabase();

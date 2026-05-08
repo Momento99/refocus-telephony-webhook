@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { isLikelyFarewell } from '@/lib/farewellDetect';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -160,11 +161,41 @@ async function findOrCreateThread(
     return existing.id as string;
   }
 
+  // Возвращающийся клиент: если этот ig_user_id уже привязан к customer,
+  // авторутим тред в филиал последнего заказа (как в WA-webhook).
+  const { data: customer } = await admin
+    .from('customers')
+    .select('id')
+    .eq('ig_user_id', igUserId)
+    .maybeSingle();
+
+  let branchId: number | null = null;
+  let sellerEmployeeId: number | null = null;
+  let orderId: number | null = null;
+  if (customer?.id) {
+    const { data: lastOrder } = await admin
+      .from('orders')
+      .select('id, branch_id, seller_employee_id')
+      .eq('customer_id', customer.id)
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastOrder) {
+      branchId = lastOrder.branch_id as number;
+      sellerEmployeeId = lastOrder.seller_employee_id as number | null;
+      orderId = lastOrder.id as number;
+    }
+  }
+
   const { data: newThread, error } = await admin
     .from('instagram_threads')
     .insert({
       ig_user_id: igUserId,
       ig_username: igUsername,
+      customer_id: customer?.id ?? null,
+      branch_id: branchId,
+      order_id: orderId,
+      assigned_seller_employee_id: sellerEmployeeId,
       status: 'waiting_seller',
     })
     .select('id')
@@ -244,17 +275,26 @@ async function ingestInbound(m: IgMessage, senderId: string, ts: number | undefi
 
   const { data: thread } = await admin
     .from('instagram_threads')
-    .select('first_customer_message_at, unread_count')
+    .select('first_customer_message_at, unread_count, farewell_sent_at')
     .eq('id', threadId)
     .maybeSingle();
 
+  const postFarewellAck =
+    !!thread?.farewell_sent_at && isLikelyFarewell(body);
+
   const patch: Record<string, unknown> = {
     last_message_at: createdAt,
-    last_customer_message_at: createdAt,
-    unread_count: ((thread?.unread_count as number | null) ?? 0) + 1,
-    status: 'waiting_seller',
   };
   if (!thread?.first_customer_message_at) patch.first_customer_message_at = createdAt;
+
+  if (postFarewellAck) {
+    // Продавец уже попрощался + клиент прислал ack — не тикать SLA, не подсвечивать
+  } else {
+    patch.last_customer_message_at = createdAt;
+    patch.unread_count = ((thread?.unread_count as number | null) ?? 0) + 1;
+    patch.status = 'waiting_seller';
+    if (thread?.farewell_sent_at) patch.farewell_sent_at = null;
+  }
 
   await admin.from('instagram_threads').update(patch).eq('id', threadId);
 }

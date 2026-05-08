@@ -49,6 +49,7 @@ type Terminal = {
   branch_id: number;
   is_active: boolean;
   is_enabled: boolean;
+  kind: 'pos' | 'kiosk';
 };
 
 function countryFlag(cid: string) {
@@ -90,7 +91,7 @@ export default function FranchiseSetupPage() {
         sb().from('organizations').select('*').order('name'),
         sb().from('branches').select('id, name, country_id, organization_id, warehouse_id, timezone, phone_code, work_hours, phone_mask, pos_pin').order('id'),
         sb().from('warehouses').select('*').order('name'),
-        sb().from('terminals').select('id, terminal_code, name, branch_id, is_active, is_enabled').order('terminal_code'),
+        sb().from('terminals').select('id, terminal_code, name, branch_id, is_active, is_enabled, kind').order('terminal_code'),
         sb().from('branch_location_map').select('branch_id, location_id'),
       ]);
       if (cRes.error) throw cRes.error;
@@ -164,11 +165,30 @@ export default function FranchiseSetupPage() {
   }
 
   async function deleteOrg(orgId: string) {
-    if (!confirm('Удалить организацию? Филиалы потеряют привязку.')) return;
-    await sb().from('branches').update({ organization_id: null }).eq('organization_id', orgId);
-    const { error } = await sb().from('organizations').delete().eq('id', orgId);
-    if (error) { toast.error(error.message); return; }
-    toast.success('Организация удалена');
+    const orgBranches = branches.filter(b => b.organization_id === orgId);
+    const msg = orgBranches.length
+      ? `Удалить организацию и ВСЕ её филиалы (${orgBranches.map(b => b.name).join(', ')}) вместе с сотрудниками, терминалами и складами?\n\nКонтракты и счета сохранятся (только отвяжутся).\n\nЕсли у какого-то филиала уже есть заказы/смены/выплаты — удаление будет заблокировано.`
+      : 'Удалить организацию? Контракты и счета сохранятся (только отвяжутся).';
+    if (!confirm(msg)) return;
+
+    const { data, error } = await sb().rpc('fn_delete_organization_cascade', { p_org_id: orgId });
+    if (error) {
+      if (error.message?.includes('organization_has_business_history')) {
+        toast.error('Нельзя удалить: у филиалов есть заказы / смены / выплаты. Сначала очистите историю.');
+      } else if (error.message?.includes('insufficient_privilege')) {
+        toast.error('Нет прав на удаление организации');
+      } else {
+        toast.error(error.message);
+      }
+      return;
+    }
+
+    const stats = data as { deleted_branches: number; deleted_employees: number; deleted_terminals: number; deleted_warehouses: number } | null;
+    toast.success(
+      stats && stats.deleted_branches > 0
+        ? `Удалено: филиалов — ${stats.deleted_branches}, сотрудников — ${stats.deleted_employees}, терминалов — ${stats.deleted_terminals}, складов — ${stats.deleted_warehouses}`
+        : 'Организация удалена'
+    );
     await loadAll();
   }
 

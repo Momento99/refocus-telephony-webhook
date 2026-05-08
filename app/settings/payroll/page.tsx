@@ -7,16 +7,13 @@ import {
   uiRoleToDb,
   type RoleT,
 } from "./usePayrollMonthly";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Wallet, Building2, KeyRound, User2, Plus, X, BarChart2 } from "lucide-react";
 import PenaltiesTab from "./PenaltiesTab";
+import DisciplinesTab from "./DisciplinesTab";
+import { getBrowserSupabase } from "@/lib/supabaseBrowser";
 
-/* ---------- Supabase клиент (для модалки + профили) ---------- */
-const sb: SupabaseClient = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
-  { auth: { persistSession: false } }
-);
+/* ---------- Supabase клиент (с сессией пользователя — нужен для UPDATE под RLS) ---------- */
+const sb = getBrowserSupabase();
 
 /* ---------- типы для PIN + логинов ---------- */
 type BranchPinMap = Record<number, string>;
@@ -518,56 +515,13 @@ function DangerBtn(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   );
 }
 
-/* ---------- Авто-план по филиалам ---------- */
+/* ---------- План филиала: серверная формула v3.2 ---------- */
+// Расчёт live: fn_payroll_calc_auto_plan / fn_payroll_calc_coldstart на стороне Postgres.
+// Cron: ежедневно 18:05 UTC (= 00:05 Asia/Bishkek) → fn_payroll_ensure_all_plans()
+// Клиентская формула v2 удалена — раньше она расходилась с серверной.
 const BRANCH_PLAN_TABLE = "payroll_branch_plans";
+const HISTORY_MONTHS_FOR_DISPLAY = 6;
 
-const AUTO_PLAN = {
-  version: "monthly-plan-v2",
-  historyMonths: 6,
-  quantile: 0.7,
-  gMinBase: 0.06,
-  gMaxBase: 0.18,
-  gMinFloor: 0.03,
-  gMinCeil: 0.1,
-  gMaxFloor: 0.1,
-  gMaxCeil: 0.25,
-  trendWeightMin: 0.25,
-  trendWeightMax: 0.35,
-  trendClampMin: -0.15,
-  trendClampMax: 0.2,
-  anchorTypicalWeightLow: 0.7,
-  anchorTypicalWeightMid: 0.55,
-  typicalFloorFactor: 0.25,
-  volatilitySoftCap: 0.25,
-  volatilityHardCap: 0.5,
-  roundStep: 1000,
-  bonusStep: 1000,
-  bonusMinAbs: 2000,
-  bonusMinRate: 0.008,
-  bonusMaxRate: 0.02,
-};
-
-const BONUS_TIERS: Array<{ upTo: number; rate: number }> = [
-  { upTo: 300_000, rate: 0.012 },
-  { upTo: 600_000, rate: 0.0125 },
-  { upTo: 1_000_000, rate: 0.013 },
-  { upTo: 2_000_000, rate: 0.0135 },
-  { upTo: 3_000_000, rate: 0.014 },
-  { upTo: 5_000_000, rate: 0.0145 },
-  { upTo: Infinity, rate: 0.015 },
-];
-
-function clamp(n: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, n));
-}
-function roundTo(n: number, step: number) {
-  if (step <= 0) return Math.round(n);
-  return Math.round(n / step) * step;
-}
-function roundUpTo(n: number, step: number) {
-  if (step <= 0) return Math.ceil(n);
-  return Math.ceil(n / step) * step;
-}
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -581,18 +535,6 @@ function shiftMonthStart(monthStart: string, delta: number): string {
   const d = new Date(y, (m || 1) - 1 + delta, 1);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`;
 }
-function mean(arr: number[]) {
-  const n = arr.length;
-  if (!n) return 0;
-  return arr.reduce((s, x) => s + x, 0) / n;
-}
-function stdev(arr: number[]) {
-  const n = arr.length;
-  if (n < 2) return 0;
-  const m = mean(arr);
-  const v = arr.reduce((s, x) => s + (x - m) * (x - m), 0) / (n - 1);
-  return Math.sqrt(v);
-}
 function median(arr: number[]) {
   const a = arr.slice().sort((x, y) => x - y);
   const n = a.length;
@@ -600,30 +542,12 @@ function median(arr: number[]) {
   const mid = Math.floor(n / 2);
   return n % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
 }
-function quantile(arr: number[], q: number) {
-  const a = arr.slice().sort((x, y) => x - y);
-  const n = a.length;
-  if (!n) return 0;
-  const pos = (n - 1) * clamp(q, 0, 1);
-  const lo = Math.floor(pos);
-  const hi = Math.ceil(pos);
-  if (lo === hi) return a[lo];
-  const t = pos - lo;
-  return a[lo] * (1 - t) + a[hi] * t;
-}
-function bonusRateForTarget(target: number) {
-  const t = Math.max(0, target);
-  for (const tier of BONUS_TIERS) {
-    if (t <= tier.upTo) return tier.rate;
-  }
-  return BONUS_TIERS[BONUS_TIERS.length - 1]?.rate ?? 0.013;
-}
 
 /* ===========================================
    СТРАНИЦА
 =========================================== */
 export default function Page() {
-  const [tab, setTab] = useState<"payroll" | "penalties">("payroll");
+  const [tab, setTab] = useState<"payroll" | "penalties" | "disciplines">("payroll");
 
   const [month, setMonth] = useState<string>(() => {
     const d = new Date();
@@ -1133,172 +1057,32 @@ export default function Page() {
   const [histLoaded, setHistLoaded] = useState(false);
   const [planBusyBranchId, setPlanBusyBranchId] = useState<number | null>(null);
 
+  // ✅ Канон: колонка месяца — `month` (date), PK (branch_id, month).
+  // Hack с тремя именами колонки удалён после миграции payroll_phase1.
   async function upsertBranchPlanWithFallback(payloadBase: any) {
-    const monthCols = ["month", "plan_month", "month_start"];
-    const conflictCols = ["branch_id,month", "branch_id,plan_month", "branch_id,month_start"];
-
-    for (let i = 0; i < monthCols.length; i++) {
-      const monthCol = monthCols[i];
-      const onConflict = conflictCols[i];
-
-      const payload = { ...payloadBase };
-      if (monthCol !== "month") {
-        payload[monthCol] = payload.month;
-        delete payload.month;
-      }
-
-      const { error } = await sb
-        .from(BRANCH_PLAN_TABLE)
-        .upsert(payload, { onConflict });
-
-      if (!error) return;
-      if (String((error as any)?.code) === "42703") continue;
-      throw error;
-    }
+    const { error } = await sb
+      .from(BRANCH_PLAN_TABLE)
+      .upsert(payloadBase, { onConflict: "branch_id,month" });
+    if (error) throw error;
   }
 
   async function selectBranchPlansWithFallback(monthStartDate: string) {
-    const monthCols = ["month", "plan_month", "month_start"];
-
-    for (const col of monthCols) {
-      const { data, error } = await sb
-        .from(BRANCH_PLAN_TABLE)
-        .select("*")
-        // @ts-ignore
-        .eq(col, monthStartDate);
-
-      if (!error) return { rows: data ?? [], monthCol: col };
-      if (String((error as any)?.code) === "42703") continue;
-      throw error;
-    }
-
-    return { rows: [], monthCol: "month" };
+    const { data, error } = await sb
+      .from(BRANCH_PLAN_TABLE)
+      .select("*")
+      .eq("month", monthStartDate);
+    if (error) throw error;
+    return { rows: data ?? [], monthCol: "month" };
   }
 
-  function suggestPlan(branchId: number) {
-    const hist = histTurnoverByBranch.get(branchId) ?? [];
-    const histPos = hist.filter((x) => x > 0);
-    const prev = hist.length ? hist[hist.length - 1] : 0;
+  // ✅ Клиентская формула v2 (suggestPlan) удалена.
+  // Расчёт авто-плана теперь только на сервере (fn_payroll_calc_auto_plan, v3.2).
+  // Это гарантирует, что CRM, POS my-shift и cron используют одни и те же цифры.
 
-    if (histPos.length < 1) {
-      return {
-        target: 0,
-        bonus: 0,
-        debug: { usedFallback: false, reason: "no_history", prev, hist },
-      };
-    }
-
-    const med = median(histPos);
-    const q70 = quantile(histPos, AUTO_PLAN.quantile);
-    const typical = Math.max(med, q70);
-
-    const prev2 = histPos.length >= 3 ? histPos.slice(-3, -1) : histPos.slice(-2, -1);
-    const prevAvg = prev2.length ? mean(prev2) : typical || prev;
-
-    let trendPct = prevAvg > 0 ? (prev - prevAvg) / prevAvg : 0;
-    trendPct = clamp(trendPct, AUTO_PLAN.trendClampMin, AUTO_PLAN.trendClampMax);
-
-    const vol = mean(histPos) > 0 ? stdev(histPos) / Math.max(1, mean(histPos)) : 0;
-    const volClamped = clamp(vol, 0, 1);
-
-    let gMin = clamp(
-      AUTO_PLAN.gMinBase + trendPct * AUTO_PLAN.trendWeightMin,
-      AUTO_PLAN.gMinFloor,
-      AUTO_PLAN.gMinCeil
-    );
-    let gMax = clamp(
-      AUTO_PLAN.gMaxBase + trendPct * AUTO_PLAN.trendWeightMax,
-      AUTO_PLAN.gMaxFloor,
-      AUTO_PLAN.gMaxCeil
-    );
-
-    if (volClamped > AUTO_PLAN.volatilitySoftCap) {
-      const denom = Math.max(1e-9, AUTO_PLAN.volatilityHardCap - AUTO_PLAN.volatilitySoftCap);
-      const k = clamp(1 - (volClamped - AUTO_PLAN.volatilitySoftCap) / denom, 0.6, 1);
-      gMax = gMax * k;
-      gMin = gMin * clamp(k + 0.1, 0.75, 1);
-    }
-    gMin = clamp(gMin, AUTO_PLAN.gMinFloor, AUTO_PLAN.gMinCeil);
-    gMax = clamp(gMax, Math.max(gMin, AUTO_PLAN.gMaxFloor), AUTO_PLAN.gMaxCeil);
-
-    let anchor = prev;
-    if (typical > 0) {
-      if (prev <= typical * 0.8) {
-        anchor =
-          AUTO_PLAN.anchorTypicalWeightLow * typical +
-          (1 - AUTO_PLAN.anchorTypicalWeightLow) * prev;
-      } else if (prev < typical) {
-        anchor =
-          AUTO_PLAN.anchorTypicalWeightMid * typical +
-          (1 - AUTO_PLAN.anchorTypicalWeightMid) * prev;
-      } else {
-        anchor = prev;
-      }
-    }
-
-    const targetRaw = anchor * (1 + gMin);
-    const upperRef = Math.max(prev, typical);
-    let capUpper = upperRef * (1 + gMax);
-
-    let capLower = Math.max(
-      prev * (1 + gMin),
-      typical * (1 + gMin * AUTO_PLAN.typicalFloorFactor)
-    );
-    if (capLower > capUpper) capUpper = capLower;
-
-    const targetCapped = clamp(targetRaw, capLower, capUpper);
-
-    const target = Math.max(0, Math.trunc(roundUpTo(targetCapped, AUTO_PLAN.roundStep)));
-
-    const rateTier = bonusRateForTarget(target);
-    const bonusRaw = target * rateTier;
-    const bonusMin = Math.max(AUTO_PLAN.bonusMinAbs, target * AUTO_PLAN.bonusMinRate);
-    const bonusMax = target * AUTO_PLAN.bonusMaxRate;
-    const bonus = Math.max(
-      0,
-      Math.trunc(roundTo(clamp(bonusRaw, bonusMin, bonusMax), AUTO_PLAN.bonusStep))
-    );
-
-    return {
-      target,
-      bonus,
-      debug: {
-        version: AUTO_PLAN.version,
-        hist_months: histMonthsKeys,
-        hist_turnover: hist,
-        prev,
-        typical,
-        med,
-        q70,
-        prevAvg,
-        trendPct,
-        volatility: volClamped,
-        gMin,
-        gMax,
-        anchor,
-        targetRaw,
-        capLower,
-        capUpper,
-        targetCapped,
-        rateTier,
-        bonusRaw,
-        bonusMin,
-        bonusMax,
-      },
-    };
-  }
-
-  const suggestedByBranch = useMemo(() => {
-    const m = new Map<number, { target: number; bonus: number; debug: any }>();
-    if (!isMonthlyPlanMode || !histLoaded) return m;
-    for (const b of branches) {
-      const s = suggestPlan(b.id);
-      m.set(b.id, s);
-    }
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMonthlyPlanMode, histLoaded, branches, histTurnoverByBranch, month]);
-
+  // ✅ ИСТОЧНИК ПРАВДЫ — только payroll_branch_plans (запись из БД).
+  // Виртуальный "suggested" удалён: то, что показывает CRM, теперь равно тому,
+  // что видит POS my-shift. Если плана нет — mode='pending', UI показывает
+  // "План рассчитывается…" и страница уже вызвала fn_payroll_ensure_all_plans.
   function getBranchPlanEffective(branchId: number): BranchPlan {
     const bp = branchPlans.get(branchId);
     if (bp) {
@@ -1310,22 +1094,10 @@ export default function Page() {
         updated_at: bp.updated_at,
       };
     }
-
-    const s = suggestedByBranch.get(branchId);
-    if (s && s.target > 0) {
-      return {
-        monthly_turnover_target: s.target,
-        monthly_bonus_each: s.bonus,
-        mode: "suggested",
-        auto_params: s.debug ?? null,
-        updated_at: undefined,
-      };
-    }
-
     return {
       monthly_turnover_target: 0,
       monthly_bonus_each: 0,
-      mode: "not_set",
+      mode: "pending",
       auto_params: null,
       updated_at: undefined,
     };
@@ -1345,8 +1117,17 @@ export default function Page() {
     let cancelled = false;
 
     async function loadPlansPremiumsAndHistory() {
+      // ✅ Гарантируем наличие планов для текущего месяца ДО чтения.
+      // Это закрывает кейс «cron не отработал» / «новый филиал/месяц».
+      // Идемпотентно (mode IN manual/auto_locked не перезаписывается).
+      try {
+        await sb.rpc("fn_payroll_ensure_all_plans", { p_month: monthStart });
+      } catch (e: any) {
+        console.warn("fn_payroll_ensure_all_plans failed:", extractErrMsg(e));
+      }
+
       const keys: string[] = [];
-      for (let i = AUTO_PLAN.historyMonths; i >= 1; i--) {
+      for (let i = HISTORY_MONTHS_FOR_DISPLAY; i >= 1; i--) {
         keys.push(shiftMonthKey(month, -i));
       }
 
@@ -1396,7 +1177,7 @@ export default function Page() {
       let histOk = false;
       let histMap = new Map<number, number[]>();
       try {
-        const histStart = shiftMonthStart(monthStart, -AUTO_PLAN.historyMonths);
+        const histStart = shiftMonthStart(monthStart, -HISTORY_MONTHS_FOR_DISPLAY);
         const histEnd = monthStart;
 
         const { data: days, error: errDays } = await sb
@@ -1483,27 +1264,37 @@ export default function Page() {
     await upsertBranchPlanWithFallback(payloadBase);
   }
 
+  // ✅ "Пересчитать" — теперь делегирует серверной формуле v3 (одна на CRM/POS/cron).
+  // Сервер сам решает: auto / auto_coldstart / auto_dormant и записывает.
+  // Если у филиала mode='manual' / 'auto_locked' — сервер не перезапишет.
   async function applyAutoPlan(branchId: number) {
     setPlanBusyBranchId(branchId);
     try {
-      const s = suggestPlan(branchId);
-      if (!s.target || s.target <= 0) {
-        alert("Недостаточно истории по выручке, чтобы посчитать авто-план. Поставь план вручную.");
-        return;
+      // Если стоит manual — сначала переводим в auto, чтобы серверная функция могла перезаписать
+      const cur = branchPlans.get(branchId);
+      if (cur && (cur.mode === "manual" || cur.mode === "auto_locked")) {
+        const ok = confirm(
+          `План филиала задан вручную (${cur.mode}). ` +
+          `Перевести в автоматический режим и пересчитать?`
+        );
+        if (!ok) return;
+        const { error: upErr } = await sb
+          .from(BRANCH_PLAN_TABLE)
+          .update({ mode: "auto", updated_at: new Date().toISOString() })
+          .eq("branch_id", branchId)
+          .eq("month", monthStart);
+        if (upErr) throw upErr;
       }
 
-      await saveBranchPlan(branchId, {
-        monthly_turnover_target: s.target,
-        monthly_bonus_each: s.bonus,
-        mode: "auto",
-        auto_params: {
-          ...s.debug,
-          applied_at: new Date().toISOString(),
-        },
+      const { error: rpcErr } = await sb.rpc("fn_payroll_ensure_plan", {
+        p_branch_id: branchId,
+        p_month: monthStart,
       });
+      if (rpcErr) throw rpcErr;
+
       await mutate();
     } catch (e: any) {
-      alert(`Не удалось применить авто-план: ${extractErrMsg(e)}`);
+      alert(`Не удалось пересчитать план: ${extractErrMsg(e)}`);
     } finally {
       setPlanBusyBranchId(null);
     }
@@ -1647,10 +1438,24 @@ export default function Page() {
           >
             Штрафы и графики
           </button>
+          <button
+            onClick={() => setTab("disciplines")}
+            className={cx(
+              "rounded-xl px-5 py-2 text-sm font-semibold transition",
+              tab === "disciplines"
+                ? "bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]"
+                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+            )}
+          >
+            Дисциплинарные взыскания
+          </button>
         </div>
 
         {/* ===== Вкладка «Штрафы и графики» ===== */}
         {tab === "penalties" && <PenaltiesTab />}
+
+        {/* ===== Вкладка «Дисциплинарные взыскания» ===== */}
+        {tab === "disciplines" && <DisciplinesTab />}
 
         {/* ===== Вкладка «Зарплаты» (всё что было ниже) ===== */}
         {tab === "payroll" && (
@@ -1788,7 +1593,9 @@ export default function Page() {
               ? Math.trunc(median(histArr.filter((x) => x > 0)))
               : 0;
 
-            const canAuto = isMonthlyPlanMode && histLoaded && prevTurnover > 0;
+            // ✅ Кнопка "Пересчитать" доступна всегда в monthly-режиме —
+            // если истории нет, сервер сам выберет coldstart/dormant
+            const canAuto = isMonthlyPlanMode;
 
             const prem = branchPremiumMap.get(b.id);
             const turnover = prem?.turnover_sum ?? 0;
@@ -1852,12 +1659,12 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* PIN кассы + доступ сотрудников */}
+                {/* PIN филиала + доступ сотрудников */}
                 <div className="mb-4 rounded-2xl bg-slate-50/80 ring-1 ring-slate-200 px-4 py-3">
-                  {/* Строка: PIN кассы */}
+                  {/* Строка: PIN филиала (действует и на кассу, и на touch-экран) */}
                   <div className="flex flex-wrap items-center gap-2">
                     <KeyRound className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-                    <span className="text-[12px] font-semibold text-slate-700">PIN кассы:</span>
+                    <span className="text-[12px] font-semibold text-slate-700">PIN филиала:</span>
                     <input
                       value={pinInputs[b.id] ?? ""}
                       onChange={(e) => setPinInputs((p) => ({ ...p, [b.id]: e.target.value.replace(/\D/g, "") }))}
@@ -1983,11 +1790,41 @@ export default function Page() {
                 {/* План месяца по филиалу */}
                 {isMonthlyPlanMode ? (
                   <div className="mb-4 rounded-2xl bg-sky-50/60 ring-1 ring-sky-200/60 px-4 py-3">
-                    {/* Строка 1: статистика + кнопка Авто */}
+                    {/* Строка 1: статистика + бейдж режима + кнопка Авто */}
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                         План
                       </span>
+                      {effectivePlan && (
+                        <span className={cx(
+                          "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium ring-1",
+                          effectivePlan.mode === "manual"
+                            ? "bg-amber-50 text-amber-700 ring-amber-200"
+                            : effectivePlan.mode === "auto_locked"
+                            ? "bg-rose-50 text-rose-700 ring-rose-200"
+                            : effectivePlan.mode === "auto_dormant"
+                            ? "bg-slate-100 text-slate-500 ring-slate-200"
+                            : effectivePlan.mode === "auto_coldstart"
+                            ? "bg-violet-50 text-violet-700 ring-violet-200"
+                            : effectivePlan.mode === "pending"
+                            ? "bg-slate-50 text-slate-400 ring-slate-200"
+                            : "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                        )} title={
+                          effectivePlan.mode === "manual" ? "Задано вручную (cron не перезаписывает)" :
+                          effectivePlan.mode === "auto_locked" ? "Залочен ручной — cron не трогает" :
+                          effectivePlan.mode === "auto_dormant" ? "Филиал неактивен (выручка <30k/мес)" :
+                          effectivePlan.mode === "auto_coldstart" ? "Холодный старт (медиана других филиалов × 0.6)" :
+                          effectivePlan.mode === "pending" ? "Рассчитывается…" :
+                          "Автоматически по формуле v3 (EMA + тренд + волатильность)"
+                        }>
+                          {effectivePlan.mode === "manual" ? "ручной" :
+                           effectivePlan.mode === "auto_locked" ? "ручной (lock)" :
+                           effectivePlan.mode === "auto_dormant" ? "неактивен" :
+                           effectivePlan.mode === "auto_coldstart" ? "cold-start" :
+                           effectivePlan.mode === "pending" ? "ожидает" :
+                           "авто"}
+                        </span>
+                      )}
                       {prevTurnover > 0 && (
                         <span className="text-[11px] text-slate-500">
                           прошл.:{" "}
@@ -2033,8 +1870,9 @@ export default function Page() {
                         <GhostBtn
                           disabled={!canAuto || planBusyBranchId === b.id}
                           onClick={() => applyAutoPlan(b.id)}
+                          title="Пересчитать план через серверную формулу v3"
                         >
-                          Авто
+                          Пересчитать
                         </GhostBtn>
                       </div>
                     </div>

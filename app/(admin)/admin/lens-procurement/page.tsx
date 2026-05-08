@@ -54,7 +54,38 @@ const SPH_LIMITS: Record<string, { min: number; max: number }> = {
   chame: { min: -6, max: 3 }, // Chameleon (цветные) — пока закуп-диапазон
   pc_159_hmc: { min: -6, max: 6 }, // Polycarbonate 1.59 HMC
   myopia_control: { min: -6, max: 0 }, // Myopia Control (kids) — только минус и 0
+
+  // Асферика — диапазон зеркалит донора
+  asph_standard: { min: -6, max: 6 }, // донор WHITE
+  asph_ar: { min: -6, max: 6 }, // донор AR
+  asph_bb: { min: -7, max: 5 }, // донор BB
 };
+
+// ============== Асферика: проекция спроса с донора ==============
+// Истории по асферике пока нет (POS только начнёт продавать), поэтому
+// для первого заказа берём план/to_buy у соответствующего сферического
+// семейства-донора. Когда пойдут реальные ASPH_*-продажи в order_items,
+// RPC начнёт возвращать ненулевой спрос — донор-мост можно будет убрать.
+const ASPH_DONOR_BY_KEY: Record<string, string> = {
+  asph_standard: 'WHITE',
+  asph_ar: 'AR',
+  asph_bb: 'BB',
+};
+
+// На первый закуп асферики бюджет ограничен — берём 1/3 от плана донора,
+// округляя вверх (чтобы по диоптриям с малым спросом всё-таки заказать минимум одну).
+// min_each из шапки страницы по-прежнему действует поверх этого — он подхватит
+// те SPH, где после деления получилось меньше.
+const ASPH_DEMAND_DIVISOR = 3;
+
+function getAsphDonor(famRaw: string): string | null {
+  const k = lowerKey(famRaw);
+  return ASPH_DONOR_BY_KEY[k] ?? null;
+}
+
+function isAsphFamily(famRaw: string): boolean {
+  return !!getAsphDonor(famRaw);
+}
 
 // ✅ detect limits by selected family (uses your normalizeFamilyKey/lowerKey)
 function getSphLimitsForFamily(famRaw: string): { min: number; max: number } {
@@ -62,6 +93,11 @@ function getSphLimitsForFamily(famRaw: string): { min: number; max: number } {
 
   // exact keys first
   if (SPH_LIMITS[k]) return SPH_LIMITS[k];
+
+  // ASPH_* — наследуют диапазон от донора (см. SPH_LIMITS.asph_*)
+  if (k === 'asph_standard') return SPH_LIMITS.asph_standard;
+  if (k === 'asph_ar') return SPH_LIMITS.asph_ar;
+  if (k === 'asph_bb') return SPH_LIMITS.asph_bb;
 
   // chameleon variants (CHAME_BLACK / CHAME_BROWN / CHAME_*)
   if (k.startsWith('chame')) return SPH_LIMITS.chame;
@@ -88,6 +124,7 @@ const RPC_PROCUREMENT_FN = 'lens_procurement_by_family';
 
 // Закупочные RPC
 const RPC_CREATE_BATCH_FN = 'lens_purchase_create_batch_from_to_buy';
+const RPC_CREATE_BATCH_EXPLICIT_FN = 'lens_purchase_create_batch_explicit';
 const RPC_MARK_ORDERED_FN = 'lens_purchase_mark_ordered';
 const RPC_MARK_RECEIVED_FN = 'lens_purchase_mark_received';
 // ✅ NEW: hard clear stock for location
@@ -237,6 +274,11 @@ const VENDOR_FAMILY_LABELS: Record<string, string> = {
   chame: 'Chameleon',
   pc_159_hmc: 'PC 1.59 HMC',
   myopia_control: 'Myopia Control 1.56',
+
+  // ✅ Асферика (имена для поставщика и для UI)
+  asph_standard: 'ASP UC',
+  asph_ar: 'ASP HMC',
+  asph_bb: 'ASP BlueCut HMC',
 };
 
 function chameColorSuffix(k: string) {
@@ -255,6 +297,12 @@ function vendorFamilyLabel(famRaw: string) {
   const k = lowerKey(famRaw);
 
   if (!k) return '—';
+
+  // ✅ Асферика — точные ключи, проверяем РАНЬШЕ остальных,
+  // чтобы asph_bb не упало в ветку "BB" из-за подстроки.
+  if (k === 'asph_standard') return VENDOR_FAMILY_LABELS.asph_standard;
+  if (k === 'asph_ar') return VENDOR_FAMILY_LABELS.asph_ar;
+  if (k === 'asph_bb') return VENDOR_FAMILY_LABELS.asph_bb;
 
   // BB / BlueBlock
   if (k === 'bb' || k.startsWith('bb ') || k.startsWith('bb:') || k.includes('blueblock')) {
@@ -314,21 +362,6 @@ function locationKindLabel(l: LocationRow) {
   return l.kind; // остальные показываем как есть
 }
 
-// === Excel: vendor-friendly lens name mapping ===
-function isBlueBlockFamily(fam: string) {
-  const s = String(fam || '').trim().toLowerCase();
-  if (!s) return false;
-  if (s === 'bb') return true;
-  if (s.startsWith('bb ')) return true;
-  if (s.startsWith('bb:')) return true;
-  if (s.includes('blueblock')) return true;
-  return false;
-}
-
-function prettyLensFamilyName(fam: string) {
-  return vendorFamilyLabel(fam);
-}
-
 /* ===================== ✅ FAMILY FILTER (keep only requested) ===================== */
 /**
  * Оставляем:
@@ -340,10 +373,23 @@ function prettyLensFamilyName(fam: string) {
  * Убираем:
  * - BBH, WHITE 1.67, CLEAR, PHOTO (и всё остальное скрываем)
  */
-const ALLOWED_FAMILY_KEYS = new Set(['bb', 'ar', 'white', 'pc_159_hmc', 'myopia_control']);
+const ALLOWED_FAMILY_KEYS = new Set([
+  'bb',
+  'ar',
+  'white',
+  'pc_159_hmc',
+  'myopia_control',
+  // ✅ Асферика (см. lens_family_map: ASPH_STANDARD/ASPH_AR/ASPH_BB)
+  'asph_standard',
+  'asph_ar',
+  'asph_bb',
+]);
 
 function isAllowedFamily(raw: string) {
   const key = lowerKey(raw);
+
+  // ✅ Асферика — explicit allow (мимо общих эвристик про "ar"/"bb"/"clear")
+  if (key === 'asph_standard' || key === 'asph_ar' || key === 'asph_bb') return true;
 
   // точечные исключения
   if (key === 'bbh') return false;
@@ -533,155 +579,636 @@ function addMerge(ws: any, r1: number, c1: number, r2: number, c2: number) {
   merges.push({ s: { r: r1 - 1, c: c1 - 1 }, e: { r: r2 - 1, c: c2 - 1 } });
 }
 
-type RefocusStyleMeta = {
-  lastRow: number;
-  dataEndRow: number;
-  totalRow: number;
-  grandRow: number;
+/* ===================== Refocus Excel: brand palette ===================== */
+
+const REFOCUS_PALETTE = {
+  Ink: '0B1220',
+  Slate: '475569',
+  Mute: '94A3B8',
+  Cyan: '06B6D4',
+  CyanDk: '0891B2',
+  CyanSft: 'ECFEFF',
+  Amber: 'FACC15',
+  AmberSft: 'FEF3C7',
+  AmberInk: '78350F',
+  Paper: 'FAFAFA',
+  Zebra: 'F8FAFC',
+  Line: 'E2E8F0',
+  White: 'FFFFFF',
 };
 
-function applyRefocusExcelStyle(ws: any, meta: RefocusStyleMeta) {
-  const TEAL = '22D3EE';
-  const SKY = '38BDF8';
-  const DARK = '0F172A';
-  const SLATE = '334155';
-  const LIGHT = 'F8FAFC';
-  const BORDER = 'E2E8F0';
-  const WHITE = 'FFFFFF';
+const REFOCUS_FONT_DISPLAY = 'Inter';
+const REFOCUS_FONT_BODY = 'Inter';
+const REFOCUS_NUMFMT_PCS = '#,##0';
 
-  const borderAll = {
-    border: {
-      top: { style: 'thin', color: { rgb: BORDER } },
-      bottom: { style: 'thin', color: { rgb: BORDER } },
-      left: { style: 'thin', color: { rgb: BORDER } },
-      right: { style: 'thin', color: { rgb: BORDER } },
+/* ===================== Refocus Excel: style fragments ===================== */
+
+function rfFill(hex: string) {
+  return { fill: { patternType: 'solid', fgColor: { rgb: hex } } };
+}
+
+function rfFont(opts: {
+  size?: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  name?: string;
+} = {}) {
+  return {
+    font: {
+      name: opts.name ?? REFOCUS_FONT_BODY,
+      sz: opts.size ?? 11,
+      ...(opts.bold ? { bold: true } : {}),
+      ...(opts.italic ? { italic: true } : {}),
+      color: { rgb: opts.color ?? REFOCUS_PALETTE.Ink },
     },
   };
+}
 
-  const titleStyle = {
-    font: { name: 'Calibri', bold: true, sz: 22, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: DARK } },
-    alignment: { vertical: 'center', horizontal: 'left' },
+function rfAlign(opts: {
+  h?: 'left' | 'center' | 'right';
+  v?: 'top' | 'center' | 'bottom';
+  wrap?: boolean;
+  indent?: number;
+} = {}) {
+  return {
+    alignment: {
+      ...(opts.h ? { horizontal: opts.h } : {}),
+      ...(opts.v ? { vertical: opts.v } : {}),
+      ...(opts.wrap ? { wrapText: true } : {}),
+      ...(opts.indent != null ? { indent: opts.indent } : {}),
+    },
   };
+}
 
-  const subTitleStyle = {
-    font: { name: 'Calibri', bold: true, sz: 18, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: SLATE } },
-    alignment: { vertical: 'center', horizontal: 'left' },
+function rfBorder(opts: {
+  top?: string;
+  bottom?: string;
+  left?: string;
+  right?: string;
+  style?: 'thin' | 'medium' | 'hair';
+} = {}) {
+  const s = opts.style ?? 'thin';
+  return {
+    border: {
+      ...(opts.top ? { top: { style: s, color: { rgb: opts.top } } } : {}),
+      ...(opts.bottom ? { bottom: { style: s, color: { rgb: opts.bottom } } } : {}),
+      ...(opts.left ? { left: { style: s, color: { rgb: opts.left } } } : {}),
+      ...(opts.right ? { right: { style: s, color: { rgb: opts.right } } } : {}),
+    },
   };
+}
 
-  const exportDateCell = {
-    font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: SLATE } },
-    alignment: { vertical: 'center', horizontal: 'right', wrapText: false },
-  };
+function rfSetRow(ws: any, rowIdx1: number, hpt: number) {
+  if (!ws['!rows']) ws['!rows'] = [];
+  ws['!rows'][rowIdx1 - 1] = { hpt };
+}
 
-  const metaLabel = {
-    font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: SLATE } },
-    alignment: { vertical: 'center', horizontal: 'left', wrapText: true },
-  };
+function rfSetNumFmt(ws: any, r1: number, c1: number, r2: number, c2: number, z: string) {
+  for (let r = r1; r <= r2; r++) {
+    for (let c = c1; c <= c2; c++) {
+      const a = cellAddr(r, c);
+      if (!ws[a]) ws[a] = { t: 's', v: '' };
+      ws[a].z = z;
+    }
+  }
+}
 
-  const metaValue = {
-    font: { name: 'Calibri', sz: 11, color: { rgb: DARK } },
-    alignment: { vertical: 'center', horizontal: 'left', wrapText: true },
-  };
+/* ===================== Refocus Excel: Order Sheet ===================== */
 
-  const headerNeg = {
-    font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: DARK } },
-    alignment: { vertical: 'center', horizontal: 'center' },
-  };
+type OrderSheetOpts = {
+  XLSX: any;
+  lensTypeLabel: string;
+  rows: ProcRow[];
+  exportDateISO: string;
+  shipTo: string;
+};
 
-  const headerPos = {
-    font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: TEAL } },
-    alignment: { vertical: 'center', horizontal: 'center' },
-  };
+function buildOrderSheet(opts: OrderSheetOpts): any {
+  const X = opts.XLSX;
+  const C = REFOCUS_PALETTE;
+  const FD = REFOCUS_FONT_DISPLAY;
 
-  const bandLeft = {
-    fill: { patternType: 'solid', fgColor: { rgb: 'FDE68A' } },
-    alignment: { vertical: 'center', horizontal: 'center' },
-  };
+  // Подготовка данных (только to_buy>0)
+  const minus = opts.rows
+    .filter((r) => r.sph < 0 && (r.to_buy || 0) > 0)
+    .sort((a, b) => b.sph - a.sph);
+  const plus = opts.rows
+    .filter((r) => r.sph >= 0 && (r.to_buy || 0) > 0)
+    .sort((a, b) => a.sph - b.sph);
 
-  const bandRight = {
-    fill: { patternType: 'solid', fgColor: { rgb: 'CFFAFE' } },
-    alignment: { vertical: 'center', horizontal: 'center' },
-  };
+  const totalMinus = minus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
+  const totalPlus = plus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
+  const grandTotal = Math.round(totalMinus + totalPlus);
+  const dataLen = Math.max(minus.length, plus.length);
 
-  const dataCell = {
-    font: { name: 'Calibri', sz: 12, color: { rgb: DARK } },
-    alignment: { vertical: 'center', horizontal: 'center' },
-  };
+  // Строки — фиксированное расположение
+  const HERO = 1;
+  const STRIPE = 2;
+  const SPC1 = 3;
+  const META_LABEL = 4;
+  const META_VALUE = 5;
+  const META_PAD = 6; // буфер под длинный ship-to (адрес может занимать 3-4 строки)
+  const EXPORT_DATE = 7;
+  const SPC2 = 8;
+  const HDR1 = 9;
+  const HDR2 = 10;
+  const DATA_FROM = 11;
+  const DATA_TO = DATA_FROM + Math.max(dataLen, 0) - 1;
+  const SPC3 = (dataLen > 0 ? DATA_TO : HDR2) + 1;
+  const SUBTOTAL = SPC3 + 1;
+  const SPC4 = SUBTOTAL + 1;
+  const GRAND = SPC4 + 1;
+  const LAST = GRAND;
 
-  const totalBar = {
-    font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: SKY } },
-    alignment: { vertical: 'center', horizontal: 'left' },
-  };
+  const blank5 = ['', '', '', '', ''];
+  const aoa: any[][] = [];
+  while (aoa.length < LAST) aoa.push([...blank5]);
 
-  const totalVal = {
-    font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: SKY } },
-    alignment: { vertical: 'center', horizontal: 'right' },
-  };
+  aoa[HERO - 1] = [BRAND_NAME, '', '', 'LENS SALES ORDER', ''];
+  aoa[META_LABEL - 1] = ['LENS TYPE', '', '', 'SHIP-TO', ''];
+  aoa[META_VALUE - 1] = [opts.lensTypeLabel, '', '', opts.shipTo || '—', ''];
+  // META_PAD (row 6) намеренно пустая — служит дополнительной высотой под ship-to
+  aoa[EXPORT_DATE - 1] = [`EXPORT DATE  ${opts.exportDateISO}`, '', '', '', ''];
 
-  const grandBar = {
-    font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: DARK } },
-    alignment: { vertical: 'center', horizontal: 'left' },
-  };
+  aoa[HDR1 - 1] = ['MINUS DIOPTERS', '', '', 'PLUS DIOPTERS', ''];
+  aoa[HDR2 - 1] = ['SPH', 'QTY  (pcs)', '', 'SPH', 'QTY  (pcs)'];
 
-  const grandVal = {
-    font: { name: 'Calibri', bold: true, sz: 16, color: { rgb: WHITE } },
-    fill: { patternType: 'solid', fgColor: { rgb: DARK } },
-    alignment: { vertical: 'center', horizontal: 'right' },
-  };
+  for (let i = 0; i < dataLen; i++) {
+    const m = minus[i];
+    const p = plus[i];
+    aoa[DATA_FROM - 1 + i] = [
+      m ? fmtSph(m.sph) : '',
+      m ? Math.round(Number(m.to_buy) || 0) : '',
+      '',
+      p ? fmtSph(p.sph) : '',
+      p ? Math.round(Number(p.to_buy) || 0) : '',
+    ];
+  }
 
-  const { lastRow, dataEndRow, totalRow, grandRow } = meta;
+  aoa[SUBTOTAL - 1] = [
+    'TOTAL MINUS',
+    Math.round(totalMinus),
+    '',
+    'TOTAL PLUS',
+    Math.round(totalPlus),
+  ];
 
-  applyRangeStyle(ws, 1, 1, lastRow, 5, {
-    fill: { patternType: 'solid', fgColor: { rgb: LIGHT } },
+  aoa[GRAND - 1] = ['GRAND TOTAL', '', '', grandTotal, 'pcs'];
+
+  // Сборка ws
+  const ws = X.utils.aoa_to_sheet(aoa);
+  ws['!ref'] = `A1:E${LAST}`;
+  // A — широкая под "TOTAL MINUS"; E — широкая под мульти-язычный ship-to (китайский занимает в 2× больше)
+  ws['!cols'] = [{ wch: 14 }, { wch: 15 }, { wch: 3 }, { wch: 14 }, { wch: 22 }];
+
+  // Высоты строк
+  rfSetRow(ws, HERO, 50);
+  rfSetRow(ws, STRIPE, 8);
+  rfSetRow(ws, SPC1, 8);
+  rfSetRow(ws, META_LABEL, 14);
+  rfSetRow(ws, META_VALUE, 26);
+  rfSetRow(ws, META_PAD, 22); // буфер под ship-to
+  rfSetRow(ws, EXPORT_DATE, 22);
+  rfSetRow(ws, SPC2, 10);
+  rfSetRow(ws, HDR1, 24);
+  rfSetRow(ws, HDR2, 20);
+  for (let r = DATA_FROM; r <= DATA_TO; r++) rfSetRow(ws, r, 22);
+  rfSetRow(ws, SPC3, 10);
+  rfSetRow(ws, SUBTOTAL, 24);
+  rfSetRow(ws, SPC4, 4);
+  rfSetRow(ws, GRAND, 50);
+
+  // Мерджи
+  addMerge(ws, HERO, 1, HERO, 3);
+  addMerge(ws, HERO, 4, HERO, 5);
+  addMerge(ws, STRIPE, 1, STRIPE, 5);
+  addMerge(ws, META_VALUE, 1, META_VALUE, 2);
+  addMerge(ws, META_VALUE, 4, META_VALUE + 2, 5); // ship-to span 3 rows: D5:E7
+  addMerge(ws, EXPORT_DATE, 1, EXPORT_DATE, 2);
+  addMerge(ws, HDR1, 1, HDR1, 2);
+  addMerge(ws, HDR1, 4, HDR1, 5);
+  addMerge(ws, GRAND, 1, GRAND, 3);
+  addMerge(ws, GRAND, 4, GRAND, 5);
+
+  // Базовый paper-фон под весь лист
+  applyRangeStyle(ws, 1, 1, LAST, 5, rfFill(C.Paper));
+
+  // HERO
+  applyRangeStyle(ws, HERO, 1, HERO, 5, rfFill(C.Ink));
+  applyRangeStyle(ws, HERO, 1, HERO, 3, {
+    ...rfFont({ name: FD, size: 30, bold: true, color: C.White }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
+  applyRangeStyle(ws, HERO, 4, HERO, 5, {
+    ...rfFont({ name: FD, size: 13, bold: true, color: C.Cyan }),
+    ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
   });
 
-  applyRangeStyle(ws, 1, 1, 1, 5, titleStyle);
-  applyRangeStyle(ws, 2, 1, 2, 5, subTitleStyle);
-  applyRangeStyle(ws, 2, 5, 2, 5, exportDateCell);
+  // STRIPE
+  applyRangeStyle(ws, STRIPE, 1, STRIPE, 5, rfFill(C.Cyan));
 
-  applyRangeStyle(ws, 3, 1, 5, 1, metaLabel);
-  applyRangeStyle(ws, 3, 2, 5, 5, metaValue);
-  applyRangeStyle(ws, 3, 1, 5, 5, borderAll);
+  // META_LABEL
+  applyRangeStyle(ws, META_LABEL, 1, META_LABEL, 5, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 9, bold: true, color: C.Mute }),
+    ...rfAlign({ h: 'left', v: 'bottom', indent: 1 }),
+  });
 
-  applyRangeStyle(ws, 7, 1, 7, 2, headerNeg);
-  applyRangeStyle(ws, 7, 4, 7, 5, headerPos);
-  applyRangeStyle(ws, 7, 3, 7, 3, { fill: { patternType: 'solid', fgColor: { rgb: LIGHT } } });
+  // META_VALUE — Lens type с cyan-акцентом слева (зеркалит ship-to блок)
+  applyRangeStyle(ws, META_VALUE, 1, META_VALUE, 2, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 18, bold: true, color: C.Ink }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+    ...rfBorder({ left: C.Cyan, style: 'medium' }),
+  });
+  applyRangeStyle(ws, META_VALUE, 4, META_VALUE + 2, 5, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 10, color: C.Slate }),
+    ...rfAlign({ h: 'left', v: 'top', wrap: true, indent: 1 }),
+    ...rfBorder({ left: C.Cyan, style: 'medium' }),
+  });
 
-  if (dataEndRow >= 8) {
-    applyRangeStyle(ws, 8, 1, dataEndRow, 1, { ...bandLeft, ...borderAll });
-    applyRangeStyle(ws, 8, 4, dataEndRow, 4, { ...bandRight, ...borderAll });
+  // META_PAD (row 6) — пустой paper-буфер. Стили базового paper-фона достаточно.
 
-    applyRangeStyle(ws, 8, 2, dataEndRow, 2, { ...dataCell, ...borderAll });
-    applyRangeStyle(ws, 8, 5, dataEndRow, 5, { ...dataCell, ...borderAll });
+  // EXPORT_DATE
+  applyRangeStyle(ws, EXPORT_DATE, 1, EXPORT_DATE, 2, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 9, bold: true, color: C.Mute }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
 
-    applyRangeStyle(ws, 8, 3, dataEndRow, 3, { fill: { patternType: 'solid', fgColor: { rgb: LIGHT } } });
+  // HDR1: MINUS / PLUS DIOPTERS
+  applyRangeStyle(ws, HDR1, 1, HDR1, 2, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 13, bold: true, color: C.White }),
+    ...rfAlign({ h: 'center', v: 'center' }),
+  });
+  applyRangeStyle(ws, HDR1, 3, HDR1, 3, rfFill(C.Paper));
+  applyRangeStyle(ws, HDR1, 4, HDR1, 5, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 13, bold: true, color: C.White }),
+    ...rfAlign({ h: 'center', v: 'center' }),
+  });
+
+  // HDR2: SPH / QTY (с медиум-cyan низом — рамка над данными)
+  applyRangeStyle(ws, HDR2, 1, HDR2, 1, {
+    ...rfFill(C.CyanSft),
+    ...rfFont({ size: 10, bold: true, color: C.CyanDk }),
+    ...rfAlign({ h: 'center', v: 'center' }),
+    ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+  });
+  applyRangeStyle(ws, HDR2, 2, HDR2, 2, {
+    ...rfFill(C.CyanSft),
+    ...rfFont({ size: 10, bold: true, color: C.CyanDk }),
+    ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+    ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+  });
+  applyRangeStyle(ws, HDR2, 3, HDR2, 3, rfFill(C.Paper));
+  applyRangeStyle(ws, HDR2, 4, HDR2, 4, {
+    ...rfFill(C.CyanSft),
+    ...rfFont({ size: 10, bold: true, color: C.CyanDk }),
+    ...rfAlign({ h: 'center', v: 'center' }),
+    ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+  });
+  applyRangeStyle(ws, HDR2, 5, HDR2, 5, {
+    ...rfFill(C.CyanSft),
+    ...rfFont({ size: 10, bold: true, color: C.CyanDk }),
+    ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+    ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+  });
+
+  // Тело таблицы — зебра + акцент QTY (крупно, ink/cyan для «горячих» значений)
+  // SPH = тонкая «метка» (slate, 11pt), QTY = «значение» (15pt, ink или cyan если ≥5)
+  const HOT_QTY = 5;
+  if (dataLen > 0) {
+    for (let i = 0; i < dataLen; i++) {
+      const r = DATA_FROM + i;
+      const odd = i % 2 === 0;
+      const bg = odd ? C.White : C.Zebra;
+
+      const m = minus[i];
+      const p = plus[i];
+      const mQty = m ? Math.round(Number(m.to_buy) || 0) : 0;
+      const pQty = p ? Math.round(Number(p.to_buy) || 0) : 0;
+
+      // SPH (минус-сторона) — мягче
+      applyRangeStyle(ws, r, 1, r, 1, {
+        ...rfFill(bg),
+        ...rfFont({ size: 11, color: C.Slate }),
+        ...rfAlign({ h: 'center', v: 'center' }),
+        ...rfBorder({ bottom: C.Line }),
+      });
+      // QTY (минус-сторона) — крупно, ink/cyan
+      applyRangeStyle(ws, r, 2, r, 2, {
+        ...rfFill(bg),
+        ...rfFont({ size: 15, bold: true, color: m && mQty >= HOT_QTY ? C.CyanDk : C.Ink }),
+        ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+        ...rfBorder({ bottom: C.Line }),
+      });
+      applyRangeStyle(ws, r, 3, r, 3, rfFill(C.Paper));
+      // SPH (плюс-сторона)
+      applyRangeStyle(ws, r, 4, r, 4, {
+        ...rfFill(bg),
+        ...rfFont({ size: 11, color: C.Slate }),
+        ...rfAlign({ h: 'center', v: 'center' }),
+        ...rfBorder({ bottom: C.Line }),
+      });
+      // QTY (плюс-сторона)
+      applyRangeStyle(ws, r, 5, r, 5, {
+        ...rfFill(bg),
+        ...rfFont({ size: 15, bold: true, color: p && pQty >= HOT_QTY ? C.CyanDk : C.Ink }),
+        ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+        ...rfBorder({ bottom: C.Line }),
+      });
+    }
+    rfSetNumFmt(ws, DATA_FROM, 2, DATA_TO, 2, REFOCUS_NUMFMT_PCS);
+    rfSetNumFmt(ws, DATA_FROM, 5, DATA_TO, 5, REFOCUS_NUMFMT_PCS);
   }
 
-  if (totalRow > 0) {
-    applyRangeStyle(ws, totalRow, 1, totalRow, 1, { ...totalBar, ...borderAll });
-    applyRangeStyle(ws, totalRow, 2, totalRow, 2, { ...totalVal, ...borderAll });
-    applyRangeStyle(ws, totalRow, 4, totalRow, 4, { ...totalBar, ...borderAll });
-    applyRangeStyle(ws, totalRow, 5, totalRow, 5, { ...totalVal, ...borderAll });
-    applyRangeStyle(ws, totalRow, 3, totalRow, 3, {
-      fill: { patternType: 'solid', fgColor: { rgb: LIGHT } },
-      ...borderAll,
+  // SUBTOTAL
+  applyRangeStyle(ws, SUBTOTAL, 1, SUBTOTAL, 1, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 9, bold: true, color: C.Slate }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+    ...rfBorder({ top: C.Slate, style: 'thin' }),
+  });
+  applyRangeStyle(ws, SUBTOTAL, 2, SUBTOTAL, 2, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 14, bold: true, color: C.Ink }),
+    ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+    ...rfBorder({ top: C.Slate, style: 'thin' }),
+  });
+  applyRangeStyle(ws, SUBTOTAL, 3, SUBTOTAL, 3, rfFill(C.Paper));
+  applyRangeStyle(ws, SUBTOTAL, 4, SUBTOTAL, 4, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 9, bold: true, color: C.Slate }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+    ...rfBorder({ top: C.Slate, style: 'thin' }),
+  });
+  applyRangeStyle(ws, SUBTOTAL, 5, SUBTOTAL, 5, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 14, bold: true, color: C.Ink }),
+    ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+    ...rfBorder({ top: C.Slate, style: 'thin' }),
+  });
+  rfSetNumFmt(ws, SUBTOTAL, 2, SUBTOTAL, 2, REFOCUS_NUMFMT_PCS);
+  rfSetNumFmt(ws, SUBTOTAL, 5, SUBTOTAL, 5, REFOCUS_NUMFMT_PCS);
+
+  // GRAND TOTAL — карточка с крупным числом
+  applyRangeStyle(ws, GRAND, 1, GRAND, 3, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 12, bold: true, color: C.Mute }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 2 }),
+  });
+  applyRangeStyle(ws, GRAND, 4, GRAND, 4, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 32, bold: true, color: C.Cyan }),
+    ...rfAlign({ h: 'right', v: 'center' }),
+  });
+  applyRangeStyle(ws, GRAND, 5, GRAND, 5, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 12, bold: true, color: C.Mute }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
+  rfSetNumFmt(ws, GRAND, 4, GRAND, 4, REFOCUS_NUMFMT_PCS);
+
+  // Page setup (A4 portrait, fit to width)
+  ws['!pageSetup'] = {
+    paperSize: 9,
+    orientation: 'portrait',
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+  };
+  ws['!pageMargins'] = {
+    left: 0.5,
+    right: 0.5,
+    top: 0.6,
+    bottom: 0.6,
+    header: 0.3,
+    footer: 0.3,
+  };
+
+  return ws;
+}
+
+/* ===================== Refocus Excel: Summary Sheet ===================== */
+
+type RefocusSummaryItem = {
+  lensTypeLabel: string;
+  sphMin: number;
+  sphMax: number;
+  linesCount: number;
+  piecesTotal: number;
+};
+
+type SummarySheetOpts = {
+  XLSX: any;
+  exportDateISO: string;
+  shipTo: string;
+  items: RefocusSummaryItem[];
+};
+
+function buildSummarySheet(opts: SummarySheetOpts): any {
+  const X = opts.XLSX;
+  const C = REFOCUS_PALETTE;
+  const FD = REFOCUS_FONT_DISPLAY;
+
+  // 5 колонок: A=LENS TYPE, B=SPH RANGE, C=LINES, D=PIECES, E=" pcs" suffix.
+  const HERO = 1;
+  const STRIPE = 2;
+  const SPC1 = 3;
+  const TITLE = 4;
+  const SUBTITLE = 5;
+  const SPC2 = 6;
+  const HDR = 7;
+  const DATA_FROM = 8;
+  const DATA_TO = DATA_FROM + Math.max(opts.items.length, 0) - 1;
+  const SPC3 = (opts.items.length > 0 ? DATA_TO : HDR) + 1;
+  const GRAND = SPC3 + 1;
+  const LAST = GRAND;
+
+  const blank5 = ['', '', '', '', ''];
+  const aoa: any[][] = [];
+  while (aoa.length < LAST) aoa.push([...blank5]);
+
+  aoa[HERO - 1] = [BRAND_NAME, '', '', 'LENS SALES ORDER', ''];
+  aoa[TITLE - 1] = ['ORDER SUMMARY', '', '', '', ''];
+  aoa[SUBTITLE - 1] = [
+    `${opts.items.length} lens type(s) · ${opts.exportDateISO}`,
+    '', '', '', '',
+  ];
+  aoa[HDR - 1] = ['LENS TYPE', 'SPH RANGE', 'LINES', 'PIECES', ''];
+
+  let totalPieces = 0;
+  for (let i = 0; i < opts.items.length; i++) {
+    const it = opts.items[i];
+    totalPieces += it.piecesTotal;
+    aoa[DATA_FROM - 1 + i] = [
+      it.lensTypeLabel,
+      it.linesCount > 0 ? `${fmtSph(it.sphMin)}  …  ${fmtSph(it.sphMax)}` : '—',
+      it.linesCount,
+      it.piecesTotal,
+      '',
+    ];
+  }
+
+  aoa[GRAND - 1] = ['GRAND TOTAL', '', '', totalPieces, 'pcs'];
+
+  const ws = X.utils.aoa_to_sheet(aoa);
+  ws['!ref'] = `A1:E${LAST}`;
+  ws['!cols'] = [
+    { wch: 30 },
+    { wch: 18 },
+    { wch: 10 },
+    { wch: 14 },
+    { wch: 6 },
+  ];
+
+  rfSetRow(ws, HERO, 50);
+  rfSetRow(ws, STRIPE, 8);
+  rfSetRow(ws, SPC1, 8);
+  rfSetRow(ws, TITLE, 28);
+  rfSetRow(ws, SUBTITLE, 16);
+  rfSetRow(ws, SPC2, 10);
+  rfSetRow(ws, HDR, 24);
+  for (let r = DATA_FROM; r <= DATA_TO; r++) rfSetRow(ws, r, 22);
+  rfSetRow(ws, SPC3, 10);
+  rfSetRow(ws, GRAND, 50);
+
+  addMerge(ws, HERO, 1, HERO, 3);
+  addMerge(ws, HERO, 4, HERO, 5);
+  addMerge(ws, STRIPE, 1, STRIPE, 5);
+  addMerge(ws, TITLE, 1, TITLE, 5);
+  addMerge(ws, SUBTITLE, 1, SUBTITLE, 5);
+  addMerge(ws, GRAND, 1, GRAND, 3);
+
+  applyRangeStyle(ws, 1, 1, LAST, 5, rfFill(C.Paper));
+
+  applyRangeStyle(ws, HERO, 1, HERO, 5, rfFill(C.Ink));
+  applyRangeStyle(ws, HERO, 1, HERO, 3, {
+    ...rfFont({ name: FD, size: 30, bold: true, color: C.White }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
+  applyRangeStyle(ws, HERO, 4, HERO, 5, {
+    ...rfFont({ name: FD, size: 13, bold: true, color: C.Cyan }),
+    ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+  });
+
+  applyRangeStyle(ws, STRIPE, 1, STRIPE, 5, rfFill(C.Cyan));
+
+  applyRangeStyle(ws, TITLE, 1, TITLE, 5, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 20, bold: true, color: C.Ink }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
+
+  applyRangeStyle(ws, SUBTITLE, 1, SUBTITLE, 5, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 11, color: C.Slate }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
+
+  // HDR — Ink-полоса с белым текстом и medium-cyan низом (рамкой над данными)
+  applyRangeStyle(ws, HDR, 1, HDR, 1, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 11, bold: true, color: C.White }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+    ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+  });
+  applyRangeStyle(ws, HDR, 2, HDR, 2, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 11, bold: true, color: C.White }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+    ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+  });
+  applyRangeStyle(ws, HDR, 3, HDR, 3, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 11, bold: true, color: C.White }),
+    ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+    ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+  });
+  applyRangeStyle(ws, HDR, 4, HDR, 4, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 11, bold: true, color: C.White }),
+    ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+    ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+  });
+  applyRangeStyle(ws, HDR, 5, HDR, 5, rfFill(C.Ink));
+
+  // Data rows — зебра, акцент на PIECES (крупно, ink)
+  for (let r = DATA_FROM; r <= DATA_TO; r++) {
+    const odd = (r - DATA_FROM) % 2 === 0;
+    const bg = odd ? C.White : C.Zebra;
+    applyRangeStyle(ws, r, 1, r, 1, {
+      ...rfFill(bg),
+      ...rfFont({ size: 13, bold: true, color: C.Ink }),
+      ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+      ...rfBorder({ bottom: C.Line }),
+    });
+    applyRangeStyle(ws, r, 2, r, 2, {
+      ...rfFill(bg),
+      ...rfFont({ size: 11, color: C.Slate }),
+      ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+      ...rfBorder({ bottom: C.Line }),
+    });
+    applyRangeStyle(ws, r, 3, r, 3, {
+      ...rfFill(bg),
+      ...rfFont({ size: 11, color: C.Slate }),
+      ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+      ...rfBorder({ bottom: C.Line }),
+    });
+    applyRangeStyle(ws, r, 4, r, 4, {
+      ...rfFill(bg),
+      ...rfFont({ size: 15, bold: true, color: C.Ink }),
+      ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+      ...rfBorder({ bottom: C.Line }),
+    });
+    applyRangeStyle(ws, r, 5, r, 5, {
+      ...rfFill(bg),
+      ...rfBorder({ bottom: C.Line }),
     });
   }
-
-  if (grandRow > 0) {
-    applyRangeStyle(ws, grandRow, 1, grandRow, 4, { ...grandBar, ...borderAll });
-    applyRangeStyle(ws, grandRow, 5, grandRow, 5, { ...grandVal, ...borderAll });
+  if (opts.items.length > 0) {
+    rfSetNumFmt(ws, DATA_FROM, 3, DATA_TO, 4, REFOCUS_NUMFMT_PCS);
   }
 
-  applyRangeStyle(ws, 1, 1, lastRow, 5, borderAll);
+  // GRAND TOTAL — Ink-карточка с крупным cyan-числом
+  applyRangeStyle(ws, GRAND, 1, GRAND, 3, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 12, bold: true, color: C.Mute }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 2 }),
+  });
+  applyRangeStyle(ws, GRAND, 4, GRAND, 4, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 32, bold: true, color: C.Cyan }),
+    ...rfAlign({ h: 'right', v: 'center' }),
+  });
+  applyRangeStyle(ws, GRAND, 5, GRAND, 5, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 12, bold: true, color: C.Mute }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
+  rfSetNumFmt(ws, GRAND, 4, GRAND, 4, REFOCUS_NUMFMT_PCS);
+
+  ws['!pageSetup'] = {
+    paperSize: 9,
+    orientation: 'landscape',
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+  };
+  ws['!pageMargins'] = {
+    left: 0.5,
+    right: 0.5,
+    top: 0.6,
+    bottom: 0.6,
+    header: 0.3,
+    footer: 0.3,
+  };
+
+  return ws;
 }
 
 /* ===================== types ===================== */
@@ -1442,6 +1969,57 @@ export default function LensProcurementPage() {
 
   /* ---------- load procurement rows ---------- */
 
+  // helper: parse RPC response into ProcRow[]
+  const parseProcRpcData = React.useCallback((data: any): ProcRow[] => {
+    return Array.isArray(data)
+      ? data
+          .map((r: any) => {
+            const sph0 = pickSph(r);
+            const sph = normSph(sph0);
+            return {
+              sph,
+              sign: r.sign ?? r.out_sign ?? null,
+              hist_qty: pickHistQty(r),
+              hist_days: pickHistDays(r),
+              daily_avg: pickDailyAvg(r),
+              plan_qty: pickPlanQty(r),
+              on_hand: pickOnHand(r),
+              in_transit: pickInTransit(r),
+              to_buy: pickToBuy(r),
+              lens_sku_id: pickSkuId(r),
+            } as ProcRow;
+          })
+          .filter((r: ProcRow) => Number.isFinite(r.sph))
+      : [];
+  }, []);
+
+  // helper: проектируем спрос донора на ASPH_*-семейство
+  // (см. ASPH_DONOR_BY_KEY). Сохраняем on_hand/in_transit/lens_sku_id из своей RPC,
+  // подменяем hist/plan/daily_avg/to_buy на основе плана донора.
+  const mirrorDonorOntoAsph = React.useCallback((asphRows: ProcRow[], donorRows: ProcRow[]): ProcRow[] => {
+    const donorBy = new Map<string, ProcRow>();
+    for (const d of donorRows) donorBy.set(d.sph.toFixed(2), d);
+
+    const div = Math.max(1, ASPH_DEMAND_DIVISOR);
+    return asphRows.map((r) => {
+      const d = donorBy.get(r.sph.toFixed(2));
+      if (!d) return r;
+      const donorPlan = Number(d.plan_qty || 0);
+      // 1/3 от плана донора, округление вверх (бюджет ограничен)
+      const planMirrored = donorPlan > 0 ? Math.ceil(donorPlan / div) : 0;
+      const onHand = Number(r.on_hand || 0);
+      const inTransit = Number(r.in_transit || 0);
+      return {
+        ...r,
+        hist_qty: Number(d.hist_qty || 0),
+        hist_days: Number(d.hist_days || r.hist_days || 0),
+        daily_avg: d.daily_avg == null ? null : Number(d.daily_avg) / div,
+        plan_qty: planMirrored,
+        to_buy: Math.max(0, planMirrored - onHand - inTransit),
+      };
+    });
+  }, []);
+
   const loadProcRows = React.useCallback(async () => {
     if (!mounted) return;
     if (!selectedRpc || !locationId) return;
@@ -1452,7 +2030,10 @@ export default function LensProcurementPage() {
 
     try {
       const sb = getBrowserSupabase();
-      const { data, error } = await sb.rpc(RPC_PROCUREMENT_FN, {
+
+      const donorFam = getAsphDonor(selectedRpc);
+
+      const mainP = sb.rpc(RPC_PROCUREMENT_FN, {
         p_lens_family: selectedRpc,
         p_location_id: locationId,
         p_plan_days: PLAN_DAYS,
@@ -1461,31 +2042,27 @@ export default function LensProcurementPage() {
         p_apply_min_to_all: applyMinToAll,
       });
 
-      if (error) throw new Error(error.message);
+      const donorP = donorFam
+        ? sb.rpc(RPC_PROCUREMENT_FN, {
+            p_lens_family: donorFam,
+            p_location_id: locationId,
+            p_plan_days: PLAN_DAYS,
+            p_safety: safetyFactor,
+            p_min_each: minEach,
+            p_apply_min_to_all: applyMinToAll,
+          })
+        : Promise.resolve({ data: null, error: null } as any);
 
-      const parsedRaw: ProcRow[] = Array.isArray(data)
-        ? data
-            .map((r: any) => {
-              const sph0 = pickSph(r);
-              const sph = normSph(sph0);
-              return {
-                sph,
-                sign: r.sign ?? r.out_sign ?? null,
-                hist_qty: pickHistQty(r),
-                hist_days: pickHistDays(r),
-                daily_avg: pickDailyAvg(r),
-                plan_qty: pickPlanQty(r),
-                on_hand: pickOnHand(r),
-                in_transit: pickInTransit(r),
-                to_buy: pickToBuy(r),
-                lens_sku_id: pickSkuId(r),
-              };
-            })
-            .filter((r) => Number.isFinite(r.sph))
-        : [];
+      const [main, donor] = await Promise.all([mainP, donorP]);
+      if (main.error) throw new Error(main.error.message);
+      if (donor.error) throw new Error(donor.error.message);
 
-      const parsed = aggregateBySph(parsedRaw);
-      const adjusted = applyMinEachClient(parsed, minEach, applyMinToAll);
+      const parsed = aggregateBySph(parseProcRpcData(main.data));
+      const working = donorFam
+        ? mirrorDonorOntoAsph(parsed, aggregateBySph(parseProcRpcData(donor.data)))
+        : parsed;
+
+      const adjusted = applyMinEachClient(working, minEach, applyMinToAll);
 
       // ✅ apply SPH range limit by family
       const lim = getSphLimitsForFamily(selectedRpc);
@@ -1498,7 +2075,7 @@ export default function LensProcurementPage() {
     } finally {
       setLoadingRows(false);
     }
-  }, [mounted, selectedRpc, locationId, safetyFactor, minEach, applyMinToAll]);
+  }, [mounted, selectedRpc, locationId, safetyFactor, minEach, applyMinToAll, parseProcRpcData, mirrorDonorOntoAsph]);
 
   React.useEffect(() => {
     if (gate !== 'ok') return;
@@ -1535,8 +2112,10 @@ export default function LensProcurementPage() {
         const fam = normalizeFamilyKey(f.rpc_family);
         if (!fam) continue;
 
+        const donorFam = getAsphDonor(fam);
+
         try {
-          const { data, error } = await sb.rpc(RPC_PROCUREMENT_FN, {
+          const mainP = sb.rpc(RPC_PROCUREMENT_FN, {
             p_lens_family: fam,
             p_location_id: locationId,
             p_plan_days: PLAN_DAYS,
@@ -1545,30 +2124,27 @@ export default function LensProcurementPage() {
             p_apply_min_to_all: applyMinToAll,
           });
 
-          if (error) throw new Error(error.message);
+          const donorP = donorFam
+            ? sb.rpc(RPC_PROCUREMENT_FN, {
+                p_lens_family: donorFam,
+                p_location_id: locationId,
+                p_plan_days: PLAN_DAYS,
+                p_safety: safetyFactor,
+                p_min_each: minEach,
+                p_apply_min_to_all: applyMinToAll,
+              })
+            : Promise.resolve({ data: null, error: null } as any);
 
-          const rrRaw: ProcRow[] = Array.isArray(data)
-            ? data
-                .map((r: any) => {
-                  const sph = normSph(pickSph(r));
-                  return {
-                    sph,
-                    sign: r.sign ?? r.out_sign ?? null,
-                    hist_qty: pickHistQty(r),
-                    hist_days: pickHistDays(r),
-                    daily_avg: pickDailyAvg(r),
-                    plan_qty: pickPlanQty(r),
-                    on_hand: pickOnHand(r),
-                    in_transit: pickInTransit(r),
-                    to_buy: pickToBuy(r),
-                    lens_sku_id: pickSkuId(r),
-                  };
-                })
-                .filter((x) => Number.isFinite(x.sph))
-            : [];
+          const [main, donor] = await Promise.all([mainP, donorP]);
+          if (main.error) throw new Error(main.error.message);
+          if (donor.error) throw new Error(donor.error.message);
 
-          const rrAgg = aggregateBySph(rrRaw);
-          const adjusted = applyMinEachClient(rrAgg, minEach, applyMinToAll);
+          const rrAgg = aggregateBySph(parseProcRpcData(main.data));
+          const working = donorFam
+            ? mirrorDonorOntoAsph(rrAgg, aggregateBySph(parseProcRpcData(donor.data)))
+            : rrAgg;
+
+          const adjusted = applyMinEachClient(working, minEach, applyMinToAll);
 
           // ✅ ВАЖНО: применяем тот же SPH-диапазон, что и справа (как в loadProcRows)
           const lim = getSphLimitsForFamily(fam);
@@ -1593,7 +2169,7 @@ export default function LensProcurementPage() {
     return () => {
       cancelled = true;
     };
-  }, [mounted, locationId, families, safetyFactor, minEach, applyMinToAll]);
+  }, [mounted, locationId, families, safetyFactor, minEach, applyMinToAll, parseProcRpcData, mirrorDonorOntoAsph]);
 
   React.useEffect(() => {
     if (gate !== 'ok') return;
@@ -2062,99 +2638,30 @@ export default function LensProcurementPage() {
 
     const rpcFam = normalizeFamilyKey(famRpc);
 
-    // ✅ 1) агрегация + сортировка
+    // 1) агрегация + сортировка
     const dataRows0 = aggregateBySph([...rr])
       .filter((x) => Number.isFinite(x.sph))
       .sort((a, b) => a.sph - b.sph);
 
-    // ✅ 2) применяем лимиты SPH по семейству (как в UI)
+    // 2) лимиты SPH по семейству (как в UI)
     const lim = getSphLimitsForFamily(rpcFam);
     const dataRows = dataRows0.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
 
-    // ✅ 3) в Excel показываем только строки, где реально есть TO_BUY
-    const minus = dataRows.filter((r) => r.sph < 0 && (r.to_buy || 0) > 0).sort((a, b) => b.sph - a.sph);
-    const plus = dataRows.filter((r) => r.sph >= 0 && (r.to_buy || 0) > 0).sort((a, b) => a.sph - b.sph);
+    // 3) лейбл линзы для поставщика (например: "ASP HMC" или "BlueCut HMC")
+    const lensType = vendorFamilyLabel(rpcFam);
 
-    const lensType = prettyLensFamilyName(rpcFam);
-    const blueBlock = isBlueBlockFamily(rpcFam);
-
-    const aoa: any[][] = [];
-
-    aoa.push([BRAND_NAME, '', '', '', '']);
-    aoa.push(['LENS SALES ORDER', '', '', '', `Export date: ${exportDateISO}`]);
-
-    aoa.push(['Lens type:', blueBlock ? `${lensType} (BlueBlock)` : lensType, '', '', '']);
-    aoa.push(['Ship-to address:', shipTo || '—', '', '', '']);
-    aoa.push(['', '', '', '', '']);
-    aoa.push(['', '', '', '', '']);
-
-    aoa.push([
-      blueBlock ? 'SPH (−) BlueBlock' : 'SPH (−)',
-      'QTY (pcs)',
-      '',
-      blueBlock ? 'SPH (+) BlueBlock' : 'SPH (+)',
-      'QTY (pcs)',
-    ]);
-
-    const maxLen = Math.max(minus.length, plus.length);
-
-    for (let i = 0; i < maxLen; i++) {
-      const m = minus[i];
-      const p = plus[i];
-
-      // ✅ qty в Excel лучше как число -> округлим
-      const mQty = m ? Math.round(Number(m.to_buy) || 0) : '';
-      const pQty = p ? Math.round(Number(p.to_buy) || 0) : '';
-
-      aoa.push([m ? fmtSph(m.sph) : '', m ? mQty : '', '', p ? fmtSph(p.sph) : '', p ? pQty : '']);
-    }
-
-    aoa.push(['', '', '', '', '']);
-    const totalMinus = minus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
-    const totalPlus = plus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
-    aoa.push(['Total (−) (pcs)', Math.round(totalMinus), '', 'Total (+) (pcs)', Math.round(totalPlus)]);
-    aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
-
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    const headerRow = 7;
-    const dataEndRow = maxLen > 0 ? headerRow + maxLen : headerRow;
-    const blankAfterDataRow = dataEndRow + 1;
-    const totalRow = dataEndRow + 2;
-    const grandRow = dataEndRow + 3;
-    const lastRow = grandRow;
-
-    ws['!ref'] = `A1:E${lastRow}`;
-    ws['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 3 }, { wch: 20 }, { wch: 26 }];
-
-    const rowsHeights: any[] = [];
-    rowsHeights[0] = { hpt: 28 };
-    rowsHeights[1] = { hpt: 24 };
-    rowsHeights[2] = { hpt: 18 };
-    rowsHeights[3] = { hpt: 54 };
-    rowsHeights[4] = { hpt: 10 };
-    rowsHeights[5] = { hpt: 20 };
-    for (let r = headerRow + 1; r <= dataEndRow; r++) rowsHeights[r - 1] = { hpt: 18 };
-    rowsHeights[blankAfterDataRow - 1] = { hpt: 10 };
-    rowsHeights[totalRow - 1] = { hpt: 20 };
-    rowsHeights[grandRow - 1] = { hpt: 22 };
-    ws['!rows'] = rowsHeights;
-
-    addMerge(ws, 1, 1, 1, 5);
-    addMerge(ws, 2, 1, 2, 4);
-    addMerge(ws, 3, 2, 3, 5);
-    addMerge(ws, 4, 2, 5, 5);
-    addMerge(ws, grandRow, 1, grandRow, 4);
-
+    let ws: any;
     try {
-      applyRefocusExcelStyle(ws, {
-        lastRow,
-        dataEndRow: maxLen > 0 ? dataEndRow : 0,
-        totalRow,
-        grandRow,
+      ws = buildOrderSheet({
+        XLSX,
+        lensTypeLabel: lensType,
+        rows: dataRows,
+        exportDateISO,
+        shipTo,
       });
-    } catch {
-      // ignore
+    } catch (e: any) {
+      setErr(prettifyRpcError(e));
+      return;
     }
 
     const sheetName = safeSheetName(lensType);
@@ -2203,10 +2710,14 @@ export default function LensProcurementPage() {
     const fileDate = todayISO.replaceAll('-', '.');
     const shipTo = shipToAddress.trim();
 
+    const summaryItems: RefocusSummaryItem[] = [];
+
     for (const fam of familyList) {
       const rpcFam = normalizeFamilyKey(fam);
+      const donorFam = getAsphDonor(rpcFam);
 
-      const { data, error } = await sb.rpc(RPC_PROCUREMENT_FN, {
+      // Запрашиваем основное семейство и (для ASPH) донора параллельно — как в loadProcRows
+      const mainP = sb.rpc(RPC_PROCUREMENT_FN, {
         p_lens_family: rpcFam,
         p_location_id: locationId,
         p_plan_days: PLAN_DAYS,
@@ -2214,110 +2725,87 @@ export default function LensProcurementPage() {
         p_min_each: minEach,
         p_apply_min_to_all: applyMinToAll,
       });
+      const donorP = donorFam
+        ? sb.rpc(RPC_PROCUREMENT_FN, {
+            p_lens_family: donorFam,
+            p_location_id: locationId,
+            p_plan_days: PLAN_DAYS,
+            p_safety: safetyFactor,
+            p_min_each: minEach,
+            p_apply_min_to_all: applyMinToAll,
+          })
+        : Promise.resolve({ data: null, error: null } as any);
 
-      if (error) {
-        setErr(prettifyRpcError(error));
+      const [main, donor] = await Promise.all([mainP, donorP]);
+      if (main.error) {
+        setErr(prettifyRpcError(main.error));
+        continue;
+      }
+      if (donor.error) {
+        setErr(prettifyRpcError(donor.error));
         continue;
       }
 
-      const rrRaw: ProcRow[] = Array.isArray(data)
-        ? data
-            .map((r: any) => {
-              const sph = normSph(pickSph(r));
-              return {
-                sph,
-                hist_qty: pickHistQty(r),
-                hist_days: pickHistDays(r),
-                daily_avg: pickDailyAvg(r),
-                plan_qty: pickPlanQty(r),
-                on_hand: pickOnHand(r),
-                in_transit: pickInTransit(r),
-                to_buy: pickToBuy(r),
-                lens_sku_id: pickSkuId(r),
-              };
-            })
-            .filter((x) => Number.isFinite(x.sph))
-        : [];
+      const parsed = aggregateBySph(parseProcRpcData(main.data));
+      const working = donorFam
+        ? mirrorDonorOntoAsph(parsed, aggregateBySph(parseProcRpcData(donor.data)))
+        : parsed;
+      const adjusted = applyMinEachClient(working, minEach, applyMinToAll);
 
-      const rrAgg = aggregateBySph(rrRaw);
-      const rrAdj = applyMinEachClient(rrAgg, minEach, applyMinToAll);
-
-      // ✅ apply SPH limits in exportAll too (same as UI)
       const lim = getSphLimitsForFamily(rpcFam);
-      const rr = rrAdj.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
+      const ranged = adjusted.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
 
-      const minus = rr.filter((r) => r.sph < 0 && (r.to_buy || 0) > 0).sort((a, b) => b.sph - a.sph);
-      const plus = rr.filter((r) => r.sph >= 0 && (r.to_buy || 0) > 0).sort((a, b) => a.sph - b.sph);
+      const lensType = vendorFamilyLabel(rpcFam);
 
-      const lensType = prettyLensFamilyName(rpcFam);
-      const blueBlock = isBlueBlockFamily(rpcFam);
-
-      const aoa: any[][] = [];
-
-      aoa.push([BRAND_NAME, '', '', '', '']);
-      aoa.push(['LENS SALES ORDER', '', '', '', `Export date: ${exportDateISO}`]);
-
-      aoa.push(['Lens type:', blueBlock ? `${lensType} (BlueBlock)` : lensType, '', '', '']);
-      aoa.push(['Ship-to address:', shipTo || '—', '', '', '']);
-      aoa.push(['', '', '', '', '']);
-      aoa.push(['', '', '', '', '']);
-
-      aoa.push([
-        blueBlock ? 'SPH (−) BlueBlock' : 'SPH (−)',
-        'QTY (pcs)',
-        '',
-        blueBlock ? 'SPH (+) BlueBlock' : 'SPH (+)',
-        'QTY (pcs)',
-      ]);
-
-      const maxLen = Math.max(minus.length, plus.length);
-
-      for (let i = 0; i < maxLen; i++) {
-        const m = minus[i];
-        const p = plus[i];
-
-        const mQty = m ? Math.round(Number(m.to_buy) || 0) : '';
-        const pQty = p ? Math.round(Number(p.to_buy) || 0) : '';
-
-        aoa.push([m ? fmtSph(m.sph) : '', m ? mQty : '', '', p ? fmtSph(p.sph) : '', p ? pQty : '']);
-      }
-
-      aoa.push(['', '', '', '', '']);
-      const totalMinus = minus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
-      const totalPlus = plus.reduce((a, r) => a + (Number(r.to_buy) || 0), 0);
-      aoa.push(['Total (−)', Math.round(totalMinus), '', 'Total (+)', Math.round(totalPlus)]);
-      aoa.push(['Grand Total (pcs)', Math.round(totalMinus + totalPlus), '', '', '']);
-
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-      const headerRow = 7;
-      const dataEndRow = maxLen > 0 ? headerRow + maxLen : headerRow;
-      const totalRow = dataEndRow + 2;
-      const grandRow = dataEndRow + 3;
-      const lastRow = grandRow;
-
-      ws['!ref'] = `A1:E${lastRow}`;
-      ws['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 3 }, { wch: 20 }, { wch: 26 }];
-
-      addMerge(ws, 1, 1, 1, 5);
-      addMerge(ws, 2, 1, 2, 4);
-      addMerge(ws, 3, 2, 3, 5);
-      addMerge(ws, 4, 2, 5, 5);
-      addMerge(ws, grandRow, 1, grandRow, 4);
-
+      let ws: any;
       try {
-        applyRefocusExcelStyle(ws, {
-          lastRow,
-          dataEndRow: maxLen > 0 ? dataEndRow : 0,
-          totalRow,
-          grandRow,
+        ws = buildOrderSheet({
+          XLSX,
+          lensTypeLabel: lensType,
+          rows: ranged,
+          exportDateISO,
+          shipTo,
         });
-      } catch {
-        // ignore
+      } catch (e: any) {
+        setErr(prettifyRpcError(e));
+        continue;
       }
 
       const sheetName = safeSheetName(lensType);
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      // Итоги для Summary-листа
+      const withBuy = ranged.filter((r) => (r.to_buy || 0) > 0);
+      const piecesTotal = withBuy.reduce((a, r) => a + Math.round(Number(r.to_buy) || 0), 0);
+      const sphMin = withBuy.length ? Math.min(...withBuy.map((r) => r.sph)) : 0;
+      const sphMax = withBuy.length ? Math.max(...withBuy.map((r) => r.sph)) : 0;
+      summaryItems.push({
+        lensTypeLabel: lensType,
+        sphMin,
+        sphMax,
+        linesCount: withBuy.length,
+        piecesTotal,
+      });
+    }
+
+    // Summary-лист только для multi-family — и его кладём ПЕРВЫМ листом книги
+    if (familyList.length > 1 && summaryItems.length > 0) {
+      try {
+        const summary = buildSummarySheet({
+          XLSX,
+          exportDateISO,
+          shipTo,
+          items: summaryItems,
+        });
+        XLSX.utils.book_append_sheet(wb, summary, 'Summary');
+        // Двигаем Summary в начало книги
+        if (wb.SheetNames.length > 1) {
+          const last = wb.SheetNames.pop()!;
+          wb.SheetNames.unshift(last);
+        }
+      } catch {
+        // ignore
+      }
     }
 
     const wbout = XLSX.write(wb, {
@@ -2335,7 +2823,7 @@ export default function LensProcurementPage() {
     a.href = URL.createObjectURL(blob);
     a.download =
       familyList.length === 1
-        ? `Refocus_Lenses_${safeSheetName(prettyLensFamilyName(normalizeFamilyKey(familyList[0])))}_${fileDate}.xlsx`
+        ? `Refocus_Lenses_${safeSheetName(vendorFamilyLabel(normalizeFamilyKey(familyList[0])))}_${fileDate}.xlsx`
         : `Refocus_Lenses_${fileDate}.xlsx`;
 
     document.body.appendChild(a);
@@ -2376,19 +2864,48 @@ export default function LensProcurementPage() {
 
     try {
       const sb = getBrowserSupabase();
-      const { data, error } = await sb.rpc(RPC_CREATE_BATCH_FN, {
-        p_lens_family: selectedRpc,
-        p_to_location_id: locationId,
-        p_plan_days: PLAN_DAYS,
-        p_safety: safetyFactor,
-        p_min_each: minEach,
-        p_apply_min_to_all: applyMinToAll,
-        p_comment: createComment?.trim() ? createComment.trim() : null,
-      });
+      const isAsph = isAsphFamily(selectedRpc);
+      const comment = createComment?.trim() ? createComment.trim() : null;
 
-      if (error) throw new Error(error.message);
+      let batchId: string | null = null;
 
-      console.log('Created batch id:', data);
+      if (isAsph) {
+        // Для ASPH_* в БД нет истории — стандартный RPC внутри посчитал бы
+        // to_buy=0 и не создал бы партию. Берём то, что уже посчитано в UI
+        // (план спроецирован с донора, минимум применён, лимиты SPH применены)
+        // и шлём в explicit-RPC явным списком (sph, qty).
+        const items = rows
+          .filter((r) => (Number(r.to_buy) || 0) > 0)
+          .map((r) => ({ sph: normSph(r.sph), qty: Math.round(Number(r.to_buy) || 0) }))
+          .filter((x) => Number.isFinite(x.sph) && x.qty > 0);
+
+        if (!items.length) {
+          throw new Error('Нет позиций для партии (TO_BUY = 0 после применения лимитов).');
+        }
+
+        const { data, error } = await sb.rpc(RPC_CREATE_BATCH_EXPLICIT_FN, {
+          p_lens_family: selectedRpc,
+          p_to_location_id: locationId,
+          p_items: items,
+          p_comment: comment,
+        });
+        if (error) throw new Error(error.message);
+        batchId = (data as any) ?? null;
+      } else {
+        const { data, error } = await sb.rpc(RPC_CREATE_BATCH_FN, {
+          p_lens_family: selectedRpc,
+          p_to_location_id: locationId,
+          p_plan_days: PLAN_DAYS,
+          p_safety: safetyFactor,
+          p_min_each: minEach,
+          p_apply_min_to_all: applyMinToAll,
+          p_comment: comment,
+        });
+        if (error) throw new Error(error.message);
+        batchId = (data as any) ?? null;
+      }
+
+      console.log('Created batch id:', batchId);
 
       setCreateComment('');
       setCreateExtraOpen(false);
@@ -2964,6 +3481,23 @@ export default function LensProcurementPage() {
                       </SoftPrimaryButton>
                     </div>
                   </div>
+
+                  {/* Donor-mirror notice for ASPH_* families */}
+                  {(() => {
+                    const donor = getAsphDonor(selectedRpc);
+                    if (!donor) return null;
+                    return (
+                      <div className="mt-3 inline-flex items-start gap-2 rounded-2xl bg-amber-500/10 px-3 py-2 ring-1 ring-amber-300/40">
+                        <Info className="mt-0.5 h-4 w-4 text-amber-600" />
+                        <div className="text-[12px] text-amber-900 leading-relaxed">
+                          У асферики ещё нет истории — спрос временно <b>спроецирован</b> со спроса{' '}
+                          <b>{vendorFamilyLabel(donor)}</b> по тем же диоптриям и уменьшен в{' '}
+                          <b>×{ASPH_DEMAND_DIVISOR}</b> (бюджет первой закупки). После первой партии и
+                          реальных продаж сюда будет приходить настоящий спрос.
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Chart */}
                   <div className="mt-3 rounded-2xl bg-white/90 ring-1 ring-sky-200/70 shadow-[0_20px_60px_rgba(15,23,42,0.12)] p-2">

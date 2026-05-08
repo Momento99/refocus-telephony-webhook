@@ -5,22 +5,16 @@ import React, { useEffect, useState } from 'react';
 import getSupabase from '@/lib/supabaseClient';
 import Link from 'next/link';
 import { AlertTriangle, Barcode, CheckCircle2 } from 'lucide-react';
-
-/** Плановая ёмкость витрин по филиалам (стартовое значение; переопределяется через localStorage) */
-const BRANCH_CAPACITY: Record<string, number> = {
-  Сокулук: 140,
-  Беловодск: 168,
-  'Кара-Балта': 168,
-  Кант: 252,
-  Токмок: 168,
-};
-
-/** Филиалы, где не используем автоматическую «допечатку по продажам» (как в branch page) */
-const BRANCHES_WITHOUT_AUTO_REPLENISH: string[] = ['Кант', 'Токмок'];
+import {
+  BRANCHES_WITHOUT_AUTO_REPLENISH,
+  LEGACY_BRANCH_CAPACITY,
+  getBranchTotalSlots,
+  isBranchUsingFormula,
+} from '@/lib/framePricingFormula';
 
 /* ────────── типы оправ (для barcode inference) ────────── */
 
-type FrameTypeCode = 'RP' | 'RM' | 'KD' | 'PA' | 'MA';
+type FrameTypeCode = 'RP' | 'RM' | 'KD' | 'PA' | 'MA' | 'RL';
 type GenderCode = 'F' | 'M';
 type TypeKey = `${FrameTypeCode}_${GenderCode}`;
 
@@ -30,7 +24,7 @@ function makeTypeKey(type: FrameTypeCode, gender: GenderCode): TypeKey {
 
 /* ────────── barcode inference (как в branch page) ────────── */
 
-const KNOWN_TYPES: FrameTypeCode[] = ['RP', 'RM', 'KD', 'PA', 'MA'];
+const KNOWN_TYPES: FrameTypeCode[] = ['RP', 'RM', 'KD', 'PA', 'MA', 'RL'];
 
 function inferFromBarcode(barcodeRaw: string): { typeCode: FrameTypeCode; gender: GenderCode } | null {
   const barcode = String(barcodeRaw || '').trim().toUpperCase();
@@ -260,7 +254,11 @@ export default function BarcodesOverviewPage() {
   const [rbJson, setRbJson] = useState<any>(null);
 
   function getPlannedSlots(branchId: number, branchName: string): number {
-    let planned = BRANCH_CAPACITY[branchName] ?? 0;
+    // Формульные филиалы (Токмок и др.) — ёмкость берётся из формулы.
+    // Legacy — из LEGACY_BRANCH_CAPACITY с возможным localStorage override.
+    let planned = isBranchUsingFormula(branchName)
+      ? getBranchTotalSlots(branchName)
+      : (LEGACY_BRANCH_CAPACITY[branchName] ?? 0);
     try {
       const saved = localStorage.getItem(`ui.branchSlots.${branchId}`);
       if (saved != null) {
@@ -394,7 +392,7 @@ export default function BarcodesOverviewPage() {
       // 4) Сборка stats
       const stats: BranchStats[] = list.map((br) => {
         const plannedSlots = getPlannedSlots(br.id, br.name);
-        const disableAutoSuggest = BRANCHES_WITHOUT_AUTO_REPLENISH.includes(br.name);
+        const disableAutoSuggest = BRANCHES_WITHOUT_AUTO_REPLENISH.has(br.name);
 
         const typeActive = (byBranch[br.id]?.activeMap ?? {}) as Record<string, Record<number, number>>;
         const rawSuggest = (byBranch[br.id]?.suggestMap ?? {}) as Record<string, number[]>;

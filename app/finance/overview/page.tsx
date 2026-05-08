@@ -594,14 +594,21 @@ export default function FinanceOverviewPage() {
           return q.returns<PayrollDailyRow[]>();
         }
 
+        // Используем canonical как единый источник зарплатных чисел (см. payroll_daily_canonical).
+        // Fallback на старые v_payroll_daily_v2 / v_payroll_daily оставлен на случай регресса.
         let payRows: PayrollDailyRow[] = [];
         {
-          const { data: d1, error: e1 } = await fetchPayrollView('v_payroll_daily_v2');
-          if (!e1) {
-            payRows = d1 ?? [];
+          const { data: d0, error: e0 } = await fetchPayrollView('v_payroll_daily_canonical');
+          if (!e0) {
+            payRows = d0 ?? [];
           } else {
-            const { data: d2, error: e2 } = await fetchPayrollView('v_payroll_daily');
-            payRows = e2 ? [] : d2 ?? [];
+            const { data: d1, error: e1 } = await fetchPayrollView('v_payroll_daily_v2');
+            if (!e1) {
+              payRows = d1 ?? [];
+            } else {
+              const { data: d2, error: e2 } = await fetchPayrollView('v_payroll_daily');
+              payRows = e2 ? [] : d2 ?? [];
+            }
           }
         }
 

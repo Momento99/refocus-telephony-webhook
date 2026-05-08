@@ -81,14 +81,11 @@ function combinedScore(b: DayBucket): number | null {
 function heatmapColor(mode: HeatmapMode, bucket: DayBucket, maxActivity: number): string {
   const totalThreads = (bucket.wa?.threads ?? 0) + (bucket.ig?.threads ?? 0);
   if (totalThreads === 0) return '';
+  // В режиме «Оценка» фон плитки дня делаем нейтральным —
+  // цветными остаются только мини-плитки филиалов внутри.
+  // Это убирает визуальный дубль (один и тот же score красил и фон, и плитки).
   if (mode === 'score') {
-    const s = combinedScore(bucket);
-    if (s == null) return 'bg-slate-100';
-    if (s >= 8.5) return 'bg-emerald-100 hover:bg-emerald-200';
-    if (s >= 7)   return 'bg-cyan-100 hover:bg-cyan-200';
-    if (s >= 5)   return 'bg-amber-100 hover:bg-amber-200';
-    if (s >= 3)   return 'bg-orange-100 hover:bg-orange-200';
-    return 'bg-rose-100 hover:bg-rose-200';
+    return 'bg-white';
   }
   if (mode === 'activity') {
     const pct = maxActivity > 0 ? totalThreads / maxActivity : 0;
@@ -222,6 +219,21 @@ export default function AnalysisCalendar({
         </div>
       </div>
 
+      {/* Score legend — видно сразу, что значат цвета мини-плиток филиалов */}
+      {heatmapMode === 'score' && (
+        <div className="px-5 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-3 flex-wrap text-[11px]">
+          <span className="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">
+            Оценка качества:
+          </span>
+          <LegendChip color="bg-emerald-200 text-emerald-900" label="Отлично" range="8.5–10" />
+          <LegendChip color="bg-cyan-200 text-cyan-900"       label="Хорошо"  range="7.0–8.4" />
+          <LegendChip color="bg-amber-200 text-amber-900"     label="Норма"   range="5.0–6.9" />
+          <LegendChip color="bg-orange-200 text-orange-900"   label="Слабо"   range="3.0–4.9" />
+          <LegendChip color="bg-rose-200 text-rose-900"       label="Плохо"   range="0–2.9" />
+          <LegendChip color="bg-slate-50 text-slate-400 ring-1 ring-slate-200" label="Без обращений" range="—" />
+        </div>
+      )}
+
       {/* DoW row */}
       <div className="grid grid-cols-7 px-2 pt-2">
         {DAYS_SHORT.map((d) => (
@@ -263,7 +275,7 @@ export default function AnalysisCalendar({
                 disabled={disabled}
                 onClick={() => { if (!disabled && hasAny) onDayClick(cell.date); }}
                 className={[
-                  'relative min-h-[120px] flex flex-col p-2 text-left transition rounded-xl',
+                  'relative min-h-[140px] flex flex-col p-2 text-left transition rounded-xl',
                   !cell.isCurrentMonth ? 'opacity-20 pointer-events-none' :
                     cell.isFuture || cell.tooOld ? 'opacity-30 cursor-default' :
                     isSelected ? 'ring-2 ring-inset ring-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.35)] bg-white' :
@@ -284,11 +296,10 @@ export default function AnalysisCalendar({
                   </div>
                 </div>
 
-                {/* Мини-плитки по 5 филиалам с объединённой WA+IG оценкой.
-                    Показываем ВСЕГДА для текущего/прошлого дня этого месяца,
-                    чтобы было видно «общались/не общались» по каждому филиалу. */}
+                {/* Мини-плитки по филиалам — одна строка из 5 колонок с
+                    объединённой WA+IG оценкой. Видно сразу «общались/нет». */}
                 {cell.isCurrentMonth && !cell.isFuture && !cell.tooOld && branchesToRender.length > 0 && (
-                  <div className="mt-1.5 grid grid-cols-3 gap-0.5">
+                  <div className={`mt-1.5 grid gap-1`} style={{ gridTemplateColumns: `repeat(${branchesToRender.length}, minmax(0, 1fr))` }}>
                     {branchesToRender.map((b) => {
                       const data = bucket ? combinedBranchScore(bucket, b.id) : null;
                       const hasActivity = !!data && data.threads > 0;
@@ -300,17 +311,16 @@ export default function AnalysisCalendar({
                           key={b.id}
                           title={
                             hasActivity
-                              ? `${b.name}: ${data!.threads} диал.${score != null ? `, оценка ${score.toFixed(1)}` : ', не оценено'}`
-                              : `${b.name}: без активности`
+                              ? `${b.name}: ${data!.threads} диал.${score != null ? `, оценка ${score.toFixed(1)}/10` : ', не оценено AI'}`
+                              : `${b.name}: без обращений в этот день`
                           }
                           className={[
-                            'flex items-center justify-between gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold leading-tight',
-                            hasActivity ? colors.bg : 'bg-white/40 ring-1 ring-slate-200/60',
-                            hasActivity ? colors.text : 'text-slate-300',
+                            'flex flex-col items-center justify-center rounded-lg py-1 px-0.5 leading-tight',
+                            hasActivity ? `${colors.bg} ${colors.text} shadow-sm` : 'bg-slate-50 text-slate-300 ring-1 ring-slate-100',
                           ].join(' ')}
                         >
-                          <span className="truncate">{label}</span>
-                          <span className="tabular-nums shrink-0">
+                          <span className="text-[9px] font-semibold opacity-70">{label}</span>
+                          <span className="text-[12px] font-bold tabular-nums">
                             {hasActivity
                               ? (score != null ? score.toFixed(1) : '·')
                               : '—'}
@@ -342,14 +352,27 @@ export default function AnalysisCalendar({
         </div>
       )}
 
-      {/* Legend footer */}
-      <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3 text-[11px]">
-        <div className="flex items-center gap-2 text-slate-500">
-          <CheckCircle2 className="h-3 w-3 text-emerald-500" /> Проанализировано
-          <span className="mx-1 text-slate-300">·</span>
-          <AlertOctagon className="h-3 w-3 text-rose-600" /> Есть критичный балл
-        </div>
-        {combinedScoreLegend(heatmapMode)}
+      {/* Footer: статусы анализа + индикатор каналов */}
+      <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center gap-4 flex-wrap text-[11px] text-slate-600">
+        <span className="inline-flex items-center gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+          AI-анализ выполнен
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <AlertOctagon className="h-3.5 w-3.5 text-rose-600" />
+          Есть оценка ниже 5
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <MessageCircle className="h-3.5 w-3.5 text-slate-500" />
+          диалогов в WhatsApp
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Instagram className="h-3.5 w-3.5 text-slate-500" />
+          диалогов в Instagram
+        </span>
+        {heatmapMode !== 'score' && (
+          <span className="ml-auto">{combinedScoreLegend(heatmapMode)}</span>
+        )}
       </div>
     </section>
   );
@@ -386,6 +409,18 @@ function combinedScoreLegend(mode: HeatmapMode) {
       <span className="h-2 w-4 rounded bg-emerald-50 ring-1 ring-emerald-200" /> ок
       <span className="ml-1 h-2 w-4 rounded bg-rose-200 ring-1 ring-rose-300" /> проблемы
     </div>
+  );
+}
+
+function LegendChip({ color, label, range }: { color: string; label: string; range: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`inline-flex h-5 w-7 items-center justify-center rounded text-[9px] font-bold ${color}`}>
+        {range === '—' ? '—' : range.split('–')[1] || range}
+      </span>
+      <span className="text-slate-700 font-medium">{label}</span>
+      <span className="text-slate-400 text-[10px]">{range}</span>
+    </span>
   );
 }
 

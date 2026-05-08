@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { isLikelyFarewell } from '@/lib/farewellDetect';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -187,17 +188,31 @@ async function ingestMessage(m: MetaMessage) {
   // Обновить тред: first_customer_message_at если не стоит, last_message_at, unread_count++
   const { data: thread } = await admin
     .from('whatsapp_threads')
-    .select('first_customer_message_at, unread_count')
+    .select('first_customer_message_at, unread_count, farewell_sent_at')
     .eq('id', threadId)
     .maybeSingle();
 
+  // Если продавец уже попрощался и входящее — просто ack (спасибо/хорошего дня),
+  // не поднимаем SLA-маркеры и не вспыхиваем в inbox'е. Тред остаётся «закрытым
+  // по смыслу», но сообщение всё равно сохраняется для истории.
+  const postFarewellAck =
+    !!thread?.farewell_sent_at && isLikelyFarewell(body);
+
   const patch: Record<string, unknown> = {
     last_message_at: createdAt,
-    last_customer_message_at: createdAt,
-    unread_count: ((thread?.unread_count as number | null) ?? 0) + 1,
-    status: 'waiting_seller',
   };
   if (!thread?.first_customer_message_at) patch.first_customer_message_at = createdAt;
+
+  if (postFarewellAck) {
+    // Держим статус и unread без изменений. Не обновляем last_customer_message_at,
+    // чтобы SLA-часы и «непрочитанный» индикатор не тикали.
+  } else {
+    patch.last_customer_message_at = createdAt;
+    patch.unread_count = ((thread?.unread_count as number | null) ?? 0) + 1;
+    patch.status = 'waiting_seller';
+    // Настоящий вопрос после прощания — reopen: сбрасываем прощальный флаг.
+    if (thread?.farewell_sent_at) patch.farewell_sent_at = null;
+  }
 
   await admin.from('whatsapp_threads').update(patch).eq('id', threadId);
 }

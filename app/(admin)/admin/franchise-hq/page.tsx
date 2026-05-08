@@ -8,8 +8,10 @@ import {
   Megaphone, UserSearch, Rocket, Shield, FolderOpen,
   CheckCircle2, Circle, ChevronDown, ChevronUp, FileDown,
   Save, BarChart3, Loader2, FileText, Clock, AlertCircle, Minus,
-  Paperclip, Trash2, Upload, Building2, Store
+  Paperclip, Trash2, Upload, Building2, Store, FileSignature,
+  Camera, Play, Maximize2, UserRound,
 } from 'lucide-react';
+import { parseMarkdownToHtml as sharedParseMarkdown, stripTrainerSections } from '@/lib/franchiseMarkdown';
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
 
@@ -30,6 +32,7 @@ interface PlanItem {
   description: string;
   initialStatus: ItemStatus;
   priority: Priority;
+  isSignable?: boolean; // правовой документ, подписывается с франчайзи
 }
 interface PlanSection {
   id: string;
@@ -68,56 +71,42 @@ const SECTIONS: PlanSection[] = [
   {
     id: 'passport', title: 'Паспорт франшизы', icon: BookOpen, color: 'sky',
     items: [
-      { id: '1.1', title: 'Паспорт франшизы Refocus', description: 'Краткий документ: что это за франшиза, какой формат точки, площадь, команда, позиционирование, что получает франчайзи.', initialStatus: 'Частично', priority: 'critical' },
-      { id: '1.2', title: 'Краткое описание концепции франшизы', description: 'Короткая версия «что такое франшиза Refocus» на 1–2 страницы.', initialStatus: 'Частично', priority: 'critical' },
-      { id: '1.3', title: 'Позиционирование франшизы', description: 'Технологичная оптика нового поколения, честная консультация, дружелюбный сервис, жёсткая стандартизация.', initialStatus: 'Есть', priority: 'high' },
-      { id: '1.4', title: 'Портрет идеального франчайзи', description: 'Честный, трудолюбивый, с деньгами, не любит самодеятельность, вовлечённый, желательно с опытом бизнеса.', initialStatus: 'Есть', priority: 'high' },
+      { id: '1.1', title: 'Паспорт франшизы Refocus', description: 'Единый внутренний документ франшизы: суть, позиционирование, формат точки, команда, стандарты обслуживания, ассортимент, экономика, портрет франчайзи.', initialStatus: 'Есть', priority: 'critical' },
+      { id: '1.4', title: 'Подходит ли вам франшиза Refocus', description: 'Документ для кандидата. Самопроверка из 8 вопросов: подходит ли модель Refocus, что вы получите взамен, с кем у нас не получится. Без воды, формат «прочитайте — оставьте заявку или сэкономим время друг другу».', initialStatus: 'Есть', priority: 'high' },
       { id: '1.5', title: 'Формат точки', description: 'Полноценная оптика (не островок), 30–50 м², эталон Токмок, какие зоны обязательны.', initialStatus: 'Есть', priority: 'high' },
     ],
   },
   {
     id: 'economics', title: 'Экономика', icon: TrendingUp, color: 'emerald',
     items: [
-      { id: '2.1', title: 'Полная финансовая модель', description: 'CAPEX, OPEX, средний чек, прибыль, безубыточность, окупаемость, модель дохода головного офиса.', initialStatus: 'Есть', priority: 'critical' },
-      { id: '2.2', title: 'Сценарии экономики', description: 'Слабый, базовый, хороший, сильный сценарии развития точки.', initialStatus: 'Есть', priority: 'high' },
-      { id: '2.3', title: 'Модель монетизации франшизы', description: 'Паушальный взнос 300 000, роялти 3/4/5%, зарабатываем на поставках.', initialStatus: 'Есть', priority: 'high' },
-      { id: '2.4', title: 'Модель по налогам для разных стран', description: 'Кыргызстан, Казахстан, Россия, Узбекистан.', initialStatus: 'Нет', priority: 'later' },
+      { id: '2.1', title: 'Полная финмодель (штаб)', description: 'Внутренний документ HQ: всё включая закупочные цены, маржу HQ, доход HQ с точки, HQ OPEX, безубыточность штаба. Не для показа франчайзи.', initialStatus: 'Есть', priority: 'critical' },
+      { id: '2.2', title: 'Финмодель для франчайзи', description: 'Документ для действующего и потенциального франчайзи: вход, CAPEX, стартовая загрузка, OPEX, прибыль, окупаемость, роялти, что включено. Без закупочных цен HQ.', initialStatus: 'Есть', priority: 'critical' },
       { id: '2.5', title: 'Сезонная модель по месяцам', description: 'Как просаживаются и растут продажи по месяцам, таблица сезонности.', initialStatus: 'Частично', priority: 'high' },
     ],
   },
   {
     id: 'package', title: 'Пакет франчайзи', icon: Gavel, color: 'violet',
     items: [
-      { id: '3.1', title: 'Основной договор франшизы', description: 'Главный договор с франчайзи.', initialStatus: 'Нет', priority: 'critical' },
-      { id: '3.2', title: 'Приложение: стандарты бренда', description: 'Что нельзя менять: бренд, CRM, POS, сайт, приложение, тач-экран, поставщики.', initialStatus: 'Частично', priority: 'critical' },
-      { id: '3.3', title: 'Приложение: финансовые условия', description: 'Паушальный, роялти, оплата, санкции за просрочку.', initialStatus: 'Нет', priority: 'critical' },
-      { id: '3.4', title: 'Приложение: территориальная логика', description: 'Город, вторая точка, развитие, отсутствие автоматического эксклюзива.', initialStatus: 'Частично', priority: 'high' },
-      { id: '3.5', title: 'Лестница санкций и нарушений', description: 'Предупреждение → усиленный контроль → ограничение развития → расторжение → отключение систем.', initialStatus: 'Частично', priority: 'critical' },
-      { id: '3.6', title: 'NDA / соглашение о конфиденциальности', description: 'Защита внутренних инструкций, обучения, матриц.', initialStatus: 'Нет', priority: 'high' },
-      { id: '4.1', title: 'Брендбук', description: 'Логотип, цвета, шрифты, правила использования.', initialStatus: 'Частично', priority: 'critical' },
-      { id: '4.2', title: 'Гайд по интерьеру', description: 'Стиль точки, материалы, свет, витрины, полки, ресепшн, тач-экран, телевизор, диагностика, мастерская.', initialStatus: 'Частично', priority: 'critical' },
-      { id: '4.3', title: 'Гайд по вывеске и входной группе', description: 'Наружная вывеска, внутренние логотипы, размеры, свет, варианты для ТЦ и улицы.', initialStatus: 'Частично', priority: 'high' },
-      { id: '4.4', title: 'Гайд по униформе', description: 'Что носят продавцы, как выглядит форма, какие цвета, что нельзя.', initialStatus: 'Частично', priority: 'high' },
-      { id: '4.5', title: 'Гайд по полиграфии', description: 'Визитки, листовки, сертификаты, гарантийки.', initialStatus: 'Нет', priority: 'high' },
+      { id: '3.1', title: 'Основной договор франшизы', description: 'Рамочный договор: преамбула, термины, предмет, срок, общие принципы, прекращение, реквизиты, подписи. Конкретика — в приложениях 3.2–3.6 и страновых 3.7.', initialStatus: 'Нет', priority: 'critical', isSignable: true },
+      { id: '3.2', title: 'Приложение №1. Стандарты бренда', description: 'Полный перечень обязательных стандартов: бренд-элементы, цифровая инфраструктура, ассортимент, поставщики, обновления стандартов. Отсылки к гайдам 4.x.', initialStatus: 'Частично', priority: 'critical', isSignable: true },
+      { id: '3.3', title: 'Приложение №2. Финансовые условия', description: 'Паушальный, роялти, маркетинговый сбор, валюта, индексация, налоги, сроки оплаты, порядок изменения сумм.', initialStatus: 'Нет', priority: 'critical', isSignable: true },
+      { id: '3.4', title: 'Приложение №3. Территориальная логика', description: 'Адрес точки, локальная зона, отсутствие эксклюзива на город, право Франчайзера развивать сеть, первое предложение на 2-ю точку.', initialStatus: 'Частично', priority: 'high', isSignable: true },
+      { id: '3.5', title: 'Приложение №4. Лестница санкций и нарушений', description: 'Классификация, стадии реагирования, штрафные тарифы, документирование, обжалование, восстановление.', initialStatus: 'Частично', priority: 'critical', isSignable: true },
+      { id: '3.6', title: 'Приложение №5. NDA / Конфиденциальность', description: 'Конф. информация, обязательства Франчайзи и его персонала, срок 10 лет, штрафы, исключения.', initialStatus: 'Нет', priority: 'high', isSignable: true },
+      { id: '3.7', title: 'Приложение №6. Страновые особенности (РФ, KZ, UZ, KG)', description: 'По блоку на каждую страну: подписант со стороны HQ, регистрация ТЗ, регистрация коммерческой концессии (РФ — Роспатент), валюта, язык, применимое право, подсудность.', initialStatus: 'Нет', priority: 'critical', isSignable: true },
+      { id: '3.8', title: 'Приложение №7. Личное поручительство владельца(ев) Франчайзи', description: 'Физическое лицо — владелец/бенефициар Франчайзи — лично отвечает за исполнение Договора. Применяется, если Франчайзи — юр. лицо или ИП с совладельцами.', initialStatus: 'Нет', priority: 'critical', isSignable: true },
+      { id: '3.9', title: 'Приложение №8. Лицензионный договор на ПО Refocus', description: 'CRM, POS, мобильное приложение, сенсорный экран, аналитика, сайт. SLA, обновления, отключение доступа, ответственность за простой.', initialStatus: 'Нет', priority: 'critical', isSignable: true },
+      { id: '3.10', title: 'Приложение №9. Соглашение об обработке персональных данных (DPA)', description: 'Защита данных клиентов сети по 152-ФЗ (РФ) и аналогам в KZ/UZ/KG. Распределение ролей, безопасность, уведомления о нарушениях, права субъектов.', initialStatus: 'Нет', priority: 'critical', isSignable: true },
+      { id: '3.11', title: 'Приложение №10. Требования к страхованию', description: 'Минимальные виды и суммы страхования: профессиональная (медицинская) ответственность, имущество, товары, общая гражданская ответственность. Refocus как Дополнительный застрахованный.', initialStatus: 'Нет', priority: 'critical', isSignable: true },
+      { id: '3.12', title: 'Приложение №11. Расписка о получении Операционного руководства', description: 'Подтверждение получения Операционного руководства Refocus и обязательство соблюдать его и все его обновления. Подписывается одновременно с Договором.', initialStatus: 'Нет', priority: 'high', isSignable: true },
+      { id: '4.2', title: 'Гайд по оформлению точки', description: 'Полный стандарт интерьера и фасада: материалы, размеры, мебель, свет, наружная вывеска, входная группа, фасад здания. Эталон — Токмок.', initialStatus: 'Есть', priority: 'critical' },
     ],
   },
   {
     id: 'standards', title: 'Стандарты', icon: ClipboardList, color: 'orange',
     items: [
-      { id: '6.1', title: 'Главный операционный manual', description: 'Главная книга франшизы: как работает точка каждый день.', initialStatus: 'Нет', priority: 'critical' },
-      { id: '6.2', title: 'Стандарт открытия и закрытия дня', description: 'Что делает команда утром и вечером.', initialStatus: 'Нет', priority: 'high' },
-      { id: '6.3', title: 'Стандарт обслуживания клиента', description: 'Приветствие → диагностика → подбор оправы → подбор линз → оформление → выдача.', initialStatus: 'Частично', priority: 'critical' },
-      { id: '6.4', title: 'Стандарт честной консультации', description: 'Как продавать без втюхивания.', initialStatus: 'Частично', priority: 'high' },
-      { id: '6.5', title: 'Стандарт диагностики', description: 'Что делает продавец, который проводит диагностику.', initialStatus: 'Нет', priority: 'critical' },
-      { id: '6.6', title: 'Стандарт работы мастера', description: 'Сборка, ремонт, установка линз, замена лески, сроки, качество.', initialStatus: 'Нет', priority: 'critical' },
-      { id: '6.7', title: 'Стандарт выдачи заказа', description: 'Как отдавать очки клиенту.', initialStatus: 'Нет', priority: 'high' },
-      { id: '6.8', title: 'Стандарт постпродажного сервиса', description: 'WhatsApp, приложение, напоминания, подтяжка, поддержка.', initialStatus: 'Частично', priority: 'high' },
-      { id: '6.9', title: 'Стандарт возвратов и спорных ситуаций', description: 'Когда доработка, когда замена, когда возврат, кто решает.', initialStatus: 'Нет', priority: 'critical' },
-      { id: '6.10', title: 'Стандарт чистоты и внешнего вида', description: 'Требования к порядку, чистоте, внешнему виду помещения.', initialStatus: 'Нет', priority: 'high' },
-      { id: '6.11', title: 'Стандарт выкладки оправ', description: 'Правила расстановки и группировки оправ на витринах.', initialStatus: 'Нет', priority: 'high' },
-      { id: '6.12', title: 'Стандарт цен и скидок', description: 'Правила ценообразования и предоставления скидок.', initialStatus: 'Нет', priority: 'high' },
-      { id: '6.13', title: 'Стандарт работы с CRM и POS', description: 'Как франчайзи и персонал используют системы CRM и POS.', initialStatus: 'Частично', priority: 'critical' },
-      { id: '6.14', title: 'Стандарт контроля качества сервиса', description: 'Как работает прослушка, AI-анализ и корректировка персонала.', initialStatus: 'Частично', priority: 'critical' },
+      { id: '6.1', title: 'Операционный manual точки', description: 'Единая книга повседневной работы точки: открытие/закрытие дня, чистота, выкладка оправ, цены/скидки, возвраты и спорные ситуации.', initialStatus: 'Нет', priority: 'critical' },
+      { id: '6.2', title: 'Стандарт контроля качества сервиса', description: 'Как HQ контролирует точку: AI-прослушка, аудит, матрица нарушений, KPI, корректировка персонала.', initialStatus: 'Частично', priority: 'critical' },
     ],
   },
   {
@@ -128,7 +117,8 @@ const SECTIONS: PlanSection[] = [
       { id: '7.3', title: 'Программа обучения продавца', description: 'Полная программа обучения для продавца-консультанта.', initialStatus: 'Нет', priority: 'critical' },
       { id: '7.4', title: 'Программа обучения диагностике', description: 'Обучение проведению диагностики зрения.', initialStatus: 'Нет', priority: 'critical' },
       { id: '7.5', title: 'Программа обучения мастера', description: 'Обучение мастера по оправам и линзам.', initialStatus: 'Нет', priority: 'critical' },
-      { id: '7.6', title: 'Система аттестации', description: 'Тесты, допуск к работе, повторная аттестация.', initialStatus: 'Нет', priority: 'high' },
+      { id: '7.6.1', title: 'Аттестация продавца', description: 'Устный экзамен 60 минут: 30 вопросов из банка 60, практический кейс, лист оценки, сертификат на 1 год, ежегодная ре-сертификация.', initialStatus: 'Нет', priority: 'high' },
+      { id: '7.6.2', title: 'Аттестация диагноста', description: 'Устный экзамен 60 минут: 30 вопросов из банка 60, практический кейс, лист оценки, сертификат на 1 год, ежегодная ре-сертификация.', initialStatus: 'Нет', priority: 'high' },
       { id: '7.7', title: 'Видео-уроки', description: 'Обучающие видео по всем направлениям.', initialStatus: 'Нет', priority: 'later' },
       { id: '7.8', title: 'База знаний', description: 'Централизованная база знаний франшизы.', initialStatus: 'Нет', priority: 'high' },
       { id: '8.1', title: 'Портреты должностей', description: 'Продавец, мастер, управляющий — описания должностей.', initialStatus: 'Нет', priority: 'high' },
@@ -138,6 +128,13 @@ const SECTIONS: PlanSection[] = [
       { id: '8.5', title: 'Чек-лист отбора сотрудника', description: 'Критерии выбора кандидата на должность.', initialStatus: 'Нет', priority: 'high' },
       { id: '8.6', title: 'Стажировочная программа', description: 'Программа стажировки нового сотрудника.', initialStatus: 'Нет', priority: 'high' },
       { id: '8.7', title: 'План первых 30 дней сотрудника', description: 'Структурированный план адаптации нового сотрудника.', initialStatus: 'Нет', priority: 'high' },
+      { id: '8.8', title: 'Трудовой договор продавца', description: 'Типовой трудовой договор продавца-консультанта по Трудовому кодексу КР: испытательный срок, режим, оплата, материальная ответственность, конфиденциальность, расторжение.', initialStatus: 'Нет', priority: 'high' },
+      { id: '8.9', title: 'Трудовой договор мастера', description: 'Типовой трудовой договор мастера-оптика по ТК КР: материальная ответственность за оправы и линзы, обязанности по сборке очков, дисциплинарные нормы.', initialStatus: 'Нет', priority: 'high' },
+      { id: '8.10', title: 'Договор ГПХ с промоутером', description: 'Гражданско-правовой договор (возмездное оказание услуг) с промоутером по ГК КР: оплата за результат, без режима рабочего времени, признаки, которые избегаем во избежание переквалификации в трудовые отношения.', initialStatus: 'Нет', priority: 'high' },
+      { id: '14.1', title: 'Гайд: POS — кассовая программа', description: 'Полный гайд по работе в POS со скриншотами и аннотациями: вход, новый заказ, оплата, склад линз, расходники, переписки.', initialStatus: 'Есть', priority: 'critical' },
+      { id: '14.2', title: 'Гайд: Touch-screen kiosk — подбор линз', description: 'Гайд по сенсорному экрану для клиента: типы линз, видео, оценки.', initialStatus: 'Нет', priority: 'high' },
+      { id: '14.3', title: 'Гайд: Мобильное приложение клиента', description: 'Гайд по приложению Refocus для клиентов: регистрация, заказы, гарантии, бонусы.', initialStatus: 'Нет', priority: 'high' },
+      { id: '14.4', title: 'Гайд: Портал для управляющего', description: 'Гайд по порталу франшизы (refocus-franchise-portal): дашборд, заказы, клиенты, зарплата, расходники, дефицит линз, сообщения от HQ, роялти.', initialStatus: 'Нет', priority: 'high' },
     ],
   },
   {
@@ -216,30 +213,21 @@ function cx(...args: (string | false | null | undefined)[]) {
   return args.filter(Boolean).join(' ');
 }
 
-const GRAD: Record<string, string> = {
-  sky:     'from-sky-400 to-sky-500',
-  emerald: 'from-emerald-400 to-emerald-500',
-  violet:  'from-violet-400 to-violet-500',
-  orange:  'from-orange-400 to-orange-500',
-  cyan:    'from-cyan-400 to-cyan-500',
-  pink:    'from-pink-400 to-pink-500',
-  yellow:  'from-yellow-400 to-yellow-500',
-  amber:   'from-amber-400 to-amber-500',
-  red:     'from-red-400 to-red-500',
-  indigo:  'from-indigo-400 to-indigo-500',
+// Тональная палитра по секции: пастельный фон под иконку + цвет иконки + цвет прогресс-полоски.
+// Используется в плитках секций — даёт визуальное разделение без «пестроты».
+const SECTION_TONE: Record<string, { iconBg: string; iconText: string; bar: string }> = {
+  sky:     { iconBg: 'bg-sky-50',     iconText: 'text-sky-600',     bar: 'bg-sky-500' },
+  emerald: { iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', bar: 'bg-emerald-500' },
+  violet:  { iconBg: 'bg-violet-50',  iconText: 'text-violet-600',  bar: 'bg-violet-500' },
+  orange:  { iconBg: 'bg-orange-50',  iconText: 'text-orange-600',  bar: 'bg-orange-500' },
+  cyan:    { iconBg: 'bg-cyan-50',    iconText: 'text-cyan-600',    bar: 'bg-cyan-500' },
+  pink:    { iconBg: 'bg-pink-50',    iconText: 'text-pink-600',    bar: 'bg-pink-500' },
+  amber:   { iconBg: 'bg-amber-50',   iconText: 'text-amber-600',   bar: 'bg-amber-500' },
+  indigo:  { iconBg: 'bg-indigo-50',  iconText: 'text-indigo-600',  bar: 'bg-indigo-500' },
+  red:     { iconBg: 'bg-rose-50',    iconText: 'text-rose-600',    bar: 'bg-rose-500' },
+  yellow:  { iconBg: 'bg-yellow-50',  iconText: 'text-yellow-700',  bar: 'bg-yellow-500' },
 };
-const RING: Record<string, string> = {
-  sky:     'ring-sky-200',
-  emerald: 'ring-emerald-200',
-  violet:  'ring-violet-200',
-  orange:  'ring-orange-200',
-  cyan:    'ring-cyan-200',
-  pink:    'ring-pink-200',
-  yellow:  'ring-yellow-200',
-  amber:   'ring-amber-200',
-  red:     'ring-red-200',
-  indigo:  'ring-indigo-200',
-};
+const TONE_FALLBACK = SECTION_TONE.cyan;
 
 const SECTION_AUDIENCES: Record<string, Audience[]> = {
   passport: ['hq', 'franchisee'],
@@ -257,10 +245,21 @@ const SECTION_AUDIENCES: Record<string, Audience[]> = {
 const ITEM_AUDIENCES: Record<string, Audience[]> = {
   '1.4': ['hq', 'candidate'],
   '2.1': ['hq'],
-  '2.2': ['hq', 'candidate'],
+  '2.2': ['hq', 'franchisee', 'candidate'],
   '2.3': ['hq', 'franchisee', 'candidate'],
-  '2.4': ['hq', 'franchisee', 'candidate'],
   '2.5': ['hq', 'franchisee', 'candidate'],
+  '3.1': ['hq', 'franchisee'],
+  '3.2': ['hq', 'franchisee'],
+  '3.3': ['hq', 'franchisee'],
+  '3.4': ['hq', 'franchisee'],
+  '3.5': ['hq', 'franchisee'],
+  '3.6': ['hq', 'franchisee'],
+  '3.7': ['hq', 'franchisee'],
+  '3.8': ['hq', 'franchisee'],
+  '3.9': ['hq', 'franchisee'],
+  '3.10': ['hq', 'franchisee'],
+  '3.11': ['hq', 'franchisee'],
+  '3.12': ['hq', 'franchisee'],
   '5.7': ['hq', 'franchisee', 'candidate'],
   '13.6': ['hq'],
   '13.7': ['hq'],
@@ -296,29 +295,35 @@ function getItemAudiences(sectionId: string, itemId: string): Audience[] {
   return ITEM_AUDIENCES[itemId] ?? SECTION_AUDIENCES[sectionId] ?? ['hq'];
 }
 
+const AUDIENCE_PILL: Record<Audience, { cls: string; iconCls: string }> = {
+  hq:         { cls: 'bg-slate-100 text-slate-700 ring-slate-200',   iconCls: 'text-slate-500' },
+  franchisee: { cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', iconCls: 'text-emerald-500' },
+  candidate:  { cls: 'bg-amber-50 text-amber-700 ring-amber-200',     iconCls: 'text-amber-500' },
+};
+
 function AudienceBadges({
   audiences,
-  compact = false,
 }: {
   audiences: Audience[];
   compact?: boolean;
 }) {
+  // Цветные мини-pills с иконкой и полным названием. Только активные.
+  // Каждая аудитория — собственный семантический цвет, чтобы разделение было видно сразу.
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {audiences.map((audience) => {
-        const meta = AUDIENCE_META[audience];
+    <div className="flex flex-wrap items-center gap-1">
+      {audiences.map((aud) => {
+        const meta = AUDIENCE_META[aud];
         const Icon = meta.icon;
+        const palette = AUDIENCE_PILL[aud];
         return (
           <span
-            key={audience}
-            title={meta.hint}
+            key={aud}
             className={cx(
-              'inline-flex items-center gap-1 rounded-full ring-1',
-              compact ? 'px-2 py-0.5 text-[10px] font-semibold' : 'px-2.5 py-1 text-[11px] font-medium',
-              meta.className,
+              'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1',
+              palette.cls,
             )}
           >
-            <Icon size={compact ? 10 : 12} />
+            <Icon size={10} className={palette.iconCls} />
             {meta.label}
           </span>
         );
@@ -339,127 +344,31 @@ function statusBadge(s: ItemStatus) {
 
 function priorityBadge(p: Priority) {
   const map = {
-    critical: { bg: 'bg-rose-50 text-rose-600 ring-rose-200',    label: 'Обязательно' },
-    high:     { bg: 'bg-sky-50 text-sky-700 ring-sky-200',        label: 'Сделать' },
-    later:    { bg: 'bg-slate-100 text-slate-500 ring-slate-200', label: 'Позже' },
-    skip:     { bg: 'bg-slate-100 text-slate-400 ring-slate-200', label: 'Пропустить' },
+    critical: { dot: 'bg-rose-500',   label: 'Обязательно' },
+    high:     { dot: 'bg-cyan-500',   label: 'Сделать' },
+    later:    { dot: 'bg-slate-400',  label: 'Позже' },
+    skip:     { dot: 'bg-slate-300',  label: 'Пропустить' },
   };
   return map[p];
 }
 
-// ─── Word export ──────────────────────────────────────────────────────────────
+// ─── Markdown parser (shared with PDF API) ─────────────────────────────────────
 
-// ─── Shared markdown parser (used by Word export + modal preview) ─────────────
+// Re-export from lib so we have a single source of truth shared with the PDF API.
+const parseMarkdownToHtml = sharedParseMarkdown;
 
-function mdEsc(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-function mdInline(s: string) {
-  return mdEsc(s)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g,     '<em>$1</em>')
-    .replace(/`(.+?)`/g,       '<code>$1</code>')
-    .replace(/~~(.+?)~~/g,     '<s>$1</s>');
-}
-function parseMarkdownToHtml(raw: string): string {
-  const lines = raw.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').split('\n');
-  const out: string[] = [];
-  let inUL = false, inOL = false;
-  const closeUL = () => { if (inUL) { out.push('</ul>'); inUL = false; } };
-  const closeOL = () => { if (inOL) { out.push('</ol>'); inOL = false; } };
-  const closeLists = () => { closeUL(); closeOL(); };
-  for (const line of lines) {
-    const t = line.trim();
-    if (/^####\s/.test(t))  { closeLists(); out.push(`<h4>${mdInline(t.replace(/^####\s/, ''))}</h4>`);       continue; }
-    if (/^###\s/.test(t))   { closeLists(); out.push(`<h3>${mdInline(t.replace(/^###\s/, ''))}</h3>`);         continue; }
-    if (/^##\s/.test(t))    { closeLists(); out.push(`<h2>${mdInline(t.replace(/^##\s/, ''))}</h2>`);           continue; }
-    if (/^#\s/.test(t))     { closeLists(); out.push(`<h1>${mdInline(t.replace(/^#\s/, ''))}</h1>`);            continue; }
-    if (/^(-{3,}|\*{3,})$/.test(t)) { closeLists(); out.push('<hr>'); continue; }
-    if (/^[-*+]\s/.test(t)) { closeOL(); if (!inUL) { out.push('<ul>'); inUL = true; } out.push(`<li>${mdInline(t.replace(/^[-*+]\s/, ''))}</li>`); continue; }
-    if (/^\d+\.\s/.test(t)) { closeUL(); if (!inOL) { out.push('<ol>'); inOL = true; } out.push(`<li>${mdInline(t.replace(/^\d+\.\s/, ''))}</li>`); continue; }
-    if (t === '') { closeLists(); out.push('<div class="md-sp"></div>'); continue; }
-    closeLists();
-    out.push(`<p>${mdInline(t)}</p>`);
-  }
-  closeLists();
-  return out.join('\n');
-}
-
-// ─── Word export ──────────────────────────────────────────────────────────────
-
-function buildWordHtml(title: string, description: string, content: string, notes: string, images: string[] = []) {
-  const esc = mdEsc;
-  const inline = mdInline;
-
-  function parseMarkdown(raw: string): string { return parseMarkdownToHtml(raw); }
-
-  const today = new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
-
-  const imagesHtml = images.length > 0 ? (() => {
-    // Максимум 2 картинки в ряд, чтобы они были большими и детальными
-    const cols = Math.min(images.length, 2);
-    const cellWidthPct = Math.floor(100 / cols);
-    const imgWidthPx = cols === 1 ? 460 : 230;
-
-    return `
-      <div class="slabel">Фото и визуализации</div>
-      <table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-bottom:12pt;">
-        <tr>
-          ${images.map((src, i) => `
-            <td style="width:${cellWidthPct}%;padding:10pt;background:#f8fafc;vertical-align:middle;text-align:center;border:4pt solid #ffffff;">
-              <img src="${src}" width="${imgWidthPx}" style="border-radius:4pt;border:1px solid #cbd5e1;display:block;margin:0 auto;">
-            </td>
-            ${(i + 1) % cols === 0 && i + 1 < images.length ? '</tr><tr>' : ''}
-          `).join('')}
-          ${images.length % cols !== 0 ? `<td style="width:${cellWidthPct}%;border:4pt solid #ffffff;"></td>` : ''}
-        </tr>
-      </table>`;
-  })() : '';
-
-  return `<html xmlns:o='urn:schemas-microsoft-com:office:office'
-         xmlns:w='urn:schemas-microsoft-com:office:word'
-         xmlns='http://www.w3.org/TR/REC-html40'>
-<head>
-  <meta charset='utf-8'>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <title>${esc(title)}</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
-    @page { margin: 2cm 2.2cm; }
-    body   { font-family: 'Manrope','Segoe UI',Arial,sans-serif; font-size: 10.5pt; color: #1e293b; line-height: 1.55; margin: 0; }
-    .doc-header { border-bottom: 3px solid #0ea5e9; padding-bottom: 10pt; margin-bottom: 16pt; }
-    .brand-line { font-size: 8pt; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: #0369a1; margin-bottom: 4pt; }
-    .doc-title  { font-size: 17pt; font-weight: 800; color: #0f172a; margin: 0 0 5pt 0; }
-    .doc-desc   { font-size: 9.5pt; color: #64748b; font-weight: 500; margin: 0; }
-    .doc-date   { font-size: 8pt; color: #94a3b8; margin-top: 4pt; }
-    .slabel { font-size: 8pt; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
-              color: #0369a1; margin: 18pt 0 7pt 0; padding-bottom: 3pt; border-bottom: 1px solid #e0f2fe; }
-    h1.ch1 { font-size: 12.5pt; font-weight: 800; color: #0f172a; margin: 13pt 0 3pt 0; padding-bottom: 3pt; border-bottom: 1.5px solid #e2e8f0; }
-    h2 { font-size: 11pt; font-weight: 700; color: #1e3a5f; margin: 11pt 0 2pt 0; }
-    h3 { font-size: 10.5pt; font-weight: 700; color: #334155; margin: 9pt 0 2pt 0; }
-    h4 { font-size: 10pt; font-weight: 600; color: #475569; margin: 7pt 0 1pt 0; }
-    p  { margin: 2.5pt 0; }
-    .sp { height: 5pt; }
-    strong { font-weight: 700; } em { font-style: italic; }
-    code { font-family: 'Courier New',monospace; font-size: 9pt; background: #f1f5f9; padding: 0 2pt; }
-    hr { border: none; border-top: 1px solid #e2e8f0; margin: 8pt 0; }
-    ul, ol { margin: 3pt 0; padding-left: 15pt; } li { margin: 1.5pt 0; }
-    .notes-wrap { margin-top: 16pt; background: #f0f9ff; padding: 8pt 10pt; border-left: 3px solid #0ea5e9; }
-  </style>
-</head>
-<body>
-  <div class="doc-header">
-    <div class="brand-line">REFOCUS &middot; Штаб франшизы</div>
-    <div class="doc-title">${esc(title)}</div>
-    <div class="doc-desc">${esc(description)}</div>
-    <div class="doc-date">${today}</div>
-  </div>
-  ${content ? `<div class="slabel">Содержание документа</div>${parseMarkdown(content)}` : ''}
-  ${imagesHtml}
-  ${notes   ? `<div class="notes-wrap"><div class="slabel" style="border:none;margin-top:0">Заметки</div>${parseMarkdown(notes)}</div>` : ''}
-</body>
-</html>`;
-}
+// ─── Two-audience training programs ───────────────────────────────────────────
+// Items below render two PDFs: full (for the trainer/owner) and a trimmed
+// version for the trainee, with sections wrapped in <!-- TRAINER:START/END -->
+// markers cut out. Whitelist intentionally narrow.
+const TWO_AUDIENCE_ITEMS: Record<string, { traineeRole: string }> = {
+  '7.1': { traineeRole: 'владельца' },
+  '7.2': { traineeRole: 'управляющего' },
+  '7.3': { traineeRole: 'продавца' },
+  '7.4': { traineeRole: 'специалиста' },
+  '7.6.1': { traineeRole: 'продавца' },
+  '7.6.2': { traineeRole: 'специалиста' },
+};
 
 // ─── VideoAddForm ─────────────────────────────────────────────────────────────
 
@@ -563,8 +472,27 @@ interface ContentModalProps {
 function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSave }: ContentModalProps) {
   const [text, setText]       = React.useState(initialContent);
   const [mode, setMode]       = React.useState<'preview' | 'edit'>(initialContent.trim() ? 'preview' : 'edit');
+  const traineeRole           = TWO_AUDIENCE_ITEMS[item.id]?.traineeRole;
+  const [audience, setAudience] = React.useState<'full' | 'trainee'>('full');
   const textareaRef           = React.useRef<HTMLTextAreaElement>(null);
-  const renderedHtml          = React.useMemo(() => parseMarkdownToHtml(text), [text]);
+
+  const trainerInfo = React.useMemo(() => stripTrainerSections(text), [text]);
+  const showAudienceSwitch = !!traineeRole && trainerInfo.hasMarkers;
+
+  // Render markdown for the chosen audience. For the trainee view, replace each
+  // trainer-only block with a sentinel paragraph that we then turn into a dashed
+  // cyan strip, so the user can see *where* content was cut.
+  const renderedHtml = React.useMemo(() => {
+    if (audience === 'full') return parseMarkdownToHtml(text);
+    const withSentinels = text.replace(
+      /<!--\s*TRAINER:START\s*-->[\s\S]*?<!--\s*TRAINER:END\s*-->/gi,
+      '\n\n[[TRAINER_CUT]]\n\n',
+    );
+    return parseMarkdownToHtml(withSentinels).replace(
+      /<p>\[\[TRAINER_CUT\]\]<\/p>/g,
+      '<div class="trainer-cut-strip">Здесь вырезан тренерский блок</div>',
+    );
+  }, [text, audience]);
 
   React.useEffect(() => {
     if (mode === 'edit') {
@@ -624,6 +552,28 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
           >Редактировать</button>
         </div>
 
+        {/* Audience toggle — only for items with two-audience workflow and only in preview mode */}
+        {showAudienceSwitch && mode === 'preview' && (
+          <div className="shrink-0 flex items-center bg-white/8 rounded-lg p-0.5 gap-0.5">
+            <button
+              onClick={() => setAudience('full')}
+              className={cx(
+                'px-3 py-1 rounded-md text-[12px] font-medium transition-all',
+                audience === 'full' ? 'bg-white text-slate-800 shadow-sm' : 'text-white/50 hover:text-white/80',
+              )}
+              title="Что видит тренер/владелец"
+            >Полный</button>
+            <button
+              onClick={() => setAudience('trainee')}
+              className={cx(
+                'px-3 py-1 rounded-md text-[12px] font-medium transition-all',
+                audience === 'trainee' ? 'bg-white text-slate-800 shadow-sm' : 'text-white/50 hover:text-white/80',
+              )}
+              title={`Что видит ${traineeRole}`}
+            >Для {traineeRole}</button>
+          </div>
+        )}
+
         {/* Counters */}
         <div className="text-[11px] text-white/30 tabular-nums shrink-0 hidden sm:block">
           {wordCount.toLocaleString('ru')} сл.&nbsp;·&nbsp;{charCount.toLocaleString('ru')} симв.
@@ -648,12 +598,15 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
 
       {/* ── Document paper ── */}
       <div
-        className="flex-1 min-h-0 overflow-y-auto px-4 pb-6"
-        onMouseDown={e => e.stopPropagation()}
+        className="flex-1 min-h-0 overflow-y-auto px-4 pb-6 cursor-zoom-out"
+        // Клик в области по бокам от документа закрывает модалку.
+        // Клик внутри document paper не дойдёт сюда (e.stopPropagation на нём).
+        onMouseDown={e => { if (e.target === e.currentTarget) { onCommit(text); onClose(); } }}
         style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.10) transparent' }}
       >
         <div
-          className="mx-auto bg-white rounded-xl overflow-hidden"
+          className="mx-auto bg-white rounded-xl overflow-hidden cursor-default"
+          onMouseDown={e => e.stopPropagation()}
           style={{
             maxWidth: '800px',
             minHeight: 'calc(100vh - 100px)',
@@ -661,9 +614,30 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
           }}
         >
           {/* Document title block */}
-          <div className="px-14 pt-10 pb-5 border-b border-slate-100">
-            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.26em] mb-2">
-              REFOCUS · Штаб франшизы · {item.id}
+          <div className="px-14 pt-10 pb-6 border-b border-slate-100">
+            <div
+              className="font-kiona text-slate-900 leading-none mb-2"
+              style={{ fontSize: '52px', letterSpacing: '0.01em' }}
+            >
+              refocus
+            </div>
+            <div
+              className="rounded-full mb-4"
+              style={{
+                height: '4px',
+                width: '240px',
+                background: 'linear-gradient(90deg, #14B8A6 0%, #22D3EE 55%, #38BDF8 100%)',
+              }}
+            />
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <div className="text-[10px] font-bold text-sky-700 uppercase tracking-[0.22em]">
+                Штаб франшизы · {item.id}
+              </div>
+              {item.isSignable && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ring-1 bg-violet-50 text-violet-700 ring-violet-200">
+                  <FileSignature size={10}/> Документ к подписи
+                </span>
+              )}
             </div>
             <h1 className="text-[22px] font-bold text-slate-900 leading-snug" style={{ fontFamily: 'Georgia, serif' }}>
               {item.title}
@@ -673,6 +647,15 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
 
           {/* Content area */}
           <div className="px-14 py-8">
+            {trainerInfo.unbalanced && (
+              <div className="mb-5 rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-3 text-[12.5px] text-amber-800">
+                <div className="font-semibold mb-0.5">Несбалансированные маркеры тренера</div>
+                <div className="text-amber-700">
+                  В тексте есть незакрытый блок <code className="font-mono text-[11px]">&lt;!-- TRAINER:START --&gt;</code> или одинокий <code className="font-mono text-[11px]">&lt;!-- TRAINER:END --&gt;</code>.
+                  Версия для обучаемого может вырезать не то, что ты ожидаешь.
+                </div>
+              </div>
+            )}
             {mode === 'preview' ? (
               /* ── Rendered preview ── */
               text.trim() ? (
@@ -721,6 +704,8 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
         .doc-content h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 22px 0 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
         .doc-content h3 { font-size: 14.5px; font-weight: 700; color: #334155; margin: 18px 0 6px; }
         .doc-content h4 { font-size: 13.5px; font-weight: 600; color: #475569; margin: 14px 0 4px; }
+        .doc-content h5 { font-size: 13px; font-weight: 700; color: #0369a1; margin: 12px 0 3px; }
+        .doc-content h6 { font-size: 12px; font-weight: 600; color: #64748b; margin: 10px 0 3px; text-transform: uppercase; letter-spacing: 0.04em; }
         .doc-content p  { margin: 0 0 10px; }
         .doc-content ul { margin: 6px 0 10px 20px; list-style: disc; }
         .doc-content ol { margin: 6px 0 10px 20px; list-style: decimal; }
@@ -730,6 +715,72 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
         .doc-content em { font-style: italic; color: #334155; }
         .doc-content code { font-family: "Consolas", monospace; font-size: 12.5px; background: #f1f5f9; padding: 1px 5px; border-radius: 4px; color: #0369a1; }
         .doc-content .md-sp { height: 8px; }
+        .doc-content table.md-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 14px 0 20px;
+          font-size: 13px;
+          line-height: 1.5;
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 0 0 1px #e2e8f0;
+          background: #ffffff;
+        }
+        .doc-content table.md-table thead tr { background: #f0f9ff; }
+        .doc-content table.md-table th {
+          padding: 10px 13px;
+          font-weight: 700;
+          color: #0c4a6e;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          border-bottom: 2px solid #bae6fd;
+          text-align: left;
+          white-space: nowrap;
+        }
+        .doc-content table.md-table td {
+          padding: 9px 13px;
+          color: #1e293b;
+          border-bottom: 1px solid #f1f5f9;
+          vertical-align: top;
+        }
+        .doc-content table.md-table tbody tr:last-child td { border-bottom: none; }
+        .doc-content table.md-table tbody tr:nth-child(even) td { background: #f8fafc; }
+        .doc-content table.md-table tbody tr:hover td { background: #f0f9ff; }
+        .doc-content blockquote {
+          margin: 14px 0;
+          padding: 10px 16px;
+          border-left: 3px solid #0ea5e9;
+          background: #f0f9ff;
+          color: #0c4a6e;
+          border-radius: 0 6px 6px 0;
+          font-size: 13.5px;
+        }
+        .doc-content blockquote p { margin: 0; }
+        .doc-content .md-figure {
+          display: block;
+          margin: 16px 0;
+          padding: 0;
+          text-align: center;
+        }
+        .doc-content .md-figure img {
+          max-width: 100%;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          margin: 0;
+        }
+        .doc-content .trainer-cut-strip {
+          margin: 14px 0;
+          padding: 7px 14px;
+          border: 1px dashed #67e8f9;
+          background: rgba(207, 250, 254, 0.40);
+          color: #0e7490;
+          border-radius: 8px;
+          font-size: 11.5px;
+          font-style: italic;
+          text-align: center;
+          letter-spacing: 0.02em;
+        }
       `}</style>
     </div>
   );
@@ -746,6 +797,17 @@ export default function FranchiseHQPage() {
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [savingSet,     setSavingSet]     = useState<Set<string>>(new Set());
   const [modalItem,     setModalItem]     = useState<PlanItem | null>(null);
+  // Раскрытая категория вложений в expanded карточке: itemId → 'photos' | 'files' | 'videos'.
+  const [attachOpen,    setAttachOpen]    = useState<Map<string, 'photos' | 'files' | 'videos'>>(new Map());
+
+  function toggleAttach(itemId: string, kind: 'photos' | 'files' | 'videos') {
+    setAttachOpen(prev => {
+      const next = new Map(prev);
+      if (next.get(itemId) === kind) next.delete(itemId);
+      else next.set(itemId, kind);
+      return next;
+    });
+  }
 
   // All unsaved edits, keyed by item id
   const [edits, setEdits] = useState<Map<string, EditState>>(new Map());
@@ -867,7 +929,14 @@ export default function FranchiseHQPage() {
     field: 'notes' | 'content',
     value: string,
   ) {
-    const curr = editsRef.current.get(id) ?? { notes: getItem(id, initialStatus).notes, content: getItem(id, initialStatus).content };
+    const db = getItem(id, initialStatus);
+    const dbValue = field === 'notes' ? db.notes : db.content;
+    // No-op: value unchanged from DB and no prior dirty edits → don't write back.
+    // Prevents the modal from overwriting external/concurrent updates whenever
+    // it's closed without actual editing.
+    if (value === dbValue && !editsRef.current.has(id)) return;
+
+    const curr = editsRef.current.get(id) ?? { notes: db.notes, content: db.content };
     const next = { ...curr, [field]: value };
     setEdits(prev => new Map(prev).set(id, next));
     editsRef.current = new Map(editsRef.current).set(id, next);
@@ -1109,139 +1178,66 @@ export default function FranchiseHQPage() {
     await performSave(id, initialStatus, false);
   }
 
-  // ── Word download (async — embeds images as base64) ──
-  async function downloadWord(item: PlanItem) {
-    const db  = getItem(item.id, item.initialStatus);
-    const e   = getEdit(item.id, item.initialStatus);
-    const images = db.images ?? [];
+  // ── PDF download (server-rendered via Puppeteer) ──
+  // Key: itemId for full version, itemId + ':trainee' for the trainee version,
+  // so the two buttons spin independently.
+  const [pdfDownloadingSet, setPdfDownloadingSet] = useState<Set<string>>(new Set());
 
-    // Convert remote image URLs to base64 data URIs for offline embedding:
-    const base64Images: string[] = [];
-    for (const url of images) {
-      try {
-        const res  = await fetch(url);
-        const blob = await res.blob();
-        const b64  = await new Promise<string>(resolve => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
-        base64Images.push(b64);
-      } catch { /* skip unloadable image */ }
+  async function downloadPdf(item: PlanItem, audience: 'full' | 'trainee' = 'full') {
+    const key = audience === 'trainee' ? `${item.id}:trainee` : item.id;
+    if (pdfDownloadingSet.has(key)) return;
+    const e = getEdit(item.id, item.initialStatus);
+    if (!e.content?.trim()) {
+      toast.error('Нет содержимого для экспорта');
+      return;
     }
 
-    const html = buildWordHtml(item.title, item.description, e.content, e.notes, base64Images);
-    const blob = new Blob(['\ufeff', html], { type: 'application/vnd.ms-word;charset=utf-8' });
-    const dlUrl = URL.createObjectURL(blob);
-    const a   = document.createElement('a');
-    a.href    = dlUrl;
-    a.download = `refocus-${item.id}-${item.title.replace(/[^а-яёА-ЯЁa-zA-Z0-9]/g, '-').slice(0, 50)}.doc`;
-    a.click();
-    URL.revokeObjectURL(dlUrl);
-  }
+    const isTrainee = audience === 'trainee';
+    const traineeRole = TWO_AUDIENCE_ITEMS[item.id]?.traineeRole;
+    const audienceLabel = isTrainee && traineeRole ? `Версия для ${traineeRole}` : undefined;
+    const fileSuffix = isTrainee ? '-trainee' : '';
 
-  // ── Section Word download (all items merged into one doc) ──
-  async function downloadSectionWord(section: PlanSection) {
-    const today = new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
-
-    // Build HTML blocks for each item
-    const itemBlocks: string[] = [];
-    for (const item of section.items) {
-      const db     = getItem(item.id, item.initialStatus);
-      const e      = getEdit(item.id, item.initialStatus);
-      const images = db.images ?? [];
-
-      const base64Images: string[] = [];
-      for (const url of images) {
-        try {
-          const res  = await fetch(url);
-          const blob = await res.blob();
-          const b64  = await new Promise<string>(resolve => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
-          });
-          base64Images.push(b64);
-        } catch { /* skip */ }
+    setPdfDownloadingSet(prev => new Set(prev).add(key));
+    const t = toast.loading(isTrainee ? 'Генерирую PDF (для обучаемого)…' : 'Генерирую PDF…');
+    try {
+      const res = await fetch('/api/franchise-hq/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: item.id,
+          title: item.title,
+          description: item.description,
+          content: e.content,
+          notes: e.notes,
+          audience,
+          audienceLabel,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Ошибка сервера' }));
+        throw new Error(err.error || 'Ошибка генерации PDF');
       }
-
-      const cols = Math.min(base64Images.length, 2);
-      const imgHtml = base64Images.length > 0 ? (() => {
-        const cellW = Math.floor(100 / cols);
-        const imgW  = cols === 1 ? 460 : 230;
-        return `<div class="slabel">Фото и визуализации</div>
-          <table style="border-collapse:collapse;width:100%;table-layout:fixed;margin-bottom:12pt;"><tr>
-            ${base64Images.map((src, i) => `
-              <td style="width:${cellW}%;padding:10pt;background:#f8fafc;vertical-align:middle;text-align:center;border:4pt solid #ffffff;">
-                <img src="${src}" width="${imgW}" style="border-radius:4pt;border:1px solid #cbd5e1;display:block;margin:0 auto;">
-              </td>
-              ${(i + 1) % cols === 0 && i + 1 < base64Images.length ? '</tr><tr>' : ''}
-            `).join('')}
-            ${base64Images.length % cols !== 0 ? `<td style="width:${cellW}%;border:4pt solid #ffffff;"></td>` : ''}
-          </tr></table>`;
-      })() : '';
-
-      itemBlocks.push(`
-        <div class="item-block">
-          <h1 class="item-title"><span class="item-id">${mdEsc(item.id)}</span> ${mdEsc(item.title)}</h1>
-          <p class="item-desc">${mdEsc(item.description)}</p>
-          ${e.content ? `<div class="slabel">Содержание</div>${parseMarkdownToHtml(e.content)}` : ''}
-          ${imgHtml}
-          ${e.notes   ? `<div class="notes-wrap"><div class="slabel" style="border:none;margin-top:0">Заметки</div>${parseMarkdownToHtml(e.notes)}</div>` : ''}
-        </div>
-      `);
+      const blob = await res.blob();
+      const dlUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = dlUrl;
+      a.download = `refocus-${item.id}${fileSuffix}-${item.title.replace(/[^а-яёА-ЯЁa-zA-Z0-9]/g, '-').slice(0, 50)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(dlUrl);
+      toast.dismiss(t);
+      toast.success('PDF готов');
+    } catch (err) {
+      toast.dismiss(t);
+      const msg = err instanceof Error ? err.message : 'Не удалось создать PDF';
+      toast.error(msg);
+      console.error('[downloadPdf]', err);
+    } finally {
+      setPdfDownloadingSet(prev => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
     }
-
-    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office'
-       xmlns:w='urn:schemas-microsoft-com:office:word'
-       xmlns='http://www.w3.org/TR/REC-html40'>
-<head>
-  <meta charset='utf-8'>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <title>${mdEsc(section.title)}</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
-    @page { margin: 2cm 2.2cm; }
-    body   { font-family: 'Manrope','Segoe UI',Arial,sans-serif; font-size: 10.5pt; color: #1e293b; line-height: 1.55; margin: 0; }
-    .doc-header { border-bottom: 3px solid #0ea5e9; padding-bottom: 10pt; margin-bottom: 20pt; }
-    .brand-line { font-size: 8pt; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: #0369a1; margin-bottom: 4pt; }
-    .doc-title  { font-size: 19pt; font-weight: 800; color: #0f172a; margin: 0 0 5pt 0; }
-    .doc-date   { font-size: 8pt; color: #94a3b8; margin-top: 4pt; }
-    .item-block { margin-bottom: 28pt; padding-bottom: 20pt; border-bottom: 2px solid #e2e8f0; page-break-inside: avoid; }
-    .item-block:last-child { border-bottom: none; }
-    .item-title { font-size: 13pt; font-weight: 800; color: #0f172a; margin: 0 0 4pt 0; }
-    .item-id    { font-size: 10pt; font-weight: 700; color: #0369a1; font-family: 'Courier New',monospace; margin-right: 6pt; }
-    .item-desc  { font-size: 9.5pt; color: #64748b; font-weight: 500; margin: 0 0 10pt 0; }
-    .slabel { font-size: 8pt; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
-              color: #0369a1; margin: 14pt 0 6pt 0; padding-bottom: 3pt; border-bottom: 1px solid #e0f2fe; }
-    h2 { font-size: 11pt; font-weight: 700; color: #1e3a5f; margin: 11pt 0 2pt 0; }
-    h3 { font-size: 10.5pt; font-weight: 700; color: #334155; margin: 9pt 0 2pt 0; }
-    h4 { font-size: 10pt; font-weight: 600; color: #475569; margin: 7pt 0 1pt 0; }
-    p  { margin: 2.5pt 0; }
-    strong { font-weight: 700; } em { font-style: italic; }
-    code { font-family: 'Courier New',monospace; font-size: 9pt; background: #f1f5f9; padding: 0 2pt; }
-    hr { border: none; border-top: 1px solid #e2e8f0; margin: 8pt 0; }
-    ul, ol { margin: 3pt 0; padding-left: 15pt; } li { margin: 1.5pt 0; }
-    .notes-wrap { margin-top: 12pt; background: #f0f9ff; padding: 8pt 10pt; border-left: 3px solid #0ea5e9; }
-  </style>
-</head>
-<body>
-  <div class="doc-header">
-    <div class="brand-line">REFOCUS &middot; Штаб франшизы</div>
-    <div class="doc-title">${mdEsc(section.title)}</div>
-    <div class="doc-date">${today} &middot; ${section.items.length} пунктов</div>
-  </div>
-  ${itemBlocks.join('\n')}
-</body>
-</html>`;
-
-    const blob  = new Blob(['\ufeff', html], { type: 'application/vnd.ms-word;charset=utf-8' });
-    const dlUrl = URL.createObjectURL(blob);
-    const a     = document.createElement('a');
-    a.href      = dlUrl;
-    a.download  = `refocus-${section.id}-${section.title.replace(/[^а-яёА-ЯЁa-zA-Z0-9]/g, '-').slice(0, 50)}.doc`;
-    a.click();
-    URL.revokeObjectURL(dlUrl);
   }
 
   // ── Derived state ──
@@ -1286,53 +1282,84 @@ export default function FranchiseHQPage() {
   return (
     <div className="pb-10">
 
-      {/* ── Page header ── */}
-      <div className="mb-6 rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50/80 ring-1 ring-sky-200/70 shadow-[0_8px_36px_rgba(15,23,42,0.18)] px-6 py-5">
-        <div className="flex items-center gap-4 mb-4 flex-wrap">
-          <div className="h-12 w-12 rounded-2xl grid place-items-center bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 shadow-[0_6px_20px_rgba(34,211,238,0.35)] ring-1 ring-white/25 shrink-0">
-            <BarChart3 size={22} className="text-white" />
+      {/* ── Page header (CLAUDE.md spec) ── */}
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <Gavel className="h-5 w-5 text-white" />
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] font-bold tracking-[0.25em] uppercase text-sky-600 font-kiona">REFOCUS</span>
-              <span className="text-slate-300 text-[10px]">◆</span>
-              <span className="text-[11px] text-slate-500 uppercase tracking-[0.18em] font-medium">Штаб франшизы</span>
+          <div>
+            <div className="text-2xl font-bold tracking-tight text-slate-50">
+              Штаб франшизы
             </div>
-            <h1 className="text-[21px] font-bold text-slate-800 leading-tight mt-0.5">
-              Центр управления упаковкой франшизы
-            </h1>
+            <div className="mt-0.5 text-[12px] text-cyan-300/50">
+              Упаковка франшизы Refocus
+            </div>
           </div>
-          {/* Counter badge */}
+        </div>
+      </div>
+
+      {/* ── Hero progress block — общая готовность франшизы ── */}
+      <div className="mb-6 relative overflow-hidden rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_12px_40px_rgba(15,23,42,0.18)] px-6 py-5">
+        {/* Декоративные cyan-glow пятна — теперь на светлом, мягкие */}
+        <div className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full bg-cyan-200/40 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-20 -left-12 h-44 w-44 rounded-full bg-emerald-200/30 blur-3xl" />
+
+        <div className="relative flex flex-wrap items-end justify-between gap-4 mb-4">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-700 mb-2">
+              Готовность к упаковке
+            </div>
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span className="text-[44px] font-bold leading-none tracking-tight text-slate-900 tabular-nums">
+                {overallPct}<span className="text-[28px] text-cyan-500 ml-0.5">%</span>
+              </span>
+              <span className="text-[13px] text-slate-500">
+                <span className="text-slate-900 font-semibold tabular-nums">{doneItems}</span>
+                <span className="mx-1">из</span>
+                <span className="tabular-nums">{totalItems}</span>
+                <span className="ml-1">пунктов готовы</span>
+              </span>
+            </div>
+          </div>
           <div className="text-right shrink-0">
-            <div className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Готовых документов</div>
-            <div className="text-[26px] font-bold text-slate-800 leading-tight">
-              {doneItems}<span className="text-[14px] text-slate-400 font-normal"> / {totalItems}</span>
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500 mb-1">
+              Статус
+            </div>
+            <div className={cx(
+              'text-[14px] font-semibold',
+              overallPct === 100 ? 'text-emerald-600' :
+              overallPct >= 75    ? 'text-cyan-700' :
+              overallPct >= 50    ? 'text-cyan-600' :
+              overallPct >= 25    ? 'text-amber-600' :
+              overallPct > 0      ? 'text-slate-600' :
+              'text-slate-400',
+            )}>
+              {overallPct === 100 ? 'Полностью упакована ✓' :
+               overallPct >= 75    ? 'Финальная стадия' :
+               overallPct >= 50    ? 'Зрелость' :
+               overallPct >= 25    ? 'Развитие' :
+               overallPct > 0      ? 'Старт' :
+               'Не начато'}
             </div>
           </div>
         </div>
 
-        {/* Big progress bar */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[12px] font-semibold text-slate-600">
-              {
-                overallPct === 0   ? 'Франшиза не упакована' :
-                overallPct < 25   ? 'Начало работы' :
-                overallPct < 50   ? 'На четверть пути' :
-                overallPct < 75   ? 'Наполовину пути' :
-                overallPct < 100  ? 'Почти готова' :
-                'Франшиза полностью упакована ✓'
-              }
-            </span>
-            <span className="text-[22px] font-bold text-sky-600 tabular-nums leading-none">{overallPct}%</span>
-          </div>
-          <div className="h-4 rounded-full bg-slate-200/80 overflow-hidden shadow-[inset_0_1px_3px_rgba(15,23,42,0.12)]">
+        <div className="relative">
+          {/* Полоска прогресса */}
+          <div className="h-3 rounded-full bg-slate-100 overflow-hidden shadow-[inset_0_2px_4px_rgba(15,23,42,0.10)]">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 transition-all duration-700 shadow-[0_0_10px_rgba(34,211,238,0.45)]"
+              className={cx(
+                'h-full rounded-full transition-all duration-700',
+                overallPct === 100
+                  ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.55)]'
+                  : 'bg-gradient-to-r from-cyan-400 via-cyan-500 to-emerald-400 shadow-[0_0_18px_rgba(34,211,238,0.55)]',
+              )}
               style={{ width: `${overallPct}%` }}
             />
           </div>
-          <div className="mt-1.5 flex justify-between text-[10px] text-slate-400">
+          {/* Метки шкалы */}
+          <div className="mt-2 flex justify-between text-[10px] font-medium tabular-nums text-slate-400">
             <span>0%</span>
             <span>25%</span>
             <span>50%</span>
@@ -1340,130 +1367,107 @@ export default function FranchiseHQPage() {
             <span>100%</span>
           </div>
         </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl bg-white/70 px-3 py-2 ring-1 ring-sky-100">
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Для кого</span>
-          <AudienceBadges audiences={['hq', 'franchisee', 'candidate']} compact />
-        </div>
       </div>
 
-      <div className="flex gap-6 items-start">
-        {/* ── Left nav ── */}
-        <div className="w-56 shrink-0">
-          {/* Nav card — всё внутри одной карточки со скроллом */}
-          <div className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-sky-50 ring-1 ring-sky-200 shadow-[0_8px_36px_rgba(15,23,42,0.15)] overflow-hidden">
-            <div className="px-4 pt-4 pb-2">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Разделы</div>
-            </div>
-            <div className="px-2 pb-3 space-y-0.5 max-h-[calc(100vh-220px)] overflow-y-auto">
-              {SECTIONS.map(section => {
-                const Icon     = section.icon;
-                const pct      = sectionPct(section);
-                const isActive = section.id === activeSectionId;
-                const done     = section.items.filter(it => isItemDone(it.id, it.initialStatus)).length;
-
-                return (
-                  <button
-                    key={section.id}
-                    onClick={() => switchSection(section.id)}
-                    className={cx(
-                      'w-full flex flex-col px-3 py-2 rounded-xl text-left transition-all duration-150',
-                      isActive
-                        ? `bg-gradient-to-r ${GRAD[section.color]} shadow-[0_4px_12px_rgba(0,0,0,0.12)]`
-                        : 'hover:bg-slate-100',
-                    )}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Icon
-                        size={14}
-                        className={isActive ? 'text-white shrink-0' : 'text-slate-400 shrink-0'}
-                      />
-                      <span className={cx(
-                        'flex-1 text-[12.5px] font-semibold truncate',
-                        isActive ? 'text-white' : 'text-slate-700',
-                      )}>
-                        {section.title}
-                      </span>
-                      <span className={cx(
-                        'text-[11px] font-bold tabular-nums shrink-0',
-                        isActive
-                          ? 'text-white/90'
-                          : pct === 100 ? 'text-emerald-600' : 'text-slate-400',
-                      )}>
-                        {done}/{section.items.length}
-                      </span>
-                    </div>
-                    {/* Progress bar */}
-                    <div className={cx('mt-1.5 h-1 rounded-full overflow-hidden', isActive ? 'bg-white/30' : 'bg-slate-200')}>
-                      <div
-                        className={cx('h-full rounded-full transition-all duration-500', isActive ? 'bg-white/80' : `bg-gradient-to-r ${GRAD[section.color]}`)}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Main content ── */}
-        <div className="flex-1 min-w-0">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <Loader2 size={28} className="animate-spin text-cyan-400" />
-            </div>
-          ) : (
-            <>
-              {/* Section title bar */}
-              <div className={cx(
-                'mb-4 rounded-3xl p-5 ring-1',
-                'bg-gradient-to-br from-white via-slate-50 to-sky-50',
-                RING[activeSection.color],
-                'shadow-[0_8px_36px_rgba(15,23,42,0.18)]',
+      {/* ── Section tiles grid (5 в ряд × 2 строки = 10 секций) ── */}
+      <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        {SECTIONS.map(section => {
+          const Icon       = section.icon;
+          const isActive   = section.id === activeSectionId;
+          const done       = section.items.filter(it => isItemDone(it.id, it.initialStatus)).length;
+          const isComplete = done === section.items.length && section.items.length > 0;
+          const pct        = sectionPct(section);
+          const tone       = SECTION_TONE[section.color] ?? TONE_FALLBACK;
+          return (
+            <button
+              key={section.id}
+              onClick={() => switchSection(section.id)}
+              className={cx(
+                'group relative flex flex-col items-start gap-3 rounded-2xl px-4 pt-4 pb-5 text-left transition-all overflow-hidden',
+                isActive
+                  ? 'bg-gradient-to-br from-cyan-500 to-cyan-600 ring-1 ring-cyan-700/40 shadow-[0_16px_44px_rgba(8,145,178,0.45)] -translate-y-0.5'
+                  : 'bg-white ring-1 ring-sky-100 hover:ring-sky-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.18)] hover:-translate-y-0.5',
+              )}
+            >
+              <div className="flex w-full items-start justify-between gap-2">
+                <div className={cx(
+                  'grid h-12 w-12 place-items-center rounded-xl transition-transform group-hover:scale-105',
+                  isActive
+                    ? 'bg-white text-cyan-600 shadow-[0_6px_16px_rgba(0,0,0,0.18)]'
+                    : tone.iconBg + ' shadow-sm',
+                )}>
+                  <Icon size={22} className={isActive ? 'text-cyan-600' : tone.iconText} />
+                </div>
+                <span className={cx(
+                  'inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums shrink-0',
+                  isActive
+                    ? 'bg-white/25 text-white ring-1 ring-white/30 backdrop-blur-sm'
+                    : isComplete
+                      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                      : 'bg-slate-100 text-slate-600',
+                )}>
+                  {done}/{section.items.length}
+                </span>
+              </div>
+              <span className={cx(
+                'text-[13.5px] font-semibold leading-tight tracking-tight line-clamp-2 min-h-[36px]',
+                isActive ? 'text-white' : 'text-slate-900',
               )}>
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className={cx('h-12 w-12 rounded-2xl grid place-items-center shadow-[0_6px_18px_rgba(0,0,0,0.18)]', `bg-gradient-to-br ${GRAD[activeSection.color]}`)}>
-                      <activeSection.icon size={24} className="text-white" />
-                    </div>
-                    <div>
-                      <h2 className="text-[20px] font-bold text-slate-800">{activeSection.title}</h2>
-                      <p className="text-[13px] text-slate-500 mt-0.5">
-                        {activeSection.items.length} пунктов ·{' '}
-                        <span className="text-emerald-600 font-semibold">
-                          {activeSection.items.filter(it => isItemDone(it.id, it.initialStatus)).length} выполнено
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <button
-                      onClick={() => downloadSectionWord(activeSection)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[12px] font-semibold bg-sky-50 text-sky-700 ring-1 ring-sky-200 hover:bg-sky-100 transition-colors"
-                      title="Скачать весь раздел одним Word-документом"
-                    >
-                      <FileDown size={14}/>
-                      Скачать раздел
-                    </button>
-                    <div className="w-28">
-                      <div className="flex justify-between text-[11px] mb-1.5">
-                        <span className="text-slate-500">Прогресс</span>
-                        <span className={cx('font-bold', `text-${activeSection.color}-600`)}>{sectionPct(activeSection)}%</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                        <div
-                          className={cx('h-full rounded-full bg-gradient-to-r', GRAD[activeSection.color])}
-                          style={{ width: `${sectionPct(activeSection)}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                {section.title}
+              </span>
+
+              {/* Прогресс: процент + полоска внизу плитки */}
+              <div className="absolute left-0 right-0 bottom-0 px-3 pb-1.5">
+                <div className="flex items-center justify-between mb-1">
+                  <span className={cx(
+                    'text-[10px] font-bold tabular-nums tracking-wide',
+                    isActive
+                      ? 'text-white/85'
+                      : isComplete
+                        ? 'text-emerald-600'
+                        : pct > 0
+                          ? 'text-cyan-600'
+                          : 'text-slate-400',
+                  )}>
+                    {pct}%
+                  </span>
+                  {isComplete && !isActive && (
+                    <CheckCircle2 size={11} className="text-emerald-500" />
+                  )}
+                </div>
+                <div className={cx(
+                  'h-1.5 rounded-full overflow-hidden',
+                  isActive ? 'bg-white/20' : 'bg-slate-100',
+                )}>
+                  <div
+                    className={cx(
+                      'h-full rounded-full transition-all duration-500',
+                      isActive
+                        ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.65)]'
+                        : isComplete
+                          ? 'bg-gradient-to-r from-emerald-400 to-emerald-500'
+                          : `bg-gradient-to-r ${pct > 0 ? 'from-cyan-400 to-cyan-500' : ''}`,
+                    )}
+                    style={{ width: `${pct}%` }}
+                  />
                 </div>
               </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Main content ── */}
+      <div>
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 size={28} className="animate-spin text-cyan-400" />
+          </div>
+        ) : (
+          <>
 
               {/* Item cards */}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {activeSection.items.map(item => {
                   const db         = getItem(item.id, item.initialStatus);
                   const e          = getEdit(item.id, item.initialStatus);
@@ -1474,389 +1478,451 @@ export default function FranchiseHQPage() {
                   const audiences  = getItemAudiences(activeSection.id, item.id);
                   const hasContent = !!(e.content || e.notes);
 
-                  // Readiness color
-                  const rdColor = readiness === 0 ? 'text-slate-400'
-                    : readiness < 50              ? 'text-amber-600'
-                    : readiness < 100             ? 'text-sky-600'
-                    : 'text-emerald-600';
-                  const rdBarColor = readiness === 0 ? 'bg-slate-200'
-                    : readiness < 50              ? 'bg-gradient-to-r from-amber-400 to-orange-400'
-                    : readiness < 100             ? 'bg-gradient-to-r from-sky-400 to-cyan-400'
-                    : 'bg-gradient-to-r from-emerald-400 to-teal-400';
+                  // Цвет акцент-полоски слева: emerald=done, cyan=в работе, slate=не начато
+                  const accentColor = readiness === 100 ? 'bg-emerald-500'
+                    : readiness > 0   ? 'bg-cyan-500'
+                    : 'bg-slate-200';
 
                   return (
                     <div
                       key={item.id}
                       className={cx(
-                        'rounded-2xl ring-1 overflow-hidden transition-all duration-200',
-                        'shadow-[0_4px_20px_rgba(15,23,42,0.10)]',
+                        'group relative rounded-2xl bg-white ring-1 overflow-hidden transition-all',
                         readiness === 100
-                          ? 'bg-gradient-to-br from-emerald-50 via-white to-emerald-50 ring-emerald-200 shadow-[0_4px_20px_rgba(16,185,129,0.10)]'
-                          : 'bg-gradient-to-br from-white via-slate-50 to-sky-50 ring-sky-200/60 hover:ring-sky-300/70 hover:shadow-[0_6px_28px_rgba(15,23,42,0.14)]',
+                          ? 'ring-emerald-200/70 shadow-[0_4px_20px_rgba(16,185,129,0.10)]'
+                          : 'ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.12)] hover:ring-sky-200 hover:shadow-[0_10px_36px_rgba(15,23,42,0.16)]',
                       )}
                     >
+                      {/* Цветная акцент-полоска слева */}
+                      <div className={cx('absolute left-0 top-0 bottom-0 w-[3px] transition-colors', accentColor)} />
+
                       {/* Card header — весь кликабелен для expand */}
                       <div
-                        className="flex items-start gap-3 px-4 py-3.5 cursor-pointer select-none"
+                        className="flex items-start gap-3 pl-5 pr-4 py-3.5 cursor-pointer select-none"
                         onClick={() => setExpandedItemId(prev => prev === item.id ? null : item.id)}
                       >
                         <button
                           onClick={ev => { ev.stopPropagation(); void changeReadiness(item.id, item.initialStatus, readiness === 100 ? 0 : 100); }}
-                          className="mt-0.5 shrink-0 transition-all hover:scale-110 active:scale-95"
+                          className="mt-0.5 shrink-0 transition-transform hover:scale-110 active:scale-95"
                           title={readiness === 100 ? 'Снять отметку' : 'Отметить готовым'}
                         >
                           {readiness === 100
-                            ? <CheckCircle2 size={20} className="text-emerald-500" />
-                            : <Circle size={20} className="text-slate-300 hover:text-sky-400 transition-colors" />
+                            ? <CheckCircle2 size={22} className="text-emerald-500" />
+                            : <Circle size={22} className="text-slate-300 hover:text-cyan-500 transition-colors" />
                           }
                         </button>
 
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-[11px] font-mono text-slate-400 shrink-0">{item.id}</span>
-                            <span className={cx(
-                              'text-[14px] font-semibold leading-snug',
-                              db.completed ? 'line-through text-slate-400' : 'text-slate-800',
-                            )}>
+                          {/* Title row */}
+                          <div className="flex items-center gap-2.5">
+                            <span className="inline-flex items-center justify-center min-w-[40px] h-6 px-1.5 rounded-md bg-slate-100 text-slate-500 text-[11px] font-bold font-mono tabular-nums shrink-0">
+                              {item.id}
+                            </span>
+                            <span className="text-[16px] font-semibold leading-snug tracking-tight text-slate-900 min-w-0">
                               {item.title}
                             </span>
-                          </div>
-
-                          <p className="mt-0.5 text-[12px] text-slate-500 leading-relaxed">
-                            {item.description}
-                          </p>
-
-                          <div className="mt-2">
-                            <AudienceBadges audiences={audiences} />
-                          </div>
-
-                          {!isExpanded && e.content && (
-                            <button
-                              onClick={() => setExpandedItemId(item.id)}
-                              className="mt-1.5 w-full text-left text-[12px] text-slate-600 bg-sky-50 rounded-xl px-3 py-1.5 ring-1 ring-sky-100 line-clamp-2 hover:bg-sky-100/70 transition-colors"
-                            >
-                              {e.content.slice(0, 200)}{e.content.length > 200 ? '…' : ''}
-                            </button>
-                          )}
-
-                          {/* Readiness mini bar */}
-                          <div className="mt-2 flex items-center gap-2">
-                            <div className="flex-1 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                              <div
-                                className={cx('h-full rounded-full transition-all duration-500', rdBarColor)}
-                                style={{ width: `${readiness}%` }}
+                            {(isDirty || isSaving) && (
+                              <span
+                                title={isSaving ? 'Сохраняю…' : 'Не сохранено'}
+                                className={cx(
+                                  'inline-block h-1.5 w-1.5 rounded-full shrink-0',
+                                  isSaving ? 'bg-cyan-500 animate-pulse' : 'bg-amber-500',
+                                )}
                               />
-                            </div>
-                            <span className={cx('text-[11px] font-bold tabular-nums shrink-0', rdColor)}>
+                            )}
+                            <span className={cx(
+                              'ml-auto inline-flex items-center justify-center min-w-[48px] px-2 py-1 rounded-md text-[12px] font-bold tabular-nums shrink-0 ring-1',
+                              readiness === 100
+                                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                : readiness > 0
+                                  ? 'bg-cyan-50 text-cyan-700 ring-cyan-200'
+                                  : 'bg-slate-50 text-slate-400 ring-slate-200',
+                            )}>
                               {readiness}%
                             </span>
-                            <span className={cx('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ring-1', priorityBadge(item.priority).bg)}>
-                              {priorityBadge(item.priority).label}
-                            </span>
-                            {hasContent && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1 bg-indigo-50 text-indigo-600 ring-indigo-200">
-                                <FileText size={10}/> {e.content.length} симв.
-                              </span>
-                            )}
-                            {isDirty && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1 bg-amber-50 text-amber-600 ring-amber-200 animate-pulse">
-                                Не сохранено
-                              </span>
-                            )}
-                            {isSaving && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1 bg-sky-50 text-sky-600 ring-sky-200">
-                                <Loader2 size={10} className="animate-spin"/> Сохраняю…
+                          </div>
+
+                          {/* Meta row: audience + signable */}
+                          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                            <AudienceBadges audiences={audiences} />
+                            {item.isSignable && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-violet-200"
+                                title="Юридический документ — подписывается с франчайзи"
+                              >
+                                <FileSignature size={10}/> К подписи
                               </span>
                             )}
                           </div>
                         </div>
 
                         <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
-                          {hasContent && (
-                            <button
-                              onClick={e => { e.stopPropagation(); downloadWord(item); }}
-                              className="p-1.5 rounded-xl hover:bg-sky-100 text-slate-400 hover:text-sky-600 transition-colors"
-                              title="Скачать как Word"
-                            >
-                              <FileDown size={15}/>
-                            </button>
-                          )}
+                          {hasContent && (() => {
+                            const traineeRole = TWO_AUDIENCE_ITEMS[item.id]?.traineeRole;
+                            const showTraineeBtn =
+                              !!traineeRole && /<!--\s*TRAINER:START\s*-->/i.test(e.content);
+                            return (
+                              <>
+                                <button
+                                  onClick={ev => { ev.stopPropagation(); void downloadPdf(item, 'full'); }}
+                                  disabled={pdfDownloadingSet.has(item.id)}
+                                  className="p-1.5 rounded-lg hover:bg-cyan-50 text-slate-400 hover:text-cyan-600 transition-colors disabled:opacity-50"
+                                  title={showTraineeBtn ? 'Скачать PDF — полный (для меня)' : 'Скачать PDF'}
+                                >
+                                  {pdfDownloadingSet.has(item.id)
+                                    ? <Loader2 size={14} className="animate-spin"/>
+                                    : <FileDown size={14}/>
+                                  }
+                                </button>
+                                {showTraineeBtn && (
+                                  <button
+                                    onClick={ev => { ev.stopPropagation(); void downloadPdf(item, 'trainee'); }}
+                                    disabled={pdfDownloadingSet.has(`${item.id}:trainee`)}
+                                    className="p-1.5 rounded-lg hover:bg-sky-50 text-slate-400 hover:text-sky-600 transition-colors disabled:opacity-50"
+                                    title={`Скачать PDF — для ${traineeRole}`}
+                                  >
+                                    {pdfDownloadingSet.has(`${item.id}:trainee`)
+                                      ? <Loader2 size={14} className="animate-spin"/>
+                                      : <UserRound size={14}/>
+                                    }
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
                           <div className="p-1.5 text-slate-400">
-                            {isExpanded ? <ChevronUp size={15}/> : <ChevronDown size={15}/>}
+                            {isExpanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
                           </div>
                         </div>
                       </div>
 
-                      {/* Expanded editor */}
-                      {isExpanded && (
-                        <div className="border-t border-sky-100 px-4 pb-4 pt-3 bg-white">
-                          <div className="space-y-3">
-                            {/* Readiness picker */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-2">
-                                Готовность документа
-                              </label>
-                              <div className="flex items-stretch gap-2">
-                                {([0, 25, 50, 75, 100] as const).map(pct => {
-                                  const isSelected = readiness === pct;
-                                  const label = pct === 0 ? 'Не начато'
-                                    : pct === 25  ? 'Начато'
-                                    : pct === 50  ? 'Наполовину'
-                                    : pct === 75  ? 'Почти'
-                                    : 'Готово ✓';
-                                  const selCls = pct === 0    ? 'bg-slate-100 text-slate-600 ring-slate-300'
-                                    : pct === 25  ? 'bg-amber-400 text-white ring-amber-500 shadow-[0_3px_10px_rgba(251,191,36,0.4)]'
-                                    : pct === 50  ? 'bg-orange-400 text-white ring-orange-500 shadow-[0_3px_10px_rgba(251,146,60,0.4)]'
-                                    : pct === 75  ? 'bg-sky-500 text-white ring-sky-600 shadow-[0_3px_10px_rgba(14,165,233,0.4)]'
-                                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white ring-emerald-500 shadow-[0_3px_12px_rgba(16,185,129,0.45)]';
-                                  return (
-                                    <button
-                                      key={pct}
-                                      onClick={() => void changeReadiness(item.id, item.initialStatus, pct)}
-                                      className={cx(
-                                        'flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl text-[11px] font-bold ring-1 transition-all',
-                                        isSelected
-                                          ? selCls + ' scale-[1.04]'
-                                          : 'bg-white text-slate-400 ring-slate-200 hover:ring-slate-300 hover:text-slate-600',
-                                      )}
-                                    >
-                                      <span className="text-[13px] font-extrabold">{pct}%</span>
-                                      <span className="text-[9px] font-semibold opacity-80 leading-tight text-center">{label}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
-                                  Содержание документа
-                                </label>
-                                <button
-                                  onClick={ev => { ev.stopPropagation(); setModalItem(item); }}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-sky-50 text-sky-600 ring-1 ring-sky-200 hover:bg-sky-100 transition-colors"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                                  Открыть полноэкранно
-                                </button>
-                              </div>
-                              <LocalTextarea
-                                key={`${item.id}-content`}
-                                initialValue={e.content}
-                                placeholder="Вставьте текст из Word, Google Docs или напишите сами. Поддерживается любой объём."
-                                rows={8}
-                                className="w-full text-[13.5px] text-slate-800 leading-relaxed bg-white ring-1 ring-sky-200 focus:ring-sky-400 focus:outline-none rounded-xl px-4 py-3 resize-y placeholder:text-slate-300 transition-all min-h-[120px] shadow-[inset_0_1px_3px_rgba(15,23,42,0.05)]"
-                                onCommit={val => commitEdit(item.id, item.initialStatus, 'content', val)}
-                              />
-                            </div>
-
-                            {/* ── Заметки ── */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1.5">
-                                Заметки
-                              </label>
-                              <LocalTextarea
-                                key={`${item.id}-notes`}
-                                initialValue={e.notes}
-                                placeholder="Краткие заметки по этому разделу…"
-                                rows={3}
-                                className="w-full text-[13.5px] text-slate-800 bg-white ring-1 ring-sky-200 focus:ring-sky-400 focus:outline-none rounded-xl px-4 py-3 resize-y placeholder:text-slate-300 transition-all shadow-[inset_0_1px_3px_rgba(15,23,42,0.05)]"
-                                onCommit={val => commitEdit(item.id, item.initialStatus, 'notes', val)}
-                              />
-                            </div>
-
-                            {/* ── Фото ── */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-2">
-                                Фото
-                              </label>
-
-                              {(db.images ?? []).length > 0 && (
-                                <div className="grid grid-cols-3 gap-2 mb-2">
-                                  {(db.images ?? []).map((url, imgIdx) => (
-                                    <div key={imgIdx} className="relative group rounded-xl overflow-hidden ring-1 ring-sky-100 aspect-square">
-                                      <img
-                                        src={url}
-                                        alt={`Фото ${imgIdx + 1}`}
-                                        className="w-full h-full object-cover"
-                                        onClick={() => window.open(url, '_blank')}
-                                        style={{ cursor: 'zoom-in' }}
-                                      />
-                                      <button
-                                        onClick={ev => { ev.stopPropagation(); void removeImage(item.id, item.initialStatus, imgIdx); }}
-                                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
-                                        title="Удалить"
-                                      >×</button>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              <label
-                                htmlFor={`img-upload-${item.id}`}
-                                className={cx(
-                                  'flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border-2 border-dashed cursor-pointer transition-all text-[12px] font-medium',
-                                  uploadingSet.has(item.id)
-                                    ? 'border-sky-300 bg-sky-50 text-sky-500'
-                                    : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600',
-                                )}
-                              >
-                                {uploadingSet.has(item.id) ? (
-                                  <><Loader2 size={13} className="animate-spin"/> Загружаю...</>
-                                ) : (
-                                  <><Upload size={13}/> Загрузить фото</>
-                                )}
-                              </label>
-                              <input
-                                id={`img-upload-${item.id}`}
-                                type="file"
-                                multiple
-                                accept="image/*"
-                                className="hidden"
-                                onChange={ev => { if (ev.target.files?.length) void uploadImages(item.id, item.initialStatus, ev.target.files); ev.target.value = ''; }}
-                              />
-                            </div>
-
-                            {/* ── Документы ── */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-2">
-                                Документы
-                              </label>
-
-                              {(db.documents ?? []).length > 0 && (
-                                <div className="space-y-1.5 mb-2">
-                                  {(db.documents ?? []).map((doc, docIdx) => (
-                                    <div
-                                      key={docIdx}
-                                      className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-50 ring-1 ring-indigo-100 group"
-                                    >
-                                      <Paperclip size={13} className="text-indigo-400 shrink-0" />
-                                      <a
-                                        href={doc.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex-1 min-w-0 text-[12.5px] text-indigo-700 font-medium truncate hover:underline"
-                                        title={doc.name}
-                                      >
-                                        {doc.name}
-                                      </a>
-                                      <button
-                                        onClick={ev => { ev.stopPropagation(); void removeDocument(item.id, item.initialStatus, docIdx); }}
-                                        className="shrink-0 p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
-                                        title="Удалить"
-                                      >
-                                        <Trash2 size={13} />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              <label
-                                htmlFor={`doc-upload-${item.id}`}
-                                className={cx(
-                                  'flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border-2 border-dashed cursor-pointer transition-all text-[12px] font-medium',
-                                  uploadingDocsSet.has(item.id)
-                                    ? 'border-indigo-300 bg-indigo-50 text-indigo-500'
-                                    : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600',
-                                )}
-                              >
-                                {uploadingDocsSet.has(item.id) ? (
-                                  <><Loader2 size={13} className="animate-spin"/> Загружаю...</>
-                                ) : (
-                                  <><Paperclip size={13}/> Загрузить Word / PDF</>
-                                )}
-                              </label>
-                              <input
-                                id={`doc-upload-${item.id}`}
-                                type="file"
-                                multiple
-                                accept=".doc,.docx,.pdf,.xlsx,.xls,.pptx,.ppt,.txt"
-                                className="hidden"
-                                onChange={ev => { if (ev.target.files?.length) void uploadDocuments(item.id, item.initialStatus, ev.target.files); ev.target.value = ''; }}
-                              />
-                            </div>
-
-                            {/* ── Видео ── */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-2">
-                                Видеоуроки
-                              </label>
-
-                              {(db.videos ?? []).length > 0 && (
-                                <div className="space-y-2 mb-2">
-                                  {(db.videos ?? []).map((vid, vidIdx) => {
-                                    const ytId = extractYouTubeId(vid.url);
-                                    return (
-                                      <div key={vidIdx} className="flex items-center gap-2 p-2 rounded-xl bg-rose-50 ring-1 ring-rose-100 group">
-                                        {ytId ? (
-                                          <img
-                                            src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`}
-                                            className="w-16 h-10 rounded-lg object-cover shrink-0 ring-1 ring-rose-200"
-                                            alt=""
-                                          />
-                                        ) : (
-                                          <div className="w-16 h-10 rounded-lg bg-rose-100 shrink-0 flex items-center justify-center">
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-rose-400"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                          </div>
-                                        )}
-                                        <a
-                                          href={vid.url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="flex-1 min-w-0 text-[12.5px] text-rose-700 font-medium truncate hover:underline"
-                                          title={vid.title || vid.url}
-                                        >
-                                          {vid.title || vid.url}
-                                        </a>
-                                        <button
-                                          onClick={ev => { ev.stopPropagation(); void removeVideo(item.id, item.initialStatus, vidIdx); }}
-                                          className="shrink-0 p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
-                                          title="Удалить"
-                                        >
-                                          <Trash2 size={13} />
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-
-                              <VideoAddForm
-                                onAdd={(title, url) => void addVideo(item.id, item.initialStatus, title, url)}
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between gap-3 pt-0.5">
-                              <button
-                                onClick={() => downloadWord(item)}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[12px] font-medium bg-sky-50 text-sky-700 ring-1 ring-sky-200 hover:bg-sky-100 transition-colors"
-                              >
-                                <FileDown size={13}/>
-                                Скачать Word
-                              </button>
-                              <button
-                                onClick={() => manualSave(item.id, item.initialStatus)}
-                                disabled={isSaving}
-                                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[12px] font-semibold text-white bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 shadow-[0_4px_16px_rgba(34,211,238,0.30)] hover:brightness-110 active:brightness-95 transition-all disabled:opacity-50"
-                              >
-                                {isSaving
-                                  ? <><Loader2 size={13} className="animate-spin"/> Сохраняю…</>
-                                  : <><Save size={13}/> Сохранить</>
-                                }
-                              </button>
-                            </div>
-                          </div>
+                      {/* Полоска прогресса в нижнем крае карточки — всегда видна (для нулевых — серый трек). */}
+                      {!isExpanded && (
+                        <div className="h-1 bg-slate-100 overflow-hidden">
+                          <div
+                            className={cx(
+                              'h-full transition-all duration-500',
+                              readiness === 100
+                                ? 'bg-gradient-to-r from-emerald-400 to-emerald-500'
+                                : readiness > 0
+                                  ? 'bg-gradient-to-r from-cyan-400 to-cyan-500'
+                                  : '',
+                            )}
+                            style={{ width: `${readiness}%` }}
+                          />
                         </div>
                       )}
+
+                      {/* Expanded editor — компактная версия */}
+                      {isExpanded && (() => {
+                        const attachKind   = attachOpen.get(item.id) ?? null;
+                        const photoCount   = (db.images ?? []).length;
+                        const docCount     = (db.documents ?? []).length;
+                        const videoCount   = (db.videos ?? []).length;
+                        return (
+                          <div className="border-t border-sky-100 px-5 pb-3 pt-2.5 bg-white space-y-2.5">
+                            {/* Readiness — узкий segment в одну строку */}
+                            <div className="grid grid-cols-5 gap-px rounded-xl ring-1 ring-sky-200 overflow-hidden bg-sky-100">
+                              {([0, 25, 50, 75, 100] as const).map(pct => {
+                                const isSelected = readiness === pct;
+                                const isDone     = pct === 100;
+                                return (
+                                  <button
+                                    key={pct}
+                                    onClick={() => void changeReadiness(item.id, item.initialStatus, pct)}
+                                    className={cx(
+                                      'py-1.5 text-[12px] font-bold tabular-nums transition-colors',
+                                      isSelected
+                                        ? isDone
+                                          ? 'bg-emerald-500 text-white'
+                                          : 'bg-cyan-500 text-white'
+                                        : 'bg-white text-slate-500 hover:bg-sky-50',
+                                    )}
+                                  >
+                                    {pct}%
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Content panel — редактирование только в полноэкранной модалке */}
+                            {(() => {
+                              const hasC = e.content.trim().length > 0;
+                              return (
+                                <button
+                                  onClick={ev => { ev.stopPropagation(); setModalItem(item); }}
+                                  className={cx(
+                                    'group w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all ring-1',
+                                    hasC
+                                      ? 'bg-gradient-to-r from-sky-50 to-cyan-50 ring-cyan-100 hover:ring-cyan-300 hover:shadow-[0_4px_14px_rgba(34,211,238,0.18)]'
+                                      : 'bg-slate-50 ring-slate-200 hover:bg-cyan-50/50 hover:ring-cyan-200',
+                                  )}
+                                >
+                                  <div className={cx(
+                                    'grid h-10 w-10 place-items-center rounded-lg shrink-0 transition-colors ring-1',
+                                    hasC
+                                      ? 'bg-white text-cyan-600 ring-cyan-200 group-hover:bg-cyan-500 group-hover:text-white group-hover:ring-cyan-500'
+                                      : 'bg-white text-slate-400 ring-slate-200 group-hover:text-cyan-500 group-hover:ring-cyan-200',
+                                  )}>
+                                    <FileText size={18} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className={cx(
+                                      'text-[13px] font-semibold',
+                                      hasC ? 'text-slate-900' : 'text-slate-600',
+                                    )}>
+                                      {hasC ? 'Содержание документа' : 'Содержание не заполнено'}
+                                    </div>
+                                    <div className="mt-0.5 text-[11px] text-slate-500">
+                                      {hasC
+                                        ? `${e.content.length.toLocaleString('ru')} символов · markdown`
+                                        : 'Открыть полноэкранный редактор и создать'
+                                      }
+                                    </div>
+                                  </div>
+                                  <span className={cx(
+                                    'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold shrink-0 transition-colors',
+                                    hasC
+                                      ? 'text-cyan-700 group-hover:bg-white/60'
+                                      : 'text-slate-600 group-hover:text-cyan-600',
+                                  )}>
+                                    <Maximize2 size={13} />
+                                    {hasC ? 'Открыть' : 'Создать'}
+                                  </span>
+                                </button>
+                              );
+                            })()}
+
+                            {/* Attachments row — три pill'а */}
+                            <div className="flex items-center gap-1.5">
+                              {([
+                                { kind: 'photos' as const, label: 'Фото',   count: photoCount, Icon: Camera    },
+                                { kind: 'files'  as const, label: 'Файлы',  count: docCount,   Icon: Paperclip },
+                                { kind: 'videos' as const, label: 'Видео',  count: videoCount, Icon: Play      },
+                              ]).map(({ kind, label, count, Icon }) => {
+                                const isOpen = attachKind === kind;
+                                return (
+                                  <button
+                                    key={kind}
+                                    onClick={ev => { ev.stopPropagation(); toggleAttach(item.id, kind); }}
+                                    className={cx(
+                                      'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors',
+                                      isOpen
+                                        ? 'bg-cyan-500 text-white shadow-[0_3px_10px_rgba(34,211,238,0.30)]'
+                                        : count > 0
+                                          ? 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 hover:bg-cyan-100'
+                                          : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100',
+                                    )}
+                                  >
+                                    <Icon size={12} />
+                                    {label}
+                                    <span className={cx(
+                                      'inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded text-[10px] font-bold tabular-nums',
+                                      isOpen
+                                        ? 'bg-white/25 text-white'
+                                        : count > 0
+                                          ? 'bg-cyan-200 text-cyan-800'
+                                          : 'bg-slate-200 text-slate-500',
+                                    )}>{count}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Раскрытая категория вложений */}
+                            {attachKind === 'photos' && (
+                              <div className="rounded-xl ring-1 ring-cyan-100 bg-cyan-50/40 p-2.5 space-y-2">
+                                {photoCount > 0 && (
+                                  <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5">
+                                    {(db.images ?? []).map((url, imgIdx) => (
+                                      <div key={imgIdx} className="relative group rounded-lg overflow-hidden ring-1 ring-sky-100 aspect-square">
+                                        <img
+                                          src={url}
+                                          alt={`Фото ${imgIdx + 1}`}
+                                          className="w-full h-full object-cover"
+                                          onClick={() => window.open(url, '_blank')}
+                                          style={{ cursor: 'zoom-in' }}
+                                        />
+                                        <button
+                                          onClick={ev => { ev.stopPropagation(); void removeImage(item.id, item.initialStatus, imgIdx); }}
+                                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                                          title="Удалить"
+                                        >×</button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <label
+                                  htmlFor={`img-upload-${item.id}`}
+                                  className={cx(
+                                    'flex items-center justify-center gap-2 w-full py-1.5 rounded-lg border border-dashed cursor-pointer transition-colors text-[11px] font-medium',
+                                    uploadingSet.has(item.id)
+                                      ? 'border-cyan-300 bg-cyan-50 text-cyan-600'
+                                      : 'border-slate-300 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-600',
+                                  )}
+                                >
+                                  {uploadingSet.has(item.id)
+                                    ? <><Loader2 size={12} className="animate-spin"/> Загружаю…</>
+                                    : <><Upload size={12}/> Добавить фото</>
+                                  }
+                                </label>
+                                <input
+                                  id={`img-upload-${item.id}`}
+                                  type="file"
+                                  multiple
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={ev => { if (ev.target.files?.length) void uploadImages(item.id, item.initialStatus, ev.target.files); ev.target.value = ''; }}
+                                />
+                              </div>
+                            )}
+
+                            {attachKind === 'files' && (
+                              <div className="rounded-xl ring-1 ring-cyan-100 bg-cyan-50/40 p-2.5 space-y-1.5">
+                                {(db.documents ?? []).map((doc, docIdx) => (
+                                  <div
+                                    key={docIdx}
+                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 group"
+                                  >
+                                    <Paperclip size={12} className="text-slate-400 shrink-0" />
+                                    <a
+                                      href={doc.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex-1 min-w-0 text-[12px] text-slate-700 font-medium truncate hover:underline"
+                                      title={doc.name}
+                                    >
+                                      {doc.name}
+                                    </a>
+                                    <button
+                                      onClick={ev => { ev.stopPropagation(); void removeDocument(item.id, item.initialStatus, docIdx); }}
+                                      className="shrink-0 p-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                                      title="Удалить"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                                <label
+                                  htmlFor={`doc-upload-${item.id}`}
+                                  className={cx(
+                                    'flex items-center justify-center gap-2 w-full py-1.5 rounded-lg border border-dashed cursor-pointer transition-colors text-[11px] font-medium',
+                                    uploadingDocsSet.has(item.id)
+                                      ? 'border-cyan-300 bg-cyan-50 text-cyan-600'
+                                      : 'border-slate-300 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-600',
+                                  )}
+                                >
+                                  {uploadingDocsSet.has(item.id)
+                                    ? <><Loader2 size={12} className="animate-spin"/> Загружаю…</>
+                                    : <><Paperclip size={12}/> Добавить Word / PDF</>
+                                  }
+                                </label>
+                                <input
+                                  id={`doc-upload-${item.id}`}
+                                  type="file"
+                                  multiple
+                                  accept=".doc,.docx,.pdf,.xlsx,.xls,.pptx,.ppt,.txt"
+                                  className="hidden"
+                                  onChange={ev => { if (ev.target.files?.length) void uploadDocuments(item.id, item.initialStatus, ev.target.files); ev.target.value = ''; }}
+                                />
+                              </div>
+                            )}
+
+                            {attachKind === 'videos' && (
+                              <div className="rounded-xl ring-1 ring-cyan-100 bg-cyan-50/40 p-2.5 space-y-2">
+                                {(db.videos ?? []).map((vid, vidIdx) => {
+                                  const ytId = extractYouTubeId(vid.url);
+                                  return (
+                                    <div key={vidIdx} className="flex items-center gap-2 p-1.5 rounded-lg bg-white ring-1 ring-slate-200 group">
+                                      {ytId ? (
+                                        <img
+                                          src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`}
+                                          className="w-14 h-9 rounded object-cover shrink-0 ring-1 ring-slate-200"
+                                          alt=""
+                                        />
+                                      ) : (
+                                        <div className="w-14 h-9 rounded bg-slate-100 shrink-0 flex items-center justify-center">
+                                          <Play size={14} className="text-slate-400" />
+                                        </div>
+                                      )}
+                                      <a
+                                        href={vid.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 min-w-0 text-[12px] text-slate-700 font-medium truncate hover:underline"
+                                        title={vid.title || vid.url}
+                                      >
+                                        {vid.title || vid.url}
+                                      </a>
+                                      <button
+                                        onClick={ev => { ev.stopPropagation(); void removeVideo(item.id, item.initialStatus, vidIdx); }}
+                                        className="shrink-0 p-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                                        title="Удалить"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                                <VideoAddForm
+                                  onAdd={(title, url) => void addVideo(item.id, item.initialStatus, title, url)}
+                                />
+                              </div>
+                            )}
+
+                            {/* Bottom bar */}
+                            {(() => {
+                              const traineeRole = TWO_AUDIENCE_ITEMS[item.id]?.traineeRole;
+                              const showTraineeBtn =
+                                !!traineeRole && /<!--\s*TRAINER:START\s*-->/i.test(e.content);
+                              return (
+                                <div className="flex items-center justify-between gap-2 pt-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <button
+                                      onClick={() => void downloadPdf(item, 'full')}
+                                      disabled={pdfDownloadingSet.has(item.id)}
+                                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
+                                    >
+                                      {pdfDownloadingSet.has(item.id)
+                                        ? <><Loader2 size={13} className="animate-spin"/> Генерирую…</>
+                                        : <><FileDown size={13}/> {showTraineeBtn ? 'PDF — для меня' : 'Скачать PDF'}</>
+                                      }
+                                    </button>
+                                    {showTraineeBtn && (
+                                      <button
+                                        onClick={() => void downloadPdf(item, 'trainee')}
+                                        disabled={pdfDownloadingSet.has(`${item.id}:trainee`)}
+                                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-sky-700 ring-1 ring-sky-200 bg-sky-50/60 transition hover:bg-sky-50 disabled:opacity-50"
+                                      >
+                                        {pdfDownloadingSet.has(`${item.id}:trainee`)
+                                          ? <><Loader2 size={13} className="animate-spin"/> Генерирую…</>
+                                          : <><UserRound size={13}/> PDF — для {traineeRole}</>
+                                        }
+                                      </button>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => manualSave(item.id, item.initialStatus)}
+                                    disabled={isSaving}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_3px_12px_rgba(34,211,238,0.25)] transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:opacity-50"
+                                  >
+                                    {isSaving
+                                      ? <><Loader2 size={13} className="animate-spin"/> Сохраняю…</>
+                                      : <><Save size={13}/> Сохранить</>
+                                    }
+                                  </button>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
               </div>
             </>
           )}
-        </div>
       </div>
 
       {/* ── Content Modal ── */}

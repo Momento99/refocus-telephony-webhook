@@ -42,7 +42,7 @@
 // Типы
 // ════════════════════════════════════════════════════════════════════
 
-export type FrameTypeCode = 'PA' | 'MA' | 'RP' | 'RM' | 'KD';
+export type FrameTypeCode = 'PA' | 'MA' | 'RP' | 'RM' | 'KD' | 'RL';
 export type GenderCode = 'F' | 'M';
 export type SectionKey = `${FrameTypeCode}_${GenderCode}`;
 export type CountryCode = 'KG' | 'KZ' | 'RU' | 'UZ';
@@ -92,10 +92,10 @@ export const COUNTRIES: Record<CountryCode, {
  * заводите их отдельными типами, не смешивая с RP/RM.
  */
 export const TYPE_BASE_BY_COUNTRY: Record<CountryCode, Record<FrameTypeCode, number>> = {
-  KG: { PA: 1200,   MA: 1400,   RP: 700,    RM: 900,    KD: 800 },    // RP/RM — бюджетный вход для пресбиопов
-  KZ: { PA: 8500,   MA: 10000,  RP: 5000,   RM: 6500,   KD: 5800 },   // в тенге (гипотеза)
-  RU: { PA: 2000,   MA: 2400,   RP: 1200,   RM: 1500,   KD: 1300 },   // в рублях (гипотеза)
-  UZ: { PA: 180000, MA: 220000, RP: 105000, RM: 140000, KD: 120000 }, // в сумах (гипотеза)
+  KG: { PA: 1200,   MA: 1400,   RP: 700,    RM: 900,    KD: 800,    RL: 6000 },    // RL — безоправные премиум, плоская цена ~6000с
+  KZ: { PA: 8500,   MA: 10000,  RP: 5000,   RM: 6500,   KD: 5800,   RL: 38000 },   // в тенге (гипотеза)
+  RU: { PA: 2000,   MA: 2400,   RP: 1200,   RM: 1500,   KD: 1300,   RL: 8500 },    // в рублях (гипотеза)
+  UZ: { PA: 180000, MA: 220000, RP: 105000, RM: 140000, KD: 120000, RL: 720000 },  // в сумах (гипотеза)
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -180,16 +180,31 @@ export const CITY_INDEX: Record<string, { country: CountryCode; index: number }>
 // 5) РАСПРЕДЕЛЕНИЕ СЛОТОВ
 // ════════════════════════════════════════════════════════════════════
 
-/** Доли секций в общей раскладке (сумма = 1). */
+/**
+ * Доли секций в общей раскладке (сумма = 1).
+ *
+ * RL (безоправные) занимают 7.7% всей витрины: 5.0% F + 2.7% M.
+ * Остальные секции пропорционально сжаты на коэффициент 0.923 (= 1 − 0.077),
+ * чтобы итоговая сумма = 1 и распределение PA/MA/RP/RM/KD оставалось
+ * пропорциональным предыдущей раскладке 35:28:35:28:14:14:7:7.
+ *
+ * Знаменатель 340 выбран так, чтобы при Math.round() в Токмоке (340 слотов)
+ * сумма вышла ровно 340 без ошибок округления:
+ *   PA_F=65, PA_M=53, MA_F=65, MA_M=53,
+ *   RP_F=26, RM_F=26, KD_F=13, KD_M=13,
+ *   RL_F=17, RL_M=9.   Итого = 340 ✓
+ */
 export const SECTION_SLOT_SHARE: Record<SectionKey, number> = {
-  PA_F: 35 / 168,
-  PA_M: 28 / 168,
-  MA_F: 35 / 168,
-  MA_M: 28 / 168,
-  RP_F: 14 / 168,
-  RM_F: 14 / 168,
-  KD_F: 7 / 168,
-  KD_M: 7 / 168,
+  PA_F: 65 / 340,
+  PA_M: 53 / 340,
+  MA_F: 65 / 340,
+  MA_M: 53 / 340,
+  RP_F: 26 / 340,
+  RM_F: 26 / 340,
+  KD_F: 13 / 340,
+  KD_M: 13 / 340,
+  RL_F: 17 / 340, // 5.0% — главная гендерная доля безоправных
+  RL_M: 9 / 340,  // 2.6% — мужских безоправных меньше
   RP_M: 0,
   RM_M: 0,
 };
@@ -206,6 +221,9 @@ export const PREMIUM_ELIGIBILITY: Record<SectionKey, number> = {
   KD_M: 0,
   RP_M: 0,
   RM_M: 0,
+  // RL — плоская цена ~6000с, без премиум-якорей через бакеты
+  RL_F: 0,
+  RL_M: 0,
 };
 
 /** Доли regular-слотов по бакетам 1–4. */
@@ -250,6 +268,28 @@ export function setBranchTotalSlots(branchName: string, value: number): void {
 export const FORMULA_ENABLED_BRANCHES: Set<string> = new Set<string>([
   'Токмок',
 ]);
+
+/**
+ * Филиалы, где не используем «автодопечатку по продажам» (suggestMap).
+ * Для них список к печати формируется только из формульной/ladder-сетки,
+ * без подмешивания ранее проданных цен.
+ */
+export const BRANCHES_WITHOUT_AUTO_REPLENISH: Set<string> = new Set<string>([
+  'Кант',
+  'Токмок',
+]);
+
+/**
+ * Плановая ёмкость витрин для legacy-филиалов (без формулы).
+ * Стартовое значение; на странице филиала переопределяется через localStorage.
+ * Для формульных филиалов ёмкость берётся из BRANCH_TOTAL_SLOTS / runtime override.
+ */
+export const LEGACY_BRANCH_CAPACITY: Record<string, number> = {
+  Сокулук: 120,
+  Беловодск: 100,
+  'Кара-Балта': 168,
+  Кант: 120,
+};
 
 /** Глобальная доля премиум в формуле auto α = PREMIUM_BASE_SHARE × K_c. */
 export const PREMIUM_BASE_SHARE = 0.08;
@@ -577,6 +617,27 @@ export function computeSectionPrices(
 ): number[] {
   if (!isBranchUsingFormula(branchName)) return [];
 
+  // RL — безоправные. Плоская цена ±5% от базы, без бакетов и мёртвых зон.
+  // У поставщика они идут одной ценой ~6000с, продаются как «премиум-фиксед».
+  if (type === 'RL') {
+    const slots = computeSectionTotalSlots(type, gender, branchName);
+    if (slots <= 0) return [];
+    const base = computeRawPrice(type, gender, 1, branchName);
+    if (base <= 0) return [];
+    const spread = Math.max(10, Math.round((base * 0.05) / 10) * 10);
+    const out: number[] = [];
+    const seen = new Set<number>();
+    for (let i = 0; i < slots; i++) {
+      // -spread, 0, +spread по кругу — небольшой разброс для разнообразия ценников
+      const offset = ((i % 3) - 1) * spread;
+      let price = Math.round((base + offset) / 10) * 10;
+      while (seen.has(price)) price += 10;
+      seen.add(price);
+      out.push(price);
+    }
+    return out.sort((a, b) => a - b);
+  }
+
   const { regular, premium } = computeSectionSplit(type, gender, branchName);
   const deadZones = computeDeadZones(type, gender, branchName, premium > 0);
   const prices: number[] = [];
@@ -639,6 +700,16 @@ export function computeBranchTotalCount(branchName: string): number {
     ['MA', 'F'], ['MA', 'M'],
     ['RP', 'F'], ['RM', 'F'],
     ['KD', 'F'], ['KD', 'M'],
+    ['RL', 'F'], ['RL', 'M'],
   ];
   return sections.reduce((sum, [t, g]) => sum + computeSectionSlotCount(t, g, branchName), 0);
 }
+
+/** Полный список секций, у которых может быть ненулевая доля слотов. */
+export const ALL_SECTIONS: Array<[FrameTypeCode, GenderCode]> = [
+  ['PA', 'F'], ['PA', 'M'],
+  ['MA', 'F'], ['MA', 'M'],
+  ['RP', 'F'], ['RM', 'F'],
+  ['KD', 'F'], ['KD', 'M'],
+  ['RL', 'F'], ['RL', 'M'],
+];

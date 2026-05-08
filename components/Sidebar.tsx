@@ -8,7 +8,8 @@ import {
   ChevronLeft, ChevronRight,
   LogOut, LogIn, Boxes, FileText, Settings2,
   PackageCheck, Users, Bell, BrainCircuit, Globe,
-  Landmark, Map, MessageCircle,
+  Landmark, Map, MessageCircle, UsersRound, BookOpen,
+  Glasses,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
@@ -38,11 +39,13 @@ const MENU_SECTIONS: MenuSection[] = [
     title: "Склад",
     items: [
       { label: "Склад", href: "/warehouse", icon: Boxes },
+      { label: "Закупка оправ", href: "/admin/frame-procurement", icon: Glasses },
     ],
   },
   {
     title: "Аналитика",
     items: [
+      { label: "Команда 360°", href: "/admin/team", icon: UsersRound },
       { label: "Статистика и финансы", href: "/admin/stats", icon: LineChart },
       { label: "AI-центр", href: "/admin/ai-employee-messages", icon: BrainCircuit },
       { label: "WhatsApp контроль", href: "/admin/whatsapp-control", icon: MessageCircle },
@@ -53,6 +56,7 @@ const MENU_SECTIONS: MenuSection[] = [
     title: "Франшиза",
     items: [
       { label: "Карта и управление", href: "/admin/franchise-map", icon: Globe },
+      { label: "Брендбук",            href: "/admin/brandbook",     icon: BookOpen },
     ],
   },
   {

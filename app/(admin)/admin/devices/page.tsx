@@ -14,9 +14,11 @@ import toast from 'react-hot-toast';
    Types
    ═══════════════════════════════════════════════════════════════ */
 
+type TerminalKind = 'pos' | 'kiosk';
+
 type Terminal = {
   id: number; name: string; terminal_code: string; branch_id: number;
-  is_active: boolean; is_enabled: boolean;
+  is_active: boolean; is_enabled: boolean; kind: TerminalKind;
   branch_name: string; country_id: string; country_name: string; currency_symbol: string;
 };
 type Branch = { id: number; name: string; country_id: string; country_name: string; terminals: Terminal[] };
@@ -31,7 +33,6 @@ type AppType = 'pos' | 'kiosk';
    Helpers
    ═══════════════════════════════════════════════════════════════ */
 
-function terminalType(code: string): 'kiosk' | 'pos' { return code.toUpperCase().includes('KIOSK') ? 'kiosk' : 'pos'; }
 function countryFlag(cid: string) { return ({ kg: '\u{1F1F0}\u{1F1EC}', ru: '\u{1F1F7}\u{1F1FA}', kz: '\u{1F1F0}\u{1F1FF}', uz: '\u{1F1FA}\u{1F1FF}' } as Record<string, string>)[cid] ?? '\u{1F310}'; }
 const COUNTRY_BG: Record<string, string> = { kg: '#ef4444', kz: '#22d3ee', uz: '#10b981', ru: '#8b5cf6' };
 const fmtMB = (b: number | null) => b ? `${(b / 1024 / 1024).toFixed(1)} MB` : '';
@@ -71,7 +72,7 @@ export default function DeviceHubPage() {
     setLoading(true);
     const { data, error } = await sb()
       .from('terminals')
-      .select(`id, name, terminal_code, branch_id, is_active, is_enabled, branches ( name, country_id, franchise_countries ( name, currency_symbol ) )`)
+      .select(`id, name, terminal_code, branch_id, is_active, is_enabled, kind, branches ( name, country_id, franchise_countries ( name, currency_symbol ) )`)
       .order('branch_id').order('id');
     if (error) { toast.error('Не удалось загрузить терминалы'); setLoading(false); return; }
     const rows = (data ?? []) as any[];
@@ -80,7 +81,8 @@ export default function DeviceHubPage() {
       if (!row.is_active && !row.is_enabled) continue;
       const b = row.branches; const fc = b?.franchise_countries; const bid = row.branch_id as number;
       if (!map[bid]) map[bid] = { id: bid, name: b?.name ?? `Филиал ${bid}`, country_id: b?.country_id ?? 'kg', country_name: fc?.name ?? '', terminals: [] };
-      map[bid].terminals.push({ id: row.id, name: row.name, terminal_code: row.terminal_code, branch_id: bid, is_active: row.is_active, is_enabled: row.is_enabled, branch_name: b?.name ?? '', country_id: b?.country_id ?? 'kg', country_name: fc?.name ?? '', currency_symbol: fc?.currency_symbol ?? 'с' });
+      const kind: TerminalKind = row.kind === 'kiosk' ? 'kiosk' : 'pos';
+      map[bid].terminals.push({ id: row.id, name: row.name, terminal_code: row.terminal_code, branch_id: bid, is_active: row.is_active, is_enabled: row.is_enabled, kind, branch_name: b?.name ?? '', country_id: b?.country_id ?? 'kg', country_name: fc?.name ?? '', currency_symbol: fc?.currency_symbol ?? 'с' });
     }
     setBranches(Object.values(map).sort((a, b) => a.id - b.id));
     setLoading(false);
@@ -189,8 +191,8 @@ export default function DeviceHubPage() {
   const allTerminals = branches.flatMap(b => b.terminals);
   const activeCount = allTerminals.filter(t => t.is_enabled).length;
   const disabledCount = allTerminals.length - activeCount;
-  const posBranches = branches.map(b => ({ ...b, terminals: b.terminals.filter(t => terminalType(t.terminal_code) === 'pos') })).filter(b => b.terminals.length > 0);
-  const kioskBranches = branches.map(b => ({ ...b, terminals: b.terminals.filter(t => terminalType(t.terminal_code) === 'kiosk') })).filter(b => b.terminals.length > 0);
+  const posBranches = branches.map(b => ({ ...b, terminals: b.terminals.filter(t => t.kind === 'pos') })).filter(b => b.terminals.length > 0);
+  const kioskBranches = branches.map(b => ({ ...b, terminals: b.terminals.filter(t => t.kind === 'kiosk') })).filter(b => b.terminals.length > 0);
 
   /* ═══════════════════════════════════════════════════════════════
      RENDER
@@ -673,7 +675,7 @@ function AddTerminalModal({ branches, onClose, onCreated }: {
     e.preventDefault();
     if (!code.trim() || !branchId || saving) return;
     setSaving(true);
-    const { error } = await getBrowserSupabase().from('terminals').insert({ terminal_code: code.trim(), name: displayName.trim() || code.trim(), branch_id: branchId, code: code.trim(), is_active: true, is_enabled: true });
+    const { error } = await getBrowserSupabase().from('terminals').insert({ terminal_code: code.trim(), name: displayName.trim() || code.trim(), branch_id: branchId, code: code.trim(), is_active: true, is_enabled: true, kind: tType });
     if (error) { toast.error(error.message); setSaving(false); return; }
     toast.success(`${code} создан`);
     onCreated();

@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 import { Clock, LogOut, Trash2, Plus, Save, ChevronRight, X, AlertCircle, Calendar, History, CheckCircle2, DoorOpen, RefreshCw, Timer } from 'lucide-react';
+import AppFocusBlock from './AppFocusBlock';
 
 /* ---------- types ---------- */
 
@@ -889,6 +890,9 @@ export default function PenaltiesTab() {
             </div>
           )}
         </Shell>
+
+        {/* ── Выходы из приложения (POS focus tracker) ── */}
+        <AppFocusBlock />
 
         {/* ── История смен / Посещаемость ── */}
         <Shell>

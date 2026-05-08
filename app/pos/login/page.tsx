@@ -44,7 +44,7 @@ export default function PosLoginPage(): JSX.Element {
     (async () => {
       const { data, error } = await supabase
         .from('terminals')
-        .select('id, branch_id, is_active')
+        .select('id, branch_id, is_active, kind')
         .eq('terminal_code', terminalCode)
         .single();
 
@@ -56,6 +56,11 @@ export default function PosLoginPage(): JSX.Element {
       if (!data.is_active) {
         setTerminalId(null);
         toast.error('Терминал выключен (is_active = false).');
+        return;
+      }
+      if (data.kind !== 'pos') {
+        setTerminalId(null);
+        toast.error('Этот код принадлежит не кассовому терминалу. Открой POS на правильном устройстве.');
         return;
       }
 
