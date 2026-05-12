@@ -132,6 +132,11 @@ async function createOutboundThreadAndMessage(
         order_id: item.order_id,
         assigned_seller_employee_id: sellerEmployeeId,
         status: 'waiting_customer',
+        // Скрываем тред от инбокса продавца до первого ответа клиента —
+        // авто-сообщения (aftercare, order_ready) не должны захламлять список
+        // тех тредов где реально нужно отвечать. Когда клиент пришлёт первый
+        // inbound, trigger trg_wa_thread_unhide_on_inbound сбросит флаг.
+        hidden_until_reply: true,
       })
       .select('id')
       .single();
