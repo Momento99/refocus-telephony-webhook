@@ -157,9 +157,32 @@ async function findOrCreateThread(phone: string): Promise<string | null> {
   return newThread.id as string;
 }
 
+function normalizePhoneDigits(s: string | null | undefined): string {
+  return (s ?? '').replace(/\D/g, '');
+}
+
+async function getOwnerWhatsappNormalized(): Promise<string | null> {
+  const admin = getSupabaseAdmin();
+  const { data } = await admin
+    .from('franchise_config')
+    .select('value')
+    .eq('key', 'owner_whatsapp')
+    .maybeSingle();
+  const raw = (data?.value as string | null) ?? null;
+  return raw ? normalizePhoneDigits(raw) : null;
+}
+
 async function ingestMessage(m: MetaMessage) {
   const admin = getSupabaseAdmin();
   const phone = m.from;
+
+  // Фильтр: если входящее с номера владельца (он отвечает на franchise-alert
+  // в чате с 705), не сохраняем в розничные таблицы. Иначе кассиры увидят
+  // тред с владельцем и франшиз-контекст в POS UI.
+  const ownerPhone = await getOwnerWhatsappNormalized();
+  if (ownerPhone && normalizePhoneDigits(phone) === ownerPhone) {
+    return;
+  }
 
   const threadId = await findOrCreateThread(phone);
   if (!threadId) return;

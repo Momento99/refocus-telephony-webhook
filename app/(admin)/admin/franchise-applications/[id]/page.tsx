@@ -7,7 +7,7 @@ import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, Phone, MessageCircle, Calendar, Bell, MapPin, Clock,
-  User, Globe, AlertTriangle, BookOpen,
+  User, Globe, AlertTriangle, BookOpen, Send, Check,
 } from 'lucide-react';
 
 type App = {
@@ -114,6 +114,7 @@ function cleanPhone(p: string) {
 
 function eventIcon(type: string): string {
   if (type === 'application_received') return '📥';
+  if (type === 'welcome_sent_manually') return '✉️';
   if (type.includes('whatsapp_sent') || type.includes('whatsapp_queued')) return '💬';
   if (type === 'owner_alert_sent' || type === 'owner_alert_queued') return '🔔';
   if (type === 'call_made') return '📞';
@@ -126,6 +127,18 @@ function eventIcon(type: string): string {
   if (type === 'stale_alert_queued') return '⚠️';
   if (type === 'whatsapp_send_failed') return '❌';
   return '•';
+}
+
+function welcomeText(name: string): string {
+  return [
+    `Здравствуйте, ${name}! 👋`,
+    '',
+    'Получили вашу заявку на франшизу Refocus. Свяжемся с вами в течение часа.',
+    '',
+    'А пока — у вас уже должна быть наша презентация. Если что-то непонятно или появились вопросы — пишите сюда, в этом чате.',
+    '',
+    'Команда Refocus · refocus.asia',
+  ].join('\n');
 }
 
 export default function FranchiseApplicationDetailPage() {
@@ -195,6 +208,34 @@ export default function FranchiseApplicationDetailPage() {
     setApp(prev => prev ? { ...prev, conversation_log: newLog } as App : prev);
     setNewLogEntry('');
     toast.success('Запись добавлена');
+    load();
+  }
+
+  async function sendWelcomeManually(force = false) {
+    if (!app) return;
+    const phoneDigits = cleanPhone(app.phone).replace(/^\+/, '');
+    if (!phoneDigits) {
+      toast.error('Не могу разобрать номер лида');
+      return;
+    }
+    const link = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(welcomeText(app.name))}`;
+    window.open(link, '_blank', 'noopener');
+
+    await sb().from('franchise_application_events').insert({
+      application_id: app.id,
+      event_type: 'welcome_sent_manually',
+      note: force ? 'Welcome отправлен повторно через wa.me' : 'Welcome отправлен через wa.me (с 555)',
+    });
+
+    const updates: Record<string, any> = {
+      last_activity_at: new Date().toISOString(),
+      stale_alert_sent_at: null,
+    };
+    if (app.status === 'new' || app.status === 'confirmed') updates.status = 'contacted';
+    if (!app.first_contact_at) updates.first_contact_at = new Date().toISOString();
+    await sb().from('franchise_applications').update(updates).eq('id', app.id);
+
+    toast.success(force ? 'WhatsApp открыт повторно' : 'WhatsApp открыт — нажми Отправить');
     load();
   }
 
@@ -319,8 +360,35 @@ export default function FranchiseApplicationDetailPage() {
         </select>
       </div>
 
-      {/* Action row: phone + WhatsApp + record call */}
+      {/* Action row: welcome + phone + WhatsApp + record call */}
       <div className="flex flex-wrap gap-2 mb-5">
+        {(() => {
+          const welcomeEvent = events.find(e => e.event_type === 'welcome_sent_manually');
+          if (!welcomeEvent) {
+            return (
+              <button
+                onClick={() => sendWelcomeManually(false)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 ring-1 ring-emerald-600 text-white text-[13px] font-bold shadow-[0_4px_14px_rgba(16,185,129,0.35)] hover:bg-emerald-600"
+                title="Откроет WhatsApp с твоего 555 и готовым текстом welcome"
+              >
+                <Send size={14} /> Отправить welcome через WhatsApp
+              </button>
+            );
+          }
+          return (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 text-[12px] font-semibold">
+              <Check size={14} /> Welcome отправлен · {fmt(welcomeEvent.created_at)}
+              <button
+                onClick={() => {
+                  if (confirm('Отправить welcome ещё раз?')) sendWelcomeManually(true);
+                }}
+                className="ml-2 text-[11px] underline hover:text-emerald-900"
+              >
+                Отправить ещё раз
+              </button>
+            </div>
+          );
+        })()}
         <a
           href={`tel:${cleanPhone(app.phone)}`}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-50 ring-1 ring-slate-200 text-slate-700 text-[13px] font-semibold hover:bg-slate-100"
