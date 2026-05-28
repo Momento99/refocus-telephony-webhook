@@ -61,6 +61,73 @@ const STATUS_OPTIONS = [
   { v: 'lost', label: 'Потерян' },
 ];
 
+const STATUS_PILL_CLS: Record<string, string> = {
+  new:               'bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/30',
+  confirmed:         'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30',
+  contacted:         'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30',
+  qualified:         'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30',
+  meeting_scheduled: 'bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/30',
+  meeting_done:      'bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/30',
+  negotiation:       'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30',
+  converted:         'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30',
+  cold:              'bg-slate-700/40 text-slate-400 ring-1 ring-slate-600/40',
+  unqualified:       'bg-slate-700/40 text-slate-400 ring-1 ring-slate-600/40',
+  lost:              'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30',
+};
+
+type StatusAction = { label: string; to: string; tone: 'primary' | 'success' | 'neutral' | 'danger' | 'accent' };
+function nextStatusActions(current: string): StatusAction[] {
+  switch (current) {
+    case 'new':
+    case 'confirmed':
+      return [
+        { label: 'Связались', to: 'contacted', tone: 'primary' },
+        { label: 'Не подходит', to: 'unqualified', tone: 'neutral' },
+      ];
+    case 'contacted':
+      return [
+        { label: 'Квалифицирован', to: 'qualified', tone: 'primary' },
+        { label: 'Остыл', to: 'cold', tone: 'neutral' },
+        { label: 'Не подходит', to: 'unqualified', tone: 'neutral' },
+      ];
+    case 'qualified':
+      return [
+        { label: 'Встречу назначил', to: 'meeting_scheduled', tone: 'primary' },
+        { label: 'Остыл', to: 'cold', tone: 'neutral' },
+      ];
+    case 'meeting_scheduled':
+      return [
+        { label: 'Встреча прошла', to: 'meeting_done', tone: 'primary' },
+        { label: 'Потерян', to: 'lost', tone: 'danger' },
+      ];
+    case 'meeting_done':
+      return [
+        { label: 'Переговоры', to: 'negotiation', tone: 'primary' },
+        { label: 'Партнёр', to: 'converted', tone: 'success' },
+        { label: 'Потерян', to: 'lost', tone: 'danger' },
+      ];
+    case 'negotiation':
+      return [
+        { label: 'Партнёр', to: 'converted', tone: 'success' },
+        { label: 'Потерян', to: 'lost', tone: 'danger' },
+      ];
+    case 'cold':
+    case 'unqualified':
+    case 'lost':
+      return [{ label: 'Вернуть в работу', to: 'contacted', tone: 'accent' }];
+    default:
+      return [];
+  }
+}
+
+const ACTION_TONE_CLS: Record<StatusAction['tone'], string> = {
+  primary: 'bg-cyan-500 text-slate-950 hover:bg-cyan-400 shadow-[0_4px_20px_rgba(34,211,238,0.25)]',
+  accent:  'bg-violet-500 text-white hover:bg-violet-400',
+  success: 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-[0_4px_20px_rgba(16,185,129,0.25)]',
+  neutral: 'bg-slate-800 text-slate-200 hover:bg-slate-700 ring-1 ring-slate-700',
+  danger:  'bg-slate-800 text-rose-300 hover:bg-rose-500/15 ring-1 ring-rose-500/30',
+};
+
 const BUDGET_OPTIONS = [
   { v: '', label: '—' },
   { v: 'compact', label: 'COMPACT ($18 500)' },
@@ -131,13 +198,15 @@ function eventIcon(type: string): string {
 
 function welcomeText(name: string): string {
   return [
-    `Здравствуйте, ${name}! 👋`,
+    `Здравствуйте, ${name}!`,
     '',
-    'Получили вашу заявку на франшизу Refocus. Свяжемся с вами в течение часа.',
+    'Получили вашу заявку на франшизу Refocus. Спасибо, что заинтересовались.',
     '',
-    'А пока — у вас уже должна быть наша презентация. Если что-то непонятно или появились вопросы — пишите сюда, в этом чате.',
+    'Свяжусь с вами в ближайшие пару часов — обсудим город, подходящий пакет и когда удобно созвониться на 15–20 минут для знакомства.',
     '',
-    'Команда Refocus · refocus.asia',
+    'Если есть вопросы прямо сейчас — пишите сюда, отвечу.',
+    '',
+    '— Команда Refocus · refocus.asia',
   ].join('\n');
 }
 
@@ -326,314 +395,366 @@ export default function FranchiseApplicationDetailPage() {
     'referral': 'Рекомендация',
   };
 
-  return (
-    <div className="mx-auto max-w-4xl px-5 pt-8 pb-12">
+  const welcomeEvent = events.find(e => e.event_type === 'welcome_sent_manually');
+  const statusOption = STATUS_OPTIONS.find(o => o.v === app.status);
+  const nextActions = nextStatusActions(app.status);
+  const phoneE164 = cleanPhone(app.phone).replace(/^\+/, '');
 
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-5">
-        <Link href="/admin/franchise-applications" className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 hover:bg-white/15 transition">
-          <ArrowLeft size={16} className="text-slate-400" />
+  // более понятные русские названия событий в timeline
+  const EVENT_LABEL: Record<string, string> = {
+    application_received: 'Заявка получена',
+    welcome_sent_manually: 'Welcome отправлен',
+    welcome_whatsapp_queued: 'Welcome в очереди (старое)',
+    owner_alert_queued: 'Alert тебе поставлен',
+    owner_alert_sent: 'Alert отправлен',
+    call_made: 'Звонок зафиксирован',
+    note_added: 'Заметка',
+    meeting_scheduled: 'Встреча назначена',
+    meeting_reminder_24h_queued: 'Напоминание за 24ч',
+    meeting_reminder_2h_queued: 'Напоминание за 2ч',
+    reminder_set: 'Напоминание установлено',
+    reminder_fired: 'Напоминание сработало',
+    status_changed: 'Статус изменён',
+    stale_alert_queued: 'Лид завис >7 дней',
+    whatsapp_send_failed: 'Ошибка отправки WhatsApp',
+  };
+
+  return (
+    <div className="mx-auto max-w-5xl px-5 pt-8 pb-12">
+
+      {/* ═══════════ HERO HEADER ═══════════ */}
+      <div className="mb-6">
+        <Link href="/admin/franchise-applications" className="inline-flex items-center gap-1.5 text-[12px] text-slate-400 hover:text-cyan-300 transition mb-4">
+          <ArrowLeft size={13} /> К списку заявок
         </Link>
-        <div className="flex-1">
-          <h1 className="text-[22px] font-bold text-white tracking-tight">{app.name}</h1>
-          <div className="flex items-center gap-2 mt-1 text-[12px] text-slate-400 flex-wrap">
-            {app.source && (
-              <span className="flex items-center gap-1 text-cyan-400">
-                <Globe size={11} /> {sourceLabel[app.source] || app.source}
-              </span>
-            )}
-            {app.city && <span className="flex items-center gap-1"><MapPin size={11} /> {app.city}</span>}
-            <span className="flex items-center gap-1"><Clock size={11} /> Подана {fmt(app.created_at)}</span>
-            {app.pd_consent_at && (
-              <span className="flex items-center gap-1 text-emerald-400">
-                ✓ Согласие на ПД {fmt(app.pd_consent_at)}
-              </span>
-            )}
+
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-400 to-cyan-600 grid place-items-center text-[22px] font-bold text-slate-950 shrink-0">
+              {app.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <h1 className="text-[26px] font-bold text-white tracking-tight leading-none">{app.name}</h1>
+              <div className="flex items-center gap-3 mt-2 text-[12px] text-slate-400 flex-wrap">
+                {app.source && <span className="inline-flex items-center gap-1"><Globe size={12} className="text-cyan-400/70" /> {sourceLabel[app.source] || app.source}</span>}
+                {app.city && <span className="inline-flex items-center gap-1"><MapPin size={12} /> {app.city}</span>}
+                <span className="inline-flex items-center gap-1"><Clock size={12} /> {fmt(app.created_at)}</span>
+                <a href={`tel:${cleanPhone(app.phone)}`} className="inline-flex items-center gap-1 text-slate-200 hover:text-cyan-300"><Phone size={12} /> {app.phone}</a>
+                {app.pd_consent_at && <span className="inline-flex items-center gap-1 text-emerald-400/80" title={`Согласие на ПД ${fmt(app.pd_consent_at)}`}>✓ Согласие на ПД</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Статус-пилл с inline select */}
+          <div className="relative">
+            <select
+              value={app.status}
+              onChange={e => patch({ status: e.target.value })}
+              className={`appearance-none pr-8 pl-3 py-2 rounded-xl text-[12px] font-semibold cursor-pointer outline-none focus:ring-2 focus:ring-cyan-500/40 ${STATUS_PILL_CLS[app.status] ?? STATUS_PILL_CLS.new} [&>option]:text-slate-900 [&>option]:bg-white`}
+              title="Сменить статус"
+            >
+              {STATUS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </select>
+            <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] opacity-70">▼</div>
           </div>
         </div>
-        <select
-          value={app.status}
-          onChange={e => patch({ status: e.target.value })}
-          className="text-[12px] rounded-lg ring-1 ring-slate-200 px-3 py-2 bg-white text-slate-900 cursor-pointer outline-none [&>option]:text-slate-900 [&>option]:bg-white"
-        >
-          {STATUS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
-        </select>
       </div>
 
-      {/* Action row: welcome + phone + WhatsApp + record call */}
-      <div className="flex flex-wrap gap-2 mb-5">
-        {(() => {
-          const welcomeEvent = events.find(e => e.event_type === 'welcome_sent_manually');
-          if (!welcomeEvent) {
-            return (
-              <button
-                onClick={() => sendWelcomeManually(false)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 ring-1 ring-emerald-600 text-white text-[13px] font-bold shadow-[0_4px_14px_rgba(16,185,129,0.35)] hover:bg-emerald-600"
-                title="Откроет WhatsApp с твоего 555 и готовым текстом welcome"
-              >
-                <Send size={14} /> Отправить welcome через WhatsApp
-              </button>
-            );
-          }
-          return (
-            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 text-[12px] font-semibold">
-              <Check size={14} /> Welcome отправлен · {fmt(welcomeEvent.created_at)}
-              <button
-                onClick={() => {
-                  if (confirm('Отправить welcome ещё раз?')) sendWelcomeManually(true);
-                }}
-                className="ml-2 text-[11px] underline hover:text-emerald-900"
-              >
-                Отправить ещё раз
-              </button>
-            </div>
-          );
-        })()}
+      {/* ═══════════ NEXT-STEP STRIP ═══════════ */}
+      {nextActions.length > 0 && (
+        <div className="mb-5 flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mr-1">Следующий шаг</span>
+          {nextActions.map(a => (
+            <button
+              key={a.to}
+              onClick={() => patch({ status: a.to }).then(() => load())}
+              className={`text-[12px] font-semibold px-3.5 py-2 rounded-lg transition-colors ${ACTION_TONE_CLS[a.tone]}`}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ═══════════ WELCOME / CONTACT BAR ═══════════ */}
+      <div className="mb-5 rounded-2xl ring-1 ring-slate-800 bg-slate-900/60 backdrop-blur p-4 flex flex-wrap items-center gap-3">
+        {/* Welcome — главная CTA либо подтверждение */}
+        {!welcomeEvent ? (
+          <button
+            onClick={() => sendWelcomeManually(false)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 text-[13px] font-bold hover:bg-emerald-400 shadow-[0_4px_20px_rgba(16,185,129,0.3)] transition"
+            title="Откроет WhatsApp с твоего 555 и готовым текстом welcome"
+          >
+            <Send size={14} /> Отправить welcome через WhatsApp
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 ring-1 ring-emerald-500/30 text-emerald-300 text-[12px]">
+            <Check size={14} />
+            <span className="font-semibold">Welcome отправлен</span>
+            <span className="text-emerald-400/70">· {fmt(welcomeEvent.created_at)}</span>
+            <button
+              onClick={() => { if (confirm('Отправить welcome ещё раз?')) sendWelcomeManually(true); }}
+              className="ml-2 text-[11px] underline hover:text-emerald-200"
+            >
+              Ещё раз
+            </button>
+          </div>
+        )}
+
+        <div className="flex-1" />
+
         <a
-          href={`tel:${cleanPhone(app.phone)}`}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-50 ring-1 ring-slate-200 text-slate-700 text-[13px] font-semibold hover:bg-slate-100"
-        >
-          <Phone size={14} /> {app.phone}
-        </a>
-        <a
-          href={`https://wa.me/${cleanPhone(app.phone).replace(/^\+/, '')}`}
+          href={`https://wa.me/${phoneE164}`}
           target="_blank" rel="noopener"
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 text-[13px] font-semibold hover:bg-emerald-100"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 ring-1 ring-slate-700 text-slate-200 text-[12px] font-semibold hover:bg-slate-700 hover:text-emerald-300 transition"
+          title="Открыть WhatsApp-чат с лидом"
         >
           <MessageCircle size={14} /> WhatsApp
         </a>
         <button
           onClick={recordCall}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-50 ring-1 ring-cyan-200 text-cyan-700 text-[13px] font-semibold hover:bg-cyan-100"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 ring-1 ring-slate-700 text-slate-200 text-[12px] font-semibold hover:bg-slate-700 hover:text-cyan-300 transition"
         >
           <Phone size={14} /> Зафиксировать звонок
         </button>
         <button
           onClick={() => setShowScript(s => !s)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-50 ring-1 ring-violet-200 text-violet-700 text-[13px] font-semibold hover:bg-violet-100"
+          className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg ring-1 text-[12px] font-semibold transition ${
+            showScript
+              ? 'bg-violet-500/15 ring-violet-500/40 text-violet-200'
+              : 'bg-slate-800 ring-slate-700 text-slate-200 hover:bg-slate-700 hover:text-violet-300'
+          }`}
         >
-          <BookOpen size={14} /> {showScript ? 'Скрыть' : 'Скрипт звонка'}
+          <BookOpen size={14} /> {showScript ? 'Скрыть скрипт' : 'Скрипт звонка'}
         </button>
       </div>
 
-      {/* Скрипт звонка inline */}
+      {/* ═══════════ SCRIPT (collapsible) ═══════════ */}
       {showScript && (
-        <div className="mb-5 rounded-2xl bg-violet-50 ring-1 ring-violet-200 p-5">
-          <h3 className="text-[14px] font-bold text-violet-900 mb-3">Скрипт первого звонка (15–20 мин)</h3>
-          <div className="text-[12px] text-violet-900 space-y-3">
+        <div className="mb-5 rounded-2xl bg-slate-900/60 ring-1 ring-violet-500/30 backdrop-blur p-5">
+          <h3 className="text-[13px] font-bold text-violet-300 uppercase tracking-[0.12em] mb-4">Скрипт первого звонка · 15–20 мин</h3>
+          <div className="text-[12.5px] text-slate-300 space-y-3 leading-relaxed">
             <div>
-              <strong>1. Открытие (1–2 мин):</strong><br/>
-              «Здравствуйте, {app.name}! Я из Refocus. Вы оставили заявку на нашу франшизу оптики. Удобно сейчас 15–20 минут пообщаться?»
+              <span className="font-bold text-white">1. Открытие</span> <span className="text-slate-500">· 1–2 мин</span><br/>
+              <span className="text-slate-400">«Здравствуйте, {app.name}! Я из Refocus. Вы оставили заявку на нашу франшизу оптики. Удобно сейчас 15–20 минут пообщаться?»</span>
             </div>
             <div>
-              <strong>2. Квалификация (5–7 мин):</strong> 4 вопроса —
-              мотивация / бюджет и сроки / опыт / город и помещение.
-              <em> Заполняй поля квалификации ниже на этой странице.</em>
+              <span className="font-bold text-white">2. Квалификация</span> <span className="text-slate-500">· 5–7 мин</span><br/>
+              <span className="text-slate-400">4 вопроса: мотивация / бюджет и сроки / опыт / город и помещение. Поля квалификации заполняй прямо ниже на странице.</span>
             </div>
             <div>
-              <strong>3. Презентация (5–7 мин):</strong> 5 пунктов — что Refocus, 4 пакета (COMPACT $18.5k / STANDARD $32k / PREMIUM $39.7k / CUSTOM), прибыль $1.4k–$3.8k/мес, окуп. 10–13 мес, что включено.
+              <span className="font-bold text-white">3. Презентация</span> <span className="text-slate-500">· 5–7 мин</span><br/>
+              <span className="text-slate-400">5 пунктов: что Refocus, 4 пакета (COMPACT $18.5k · STANDARD $32k · PREMIUM $39.7k · CUSTOM), прибыль $1.4k–$3.8k/мес, окуп. 10–13 мес, что включено.</span>
             </div>
             <div>
-              <strong>4. Closing (2–3 мин):</strong> «Что у нас дальше: назначим встречу детальную на Zoom 30 мин, когда вам удобно — [день/время X] или [день/время Y]?»
+              <span className="font-bold text-white">4. Closing</span> <span className="text-slate-500">· 2–3 мин</span><br/>
+              <span className="text-slate-400">«Что у нас дальше: назначим детальную встречу на Zoom 30 мин, когда вам удобно — [день/время X] или [день/время Y]?»</span>
             </div>
-            <div className="text-[11px] mt-3 pt-3 border-t border-violet-200">
-              Полные документы: <code>docs/franchise-sales/02-call-script.md</code>,
-              {' '}<code>03-objections.md</code>, <code>07-pricing-reference.md</code>
+            <div className="pt-3 mt-3 border-t border-slate-800 text-[11px] text-slate-500">
+              Полный текст: <code className="text-slate-400">docs/franchise-sales/02-call-script.md</code>
+              <span className="mx-2">·</span>
+              <code className="text-slate-400">03-objections.md</code>
+              <span className="mx-2">·</span>
+              <code className="text-slate-400">07-pricing-reference.md</code>
             </div>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {/* ═══════════ 2-COLUMN GRID ═══════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
 
-        {/* Left column */}
-        <div className="space-y-5">
+        {/* LEFT — log + qualification (3 cols) */}
+        <div className="lg:col-span-3 space-y-5">
 
           {/* Журнал разговоров */}
-          <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-5 shadow-sm">
-            <h3 className="text-[14px] font-bold text-slate-900 mb-3">Журнал разговоров</h3>
-            <div className="flex gap-2 mb-3">
+          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-4">Журнал разговоров</h3>
+            <div className="flex gap-2 mb-4">
               <input
                 type="text"
-                placeholder="Что обсудили / договорились / решили..."
+                placeholder="Что обсудили / договорились / решили…"
                 value={newLogEntry}
                 onChange={e => setNewLogEntry(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addLogEntry(); }}
-                className="flex-1 px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] outline-none focus:ring-cyan-300"
+                className="flex-1 px-3.5 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 placeholder:text-slate-500 outline-none focus:ring-cyan-500/60 transition"
               />
               <button
                 onClick={addLogEntry}
                 disabled={!newLogEntry.trim()}
-                className="px-4 py-2 rounded-lg bg-cyan-500 text-white text-[12px] font-semibold disabled:opacity-50 hover:bg-cyan-600"
+                className="px-4 py-2 rounded-lg bg-cyan-500 text-slate-950 text-[12px] font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-cyan-400 transition"
               >
                 Добавить
               </button>
             </div>
             {app.conversation_log ? (
-              <pre className="text-[12px] text-slate-700 whitespace-pre-wrap font-mono leading-relaxed bg-slate-50 rounded-lg p-3 ring-1 ring-slate-100 max-h-60 overflow-auto">
+              <pre className="text-[12px] text-slate-300 whitespace-pre-wrap font-mono leading-relaxed bg-slate-950/60 rounded-lg p-3.5 ring-1 ring-slate-800 max-h-72 overflow-auto">
                 {app.conversation_log}
               </pre>
             ) : (
-              <div className="text-[11px] text-slate-400 italic">Пока пусто — добавь первую запись после звонка</div>
+              <div className="text-[12px] text-slate-500 italic px-1">
+                Пока пусто. Запиши первую заметку после звонка — что обсудили, чего хочет лид, какой пакет рассматривает.
+              </div>
             )}
-          </div>
+          </section>
 
           {/* Квалификация */}
-          <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-5 shadow-sm">
-            <h3 className="text-[14px] font-bold text-slate-900 mb-3">Квалификация</h3>
-            <div className="space-y-3">
+          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-4">Квалификация</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Бюджет / пакет</label>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">Бюджет · пакет</label>
                 <select
                   value={app.qualified_budget || ''}
                   onChange={e => patch({ qualified_budget: e.target.value || null })}
-                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] text-slate-900 bg-white outline-none focus:ring-cyan-300 [&>option]:text-slate-900 [&>option]:bg-white"
+                  className="w-full px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {BUDGET_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Опыт в бизнесе</label>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">Опыт в бизнесе</label>
                 <select
                   value={app.qualified_experience || ''}
                   onChange={e => patch({ qualified_experience: e.target.value || null })}
-                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] text-slate-900 bg-white outline-none focus:ring-cyan-300 [&>option]:text-slate-900 [&>option]:bg-white"
+                  className="w-full px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {EXPERIENCE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="flex items-center gap-2 text-[12px] text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={app.has_premises ?? false}
-                    onChange={e => patch({ has_premises: e.target.checked })}
-                    className="w-4 h-4 accent-cyan-500"
-                  />
-                  Есть помещение
-                </label>
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Готовность к открытию</label>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">Готовность к открытию</label>
                 <select
                   value={app.readiness_window || ''}
                   onChange={e => patch({ readiness_window: e.target.value || null })}
-                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] text-slate-900 bg-white outline-none focus:ring-cyan-300 [&>option]:text-slate-900 [&>option]:bg-white"
+                  className="w-full px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {READINESS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
               </div>
+              <label className="flex items-center gap-2.5 cursor-pointer rounded-lg px-3 py-2.5 ring-1 ring-slate-700 bg-slate-800/60 hover:bg-slate-800 transition">
+                <input
+                  type="checkbox"
+                  checked={app.has_premises ?? false}
+                  onChange={e => patch({ has_premises: e.target.checked })}
+                  className="w-4 h-4 accent-cyan-500"
+                />
+                <span className="text-[13px] text-slate-200 font-medium">Есть помещение</span>
+              </label>
               {(app.status === 'unqualified' || app.status === 'lost' || app.status === 'cold') && (
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Причина потери</label>
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">Причина потери</label>
                   <select
                     value={app.lost_reason || ''}
                     onChange={e => patch({ lost_reason: e.target.value || null })}
-                    className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] text-slate-900 bg-white outline-none focus:ring-cyan-300 [&>option]:text-slate-900 [&>option]:bg-white"
+                    className="w-full px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
                   >
                     {LOST_REASON_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                   </select>
                 </div>
               )}
             </div>
-          </div>
+          </section>
         </div>
 
-        {/* Right column */}
-        <div className="space-y-5">
+        {/* RIGHT — reminder/meeting/timeline (2 cols) */}
+        <div className="lg:col-span-2 space-y-5">
 
           {/* Напоминание */}
-          <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <Bell size={16} className="text-amber-500" />
-              <h3 className="text-[14px] font-bold text-slate-900">Напоминание</h3>
+          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Bell size={14} className="text-amber-400" />
+              <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Напоминание</h3>
             </div>
-            {app.reminder_at && !app.reminder_fired_at ? (
-              <div className="text-[12px] text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-lg p-3 mb-3">
-                <strong>{fmt(app.reminder_at)}</strong><br/>
-                <span className="text-amber-600">{app.reminder_note || '—'}</span>
+            {app.reminder_at && !app.reminder_fired_at && (
+              <div className="text-[12px] text-amber-300 bg-amber-500/10 ring-1 ring-amber-500/30 rounded-lg p-3 mb-3">
+                <div className="font-semibold">{fmt(app.reminder_at)}</div>
+                {app.reminder_note && <div className="text-amber-400/80 mt-1">{app.reminder_note}</div>}
                 <button
                   onClick={() => patch({ reminder_at: null, reminder_note: null })}
-                  className="ml-2 text-[10px] text-amber-700 underline"
+                  className="mt-2 text-[11px] text-amber-300/80 hover:text-amber-200 underline"
                 >
                   Удалить
                 </button>
               </div>
-            ) : null}
+            )}
             <input
               type="datetime-local"
               value={reminderTime}
               onChange={e => setReminderTime(e.target.value)}
-              className="w-full mb-2 px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] outline-none focus:ring-cyan-300"
+              className="w-full mb-2 px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [color-scheme:dark]"
             />
             <input
               type="text"
               placeholder="Что напомнить (опционально)"
               value={reminderNote}
               onChange={e => setReminderNote(e.target.value)}
-              className="w-full mb-2 px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] outline-none focus:ring-cyan-300"
+              className="w-full mb-3 px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 placeholder:text-slate-500 outline-none focus:ring-cyan-500/60 transition"
             />
             <button
               onClick={setReminder}
               disabled={!reminderTime}
-              className="w-full px-4 py-2 rounded-lg bg-amber-500 text-white text-[12px] font-semibold disabled:opacity-50 hover:bg-amber-600"
+              className="w-full px-4 py-2.5 rounded-lg bg-amber-500 text-slate-950 text-[12px] font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-amber-400 transition"
             >
               Установить напоминание
             </button>
-          </div>
+          </section>
 
           {/* Встреча */}
-          <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <Calendar size={16} className="text-violet-500" />
-              <h3 className="text-[14px] font-bold text-slate-900">Встреча</h3>
+          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Calendar size={14} className="text-violet-400" />
+              <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Встреча</h3>
             </div>
-            {app.meeting_at ? (
-              <div className="text-[12px] text-violet-700 bg-violet-50 ring-1 ring-violet-200 rounded-lg p-3 mb-3">
-                <strong>{fmt(app.meeting_at)}</strong>
+            {app.meeting_at && (
+              <div className="text-[12px] text-violet-300 bg-violet-500/10 ring-1 ring-violet-500/30 rounded-lg p-3 mb-3">
+                <div className="font-semibold">{fmt(app.meeting_at)}</div>
                 <button
                   onClick={() => patch({ meeting_at: null })}
-                  className="ml-2 text-[10px] text-violet-700 underline"
+                  className="mt-2 text-[11px] text-violet-300/80 hover:text-violet-200 underline"
                 >
                   Отменить
                 </button>
               </div>
-            ) : null}
+            )}
             <input
               type="datetime-local"
               value={meetingTime}
               onChange={e => setMeetingTime(e.target.value)}
-              className="w-full mb-2 px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] outline-none focus:ring-cyan-300"
+              className="w-full mb-3 px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [color-scheme:dark]"
             />
             <button
               onClick={setMeeting}
               disabled={!meetingTime}
-              className="w-full px-4 py-2 rounded-lg bg-violet-500 text-white text-[12px] font-semibold disabled:opacity-50 hover:bg-violet-600"
+              className="w-full px-4 py-2.5 rounded-lg bg-violet-500 text-white text-[12px] font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-violet-400 transition"
             >
               Назначить встречу
             </button>
-          </div>
+          </section>
 
           {/* Timeline */}
-          <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-5 shadow-sm">
-            <h3 className="text-[14px] font-bold text-slate-900 mb-3">Timeline ({events.length})</h3>
-            <div className="space-y-2 max-h-80 overflow-auto">
+          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">История событий</h3>
+              <span className="text-[10px] text-slate-500">{events.length}</span>
+            </div>
+            <div className="space-y-1 max-h-96 overflow-auto pr-1 -mr-1">
               {events.length === 0 ? (
-                <div className="text-[11px] text-slate-400 italic">Событий пока нет</div>
+                <div className="text-[12px] text-slate-500 italic">Событий пока нет</div>
               ) : (
                 events.map(ev => (
-                  <div key={ev.id} className="flex items-start gap-2 text-[11px] py-1.5 border-b border-slate-100 last:border-0">
-                    <span className="text-[14px]">{eventIcon(ev.event_type)}</span>
+                  <div key={ev.id} className="flex items-start gap-2.5 py-2 border-b border-slate-800/60 last:border-0">
+                    <span className="text-[14px] mt-0.5 shrink-0">{eventIcon(ev.event_type)}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-slate-700">{ev.event_type}</div>
-                      {ev.note && <div className="text-slate-500 mt-0.5">{ev.note}</div>}
+                      <div className="text-[12px] font-semibold text-slate-200">{EVENT_LABEL[ev.event_type] ?? ev.event_type}</div>
+                      {ev.note && <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">{ev.note}</div>}
                     </div>
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">{fmt(ev.created_at)}</div>
+                    <div className="text-[10px] text-slate-500 whitespace-nowrap mt-0.5">{fmt(ev.created_at)}</div>
                   </div>
                 ))
               )}
             </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>
