@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 import toast from 'react-hot-toast';
 import {
@@ -128,6 +129,7 @@ function eventIcon(type: string): string {
 }
 
 export default function FranchiseApplicationsPage() {
+  const router = useRouter();
   const [apps, setApps] = useState<App[]>([]);
   const [eventsByApp, setEventsByApp] = useState<Record<string, Event[]>>({});
   const [loading, setLoading] = useState(true);
@@ -274,10 +276,18 @@ export default function FranchiseApplicationsPage() {
             const events = eventsByApp[app.id] || [];
 
             return (
-              <Link
+              <div
                 key={app.id}
-                href={`/admin/franchise-applications/${app.id}`}
-                className={`block rounded-2xl bg-white ring-1 ring-slate-200 p-5 transition-all hover:shadow-md ${
+                role="link"
+                tabIndex={0}
+                onClick={() => router.push(`/admin/franchise-applications/${app.id}`)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    router.push(`/admin/franchise-applications/${app.id}`);
+                  }
+                }}
+                className={`block rounded-2xl bg-white ring-1 ring-slate-200 p-5 transition-all hover:shadow-md cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
                   slaBreach
                     ? 'shadow-[0_0_0_2px_rgba(244,63,94,0.4),0_4px_20px_rgba(244,63,94,0.12)]'
                     : isNew
@@ -402,7 +412,7 @@ export default function FranchiseApplicationsPage() {
                     <option value="lost">Потерян</option>
                   </select>
                 </div>
-              </Link>
+              </div>
             );
           })}
         </div>
