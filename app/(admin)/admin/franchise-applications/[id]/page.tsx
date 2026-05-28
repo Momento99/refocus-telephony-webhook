@@ -477,7 +477,7 @@ export default function FranchiseApplicationDetailPage() {
       )}
 
       {/* ═══════════ WELCOME / CONTACT BAR ═══════════ */}
-      <div className="mb-5 rounded-2xl ring-1 ring-slate-700/70 bg-slate-800/60 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-4 flex flex-wrap items-center gap-3">
+      <div className="mb-5 rounded-2xl ring-1 ring-slate-700 bg-slate-800 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] p-4 flex flex-wrap items-center gap-3">
         {/* Welcome — главная CTA либо подтверждение */}
         {!welcomeEvent ? (
           <button
@@ -506,14 +506,14 @@ export default function FranchiseApplicationDetailPage() {
         <a
           href={`https://wa.me/${phoneE164}`}
           target="_blank" rel="noopener"
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 ring-1 ring-slate-700 text-slate-200 text-[12px] font-semibold hover:bg-slate-700 hover:text-emerald-300 transition"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-700 ring-1 ring-slate-600 text-slate-200 text-[12px] font-semibold hover:bg-slate-600 hover:text-emerald-300 transition"
           title="Открыть WhatsApp-чат с лидом"
         >
           <MessageCircle size={14} /> WhatsApp
         </a>
         <button
           onClick={recordCall}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 ring-1 ring-slate-700 text-slate-200 text-[12px] font-semibold hover:bg-slate-700 hover:text-cyan-300 transition"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-700 ring-1 ring-slate-600 text-slate-200 text-[12px] font-semibold hover:bg-slate-600 hover:text-cyan-300 transition"
         >
           <Phone size={14} /> Зафиксировать звонок
         </button>
@@ -522,7 +522,7 @@ export default function FranchiseApplicationDetailPage() {
           className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg ring-1 text-[12px] font-semibold transition ${
             showScript
               ? 'bg-violet-500/15 ring-violet-500/40 text-violet-200'
-              : 'bg-slate-800 ring-slate-700 text-slate-200 hover:bg-slate-700 hover:text-violet-300'
+              : 'bg-slate-700 ring-slate-600 text-slate-200 hover:bg-slate-600 hover:text-violet-300'
           }`}
         >
           <BookOpen size={14} /> {showScript ? 'Скрыть скрипт' : 'Скрипт звонка'}
@@ -531,7 +531,7 @@ export default function FranchiseApplicationDetailPage() {
 
       {/* ═══════════ SCRIPT (collapsible) ═══════════ */}
       {showScript && (
-        <div className="mb-5 rounded-2xl bg-slate-800/60 ring-1 ring-violet-500/40 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
+        <div className="mb-5 rounded-2xl bg-slate-800 ring-1 ring-violet-500/40 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] p-5">
           <h3 className="text-[13px] font-bold text-violet-300 uppercase tracking-[0.12em] mb-4">Скрипт первого звонка · 15–20 мин</h3>
           <div className="text-[12.5px] text-slate-300 space-y-3 leading-relaxed">
             <div>
@@ -568,7 +568,7 @@ export default function FranchiseApplicationDetailPage() {
         <div className="lg:col-span-3 space-y-5">
 
           {/* Журнал разговоров */}
-          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-800 ring-1 ring-slate-700 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] p-5">
             <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-4">Журнал разговоров</h3>
             <div className="flex gap-2 mb-4">
               <input
@@ -599,7 +599,7 @@ export default function FranchiseApplicationDetailPage() {
           </section>
 
           {/* Квалификация */}
-          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-800 ring-1 ring-slate-700 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] p-5">
             <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-4">Квалификация</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -632,7 +632,7 @@ export default function FranchiseApplicationDetailPage() {
                   {READINESS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
               </div>
-              <label className="flex items-center gap-2.5 cursor-pointer rounded-lg px-3 py-2.5 ring-1 ring-slate-700 bg-slate-800/60 hover:bg-slate-800 transition">
+              <label className="flex items-center gap-2.5 cursor-pointer rounded-lg px-3 py-2.5 ring-1 ring-slate-700/70 bg-slate-900/70 hover:bg-slate-900 transition">
                 <input
                   type="checkbox"
                   checked={app.has_premises ?? false}
@@ -661,7 +661,7 @@ export default function FranchiseApplicationDetailPage() {
         <div className="lg:col-span-2 space-y-5">
 
           {/* Напоминание */}
-          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-800 ring-1 ring-slate-700 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] p-5">
             <div className="flex items-center gap-2 mb-4">
               <Bell size={14} className="text-amber-400" />
               <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Напоминание</h3>
@@ -701,7 +701,7 @@ export default function FranchiseApplicationDetailPage() {
           </section>
 
           {/* Встреча */}
-          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-800 ring-1 ring-slate-700 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] p-5">
             <div className="flex items-center gap-2 mb-4">
               <Calendar size={14} className="text-violet-400" />
               <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Встреча</h3>
@@ -733,7 +733,7 @@ export default function FranchiseApplicationDetailPage() {
           </section>
 
           {/* Timeline */}
-          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-800 ring-1 ring-slate-700 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">История событий</h3>
               <span className="text-[10px] text-slate-500">{events.length}</span>
