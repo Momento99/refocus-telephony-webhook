@@ -354,7 +354,7 @@ export default function FranchiseApplicationDetailPage() {
         <select
           value={app.status}
           onChange={e => patch({ status: e.target.value })}
-          className="text-[12px] rounded-lg ring-1 ring-slate-200 px-3 py-2 bg-white cursor-pointer outline-none"
+          className="text-[12px] rounded-lg ring-1 ring-slate-200 px-3 py-2 bg-white text-slate-900 cursor-pointer outline-none [&>option]:text-slate-900 [&>option]:bg-white"
         >
           {STATUS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
         </select>
@@ -487,7 +487,7 @@ export default function FranchiseApplicationDetailPage() {
                 <select
                   value={app.qualified_budget || ''}
                   onChange={e => patch({ qualified_budget: e.target.value || null })}
-                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] outline-none focus:ring-cyan-300"
+                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] text-slate-900 bg-white outline-none focus:ring-cyan-300 [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {BUDGET_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
@@ -497,7 +497,7 @@ export default function FranchiseApplicationDetailPage() {
                 <select
                   value={app.qualified_experience || ''}
                   onChange={e => patch({ qualified_experience: e.target.value || null })}
-                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] outline-none focus:ring-cyan-300"
+                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] text-slate-900 bg-white outline-none focus:ring-cyan-300 [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {EXPERIENCE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
@@ -518,7 +518,7 @@ export default function FranchiseApplicationDetailPage() {
                 <select
                   value={app.readiness_window || ''}
                   onChange={e => patch({ readiness_window: e.target.value || null })}
-                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] outline-none focus:ring-cyan-300"
+                  className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] text-slate-900 bg-white outline-none focus:ring-cyan-300 [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {READINESS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
@@ -529,7 +529,7 @@ export default function FranchiseApplicationDetailPage() {
                   <select
                     value={app.lost_reason || ''}
                     onChange={e => patch({ lost_reason: e.target.value || null })}
-                    className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] outline-none focus:ring-cyan-300"
+                    className="w-full px-3 py-2 rounded-lg ring-1 ring-slate-200 text-[13px] text-slate-900 bg-white outline-none focus:ring-cyan-300 [&>option]:text-slate-900 [&>option]:bg-white"
                   >
                     {LOST_REASON_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                   </select>

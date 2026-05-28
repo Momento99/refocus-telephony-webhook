@@ -61,6 +61,64 @@ const SOURCE_MAP: Record<string, string> = {
   'referral': 'Рекомендация',
 };
 
+type ActionVariant = 'primary' | 'accent' | 'success' | 'neutral' | 'danger';
+type StatusAction = { label: string; to: string; variant: ActionVariant };
+
+// Контекстные «следующие шаги» в зависимости от текущего статуса.
+function nextStatusActions(current: string): StatusAction[] {
+  switch (current) {
+    case 'new':
+    case 'confirmed':
+      return [
+        { label: 'Связались', to: 'contacted', variant: 'primary' },
+        { label: 'Не подходит', to: 'unqualified', variant: 'neutral' },
+      ];
+    case 'contacted':
+      return [
+        { label: 'Квалифицирован', to: 'qualified', variant: 'primary' },
+        { label: 'Остыл', to: 'cold', variant: 'neutral' },
+        { label: 'Не подходит', to: 'unqualified', variant: 'neutral' },
+      ];
+    case 'qualified':
+      return [
+        { label: 'Встречу назначил', to: 'meeting_scheduled', variant: 'primary' },
+        { label: 'Остыл', to: 'cold', variant: 'neutral' },
+      ];
+    case 'meeting_scheduled':
+      return [
+        { label: 'Встреча прошла', to: 'meeting_done', variant: 'primary' },
+        { label: 'Потерян', to: 'lost', variant: 'danger' },
+      ];
+    case 'meeting_done':
+      return [
+        { label: 'Переговоры', to: 'negotiation', variant: 'primary' },
+        { label: 'Партнёр 🎉', to: 'converted', variant: 'success' },
+        { label: 'Потерян', to: 'lost', variant: 'danger' },
+      ];
+    case 'negotiation':
+      return [
+        { label: 'Партнёр 🎉', to: 'converted', variant: 'success' },
+        { label: 'Потерян', to: 'lost', variant: 'danger' },
+      ];
+    case 'cold':
+    case 'unqualified':
+    case 'lost':
+      return [
+        { label: 'Вернуть в работу', to: 'contacted', variant: 'accent' },
+      ];
+    default:
+      return [];
+  }
+}
+
+const ACTION_VARIANT_CLS: Record<ActionVariant, string> = {
+  primary: 'bg-cyan-500 text-white hover:bg-cyan-600 ring-cyan-500',
+  accent:  'bg-violet-500 text-white hover:bg-violet-600 ring-violet-500',
+  success: 'bg-emerald-500 text-white hover:bg-emerald-600 ring-emerald-500',
+  neutral: 'bg-white text-slate-700 hover:bg-slate-50 ring-slate-300',
+  danger:  'bg-white text-rose-700 hover:bg-rose-50 ring-rose-300',
+};
+
 const STATUS_FILTER_GROUPS = [
   { key: 'all', label: 'Все' },
   { key: 'active', label: 'Активные', subset: ['new', 'confirmed', 'contacted', 'qualified', 'meeting_scheduled', 'meeting_done', 'negotiation'] },
@@ -390,28 +448,27 @@ export default function FranchiseApplicationsPage() {
                   </div>
                 )}
 
-                {/* Quick status change */}
-                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Изменить статус:</span>
-                  <select
-                    onClick={e => e.stopPropagation()}
-                    value={app.status}
-                    onChange={e => updateStatus(app.id, e.target.value)}
-                    className="text-[11px] rounded-md ring-1 ring-slate-200 px-2 py-1 bg-white cursor-pointer outline-none focus:ring-cyan-300"
-                  >
-                    <option value="new">Новая</option>
-                    <option value="confirmed">Подтверждена</option>
-                    <option value="contacted">Связались</option>
-                    <option value="qualified">Квалифицирован</option>
-                    <option value="meeting_scheduled">Встреча назначена</option>
-                    <option value="meeting_done">После встречи</option>
-                    <option value="negotiation">Переговоры</option>
-                    <option value="converted">Партнёр</option>
-                    <option value="cold">Остыл</option>
-                    <option value="unqualified">Не подходит</option>
-                    <option value="lost">Потерян</option>
-                  </select>
-                </div>
+                {/* Quick status change — контекстные кнопки следующих шагов */}
+                {(() => {
+                  const actions = nextStatusActions(app.status);
+                  if (actions.length === 0) return null;
+                  return (
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mr-1">
+                        Следующий шаг:
+                      </span>
+                      {actions.map(a => (
+                        <button
+                          key={a.to}
+                          onClick={e => { e.stopPropagation(); updateStatus(app.id, a.to); }}
+                          className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg ring-1 transition-colors ${ACTION_VARIANT_CLS[a.variant]}`}
+                        >
+                          {a.label}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
