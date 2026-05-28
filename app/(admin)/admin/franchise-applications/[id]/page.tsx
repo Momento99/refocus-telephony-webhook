@@ -477,7 +477,7 @@ export default function FranchiseApplicationDetailPage() {
       )}
 
       {/* ═══════════ WELCOME / CONTACT BAR ═══════════ */}
-      <div className="mb-5 rounded-2xl ring-1 ring-slate-800 bg-slate-900/60 backdrop-blur p-4 flex flex-wrap items-center gap-3">
+      <div className="mb-5 rounded-2xl ring-1 ring-slate-700/70 bg-slate-800/60 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-4 flex flex-wrap items-center gap-3">
         {/* Welcome — главная CTA либо подтверждение */}
         {!welcomeEvent ? (
           <button
@@ -531,7 +531,7 @@ export default function FranchiseApplicationDetailPage() {
 
       {/* ═══════════ SCRIPT (collapsible) ═══════════ */}
       {showScript && (
-        <div className="mb-5 rounded-2xl bg-slate-900/60 ring-1 ring-violet-500/30 backdrop-blur p-5">
+        <div className="mb-5 rounded-2xl bg-slate-800/60 ring-1 ring-violet-500/40 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
           <h3 className="text-[13px] font-bold text-violet-300 uppercase tracking-[0.12em] mb-4">Скрипт первого звонка · 15–20 мин</h3>
           <div className="text-[12.5px] text-slate-300 space-y-3 leading-relaxed">
             <div>
@@ -568,7 +568,7 @@ export default function FranchiseApplicationDetailPage() {
         <div className="lg:col-span-3 space-y-5">
 
           {/* Журнал разговоров */}
-          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
             <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-4">Журнал разговоров</h3>
             <div className="flex gap-2 mb-4">
               <input
@@ -577,7 +577,7 @@ export default function FranchiseApplicationDetailPage() {
                 value={newLogEntry}
                 onChange={e => setNewLogEntry(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addLogEntry(); }}
-                className="flex-1 px-3.5 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 placeholder:text-slate-500 outline-none focus:ring-cyan-500/60 transition"
+                className="flex-1 px-3.5 py-2.5 rounded-lg bg-slate-900/70 ring-1 ring-slate-700/70 text-[13px] text-slate-100 placeholder:text-slate-500 outline-none focus:ring-cyan-500/60 transition"
               />
               <button
                 onClick={addLogEntry}
@@ -599,7 +599,7 @@ export default function FranchiseApplicationDetailPage() {
           </section>
 
           {/* Квалификация */}
-          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
             <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-4">Квалификация</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -607,7 +607,7 @@ export default function FranchiseApplicationDetailPage() {
                 <select
                   value={app.qualified_budget || ''}
                   onChange={e => patch({ qualified_budget: e.target.value || null })}
-                  className="w-full px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
+                  className="w-full px-3 py-2.5 rounded-lg bg-slate-900/70 ring-1 ring-slate-700/70 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {BUDGET_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
@@ -617,7 +617,7 @@ export default function FranchiseApplicationDetailPage() {
                 <select
                   value={app.qualified_experience || ''}
                   onChange={e => patch({ qualified_experience: e.target.value || null })}
-                  className="w-full px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
+                  className="w-full px-3 py-2.5 rounded-lg bg-slate-900/70 ring-1 ring-slate-700/70 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {EXPERIENCE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
@@ -627,7 +627,7 @@ export default function FranchiseApplicationDetailPage() {
                 <select
                   value={app.readiness_window || ''}
                   onChange={e => patch({ readiness_window: e.target.value || null })}
-                  className="w-full px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
+                  className="w-full px-3 py-2.5 rounded-lg bg-slate-900/70 ring-1 ring-slate-700/70 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
                 >
                   {READINESS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
@@ -647,7 +647,7 @@ export default function FranchiseApplicationDetailPage() {
                   <select
                     value={app.lost_reason || ''}
                     onChange={e => patch({ lost_reason: e.target.value || null })}
-                    className="w-full px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
+                    className="w-full px-3 py-2.5 rounded-lg bg-slate-900/70 ring-1 ring-slate-700/70 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [&>option]:text-slate-900 [&>option]:bg-white"
                   >
                     {LOST_REASON_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                   </select>
@@ -661,7 +661,7 @@ export default function FranchiseApplicationDetailPage() {
         <div className="lg:col-span-2 space-y-5">
 
           {/* Напоминание */}
-          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
             <div className="flex items-center gap-2 mb-4">
               <Bell size={14} className="text-amber-400" />
               <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Напоминание</h3>
@@ -682,14 +682,14 @@ export default function FranchiseApplicationDetailPage() {
               type="datetime-local"
               value={reminderTime}
               onChange={e => setReminderTime(e.target.value)}
-              className="w-full mb-2 px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [color-scheme:dark]"
+              className="w-full mb-2 px-3 py-2.5 rounded-lg bg-slate-900/70 ring-1 ring-slate-700/70 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [color-scheme:dark]"
             />
             <input
               type="text"
               placeholder="Что напомнить (опционально)"
               value={reminderNote}
               onChange={e => setReminderNote(e.target.value)}
-              className="w-full mb-3 px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 placeholder:text-slate-500 outline-none focus:ring-cyan-500/60 transition"
+              className="w-full mb-3 px-3 py-2.5 rounded-lg bg-slate-900/70 ring-1 ring-slate-700/70 text-[13px] text-slate-100 placeholder:text-slate-500 outline-none focus:ring-cyan-500/60 transition"
             />
             <button
               onClick={setReminder}
@@ -701,7 +701,7 @@ export default function FranchiseApplicationDetailPage() {
           </section>
 
           {/* Встреча */}
-          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
             <div className="flex items-center gap-2 mb-4">
               <Calendar size={14} className="text-violet-400" />
               <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Встреча</h3>
@@ -721,7 +721,7 @@ export default function FranchiseApplicationDetailPage() {
               type="datetime-local"
               value={meetingTime}
               onChange={e => setMeetingTime(e.target.value)}
-              className="w-full mb-3 px-3 py-2.5 rounded-lg bg-slate-800/60 ring-1 ring-slate-700 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [color-scheme:dark]"
+              className="w-full mb-3 px-3 py-2.5 rounded-lg bg-slate-900/70 ring-1 ring-slate-700/70 text-[13px] text-slate-100 outline-none focus:ring-cyan-500/60 transition [color-scheme:dark]"
             />
             <button
               onClick={setMeeting}
@@ -733,7 +733,7 @@ export default function FranchiseApplicationDetailPage() {
           </section>
 
           {/* Timeline */}
-          <section className="rounded-2xl bg-slate-900/60 ring-1 ring-slate-800 backdrop-blur p-5">
+          <section className="rounded-2xl bg-slate-900/70 ring-1 ring-slate-700/70/70 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.5)] backdrop-blur p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">История событий</h3>
               <span className="text-[10px] text-slate-500">{events.length}</span>
