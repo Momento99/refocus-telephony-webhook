@@ -28,6 +28,7 @@ import {
   FileSpreadsheet,
   ExternalLink,
   Trash2,
+  MoreHorizontal,
 } from 'lucide-react';
 
 // ECharts без SSR
@@ -179,6 +180,33 @@ function fmtSph(v: number) {
   const abs = Math.abs(v);
   const s = abs.toFixed(2).replace(/\.?0+$/, '');
   return (v > 0 ? '+' : '-') + s;
+}
+
+// Комментарий партии несёт и заметку человека, и машинные флаги маршрутизации
+// (forced_to_*, requested_to_location=<uuid>), иногда продублированные. На ПОКАЗЕ
+// отделяем человеческую заметку от служебных токенов. Данные в БД не трогаем —
+// delete-handler по-прежнему парсит lens_lots по сырому comment.
+function parseBatchComment(raw?: string | null): { note: string; hasService: boolean } {
+  if (!raw) return { note: '', hasService: false };
+  const parts = String(raw)
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const note: string[] = [];
+  let hasService = false;
+  for (const p of parts) {
+    const low = p.toLowerCase();
+    if (seen.has(low)) continue;
+    seen.add(low);
+    // служебное: ключ=значение, snake_case-флаг латиницей, голый uuid
+    if (/=/.test(p) || /^[a-z][a-z0-9_]*$/.test(low) || /^[0-9a-f-]{20,}$/i.test(p)) {
+      hasService = true;
+      continue;
+    }
+    note.push(p);
+  }
+  return { note: note.join(' · '), hasService };
 }
 
 function safeSheetName(name: string) {
@@ -1423,6 +1451,106 @@ function LightCard({
   );
 }
 
+// Тихое overflow-меню «⋯»: уносим редкие и разрушительные действия с глаз
+type OverflowItem = {
+  label: string;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+};
+function OverflowMenu({
+  items,
+  align = 'right',
+  title = 'Ещё',
+}: {
+  items: OverflowItem[];
+  align?: 'left' | 'right';
+  title?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={title}
+        aria-label={title}
+        className={[
+          'inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/85 text-slate-600 ring-1 ring-slate-200 transition',
+          'hover:bg-white hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-300/70',
+        ].join(' ')}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <div
+          className={[
+            'absolute z-20 mt-1 min-w-[190px] overflow-hidden rounded-2xl bg-white p-1 ring-1 ring-slate-200',
+            'shadow-[0_20px_60px_rgba(15,23,42,0.18)]',
+            align === 'right' ? 'right-0' : 'left-0',
+          ].join(' ')}
+        >
+          {items.map((it, i) => (
+            <button
+              key={i}
+              type="button"
+              disabled={it.disabled}
+              onClick={() => {
+                setOpen(false);
+                it.onClick();
+              }}
+              className={[
+                'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-medium transition',
+                it.danger ? 'text-rose-600 hover:bg-rose-50' : 'text-slate-700 hover:bg-slate-50',
+                it.disabled ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : '',
+              ].join(' ')}
+            >
+              {it.icon}
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// KPI-плитка для шапки (единый язык метрик, как на странице оправ)
+function StatTile({ label, value, accent }: { label: string; value: number; accent: 'teal' | 'sky' | 'amber' }) {
+  const dot = accent === 'teal' ? 'bg-teal-400' : accent === 'sky' ? 'bg-sky-400' : 'bg-amber-400';
+  return (
+    <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
+      <div className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        <span className={['h-1.5 w-1.5 rounded-full', dot].join(' ')} />
+        {label}
+      </div>
+      <div className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">
+        {nf(value)} <span className="text-sm font-medium text-slate-400">шт</span>
+      </div>
+    </div>
+  );
+}
+
+// Русские подписи статусов партии (англ. value остаётся в данных/фильтре)
+const STATUS_LABEL_RU: Record<string, string> = {
+  received: 'Прибыло',
+  in_transit: 'В пути',
+  draft: 'Черновик',
+  sent: 'Отправлено',
+  cancelled: 'Отменено',
+};
+
 function StatusPill({ status }: { status: string }) {
   const s = String(status || '').toLowerCase();
   const cls =
@@ -1434,7 +1562,14 @@ function StatusPill({ status }: { status: string }) {
           ? 'bg-slate-900/5 text-slate-700 ring-slate-200'
           : 'bg-amber-500/10 text-amber-900 ring-amber-300/40';
 
-  return <span className={['rounded-full px-2 py-0.5 text-[10px] ring-1', cls].join(' ')}>{status}</span>;
+  const label = STATUS_LABEL_RU[s] ?? status;
+
+  return (
+    <span className={['inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1', cls].join(' ')}>
+      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+      {label}
+    </span>
+  );
 }
 
 function Modal({
@@ -1594,6 +1729,9 @@ export default function LensProcurementPage() {
 
   // вкладка справа
   const [tab, setTab] = React.useState<'to_buy' | 'stock' | 'transit'>('to_buy');
+
+  // таблица: показывать только значимые диоптрии (где есть хоть какое-то движение)
+  const [showOnlySignificant, setShowOnlySignificant] = React.useState(true);
 
   const [err, setErr] = React.useState<string | null>(null);
 
@@ -2376,6 +2514,15 @@ export default function LensProcurementPage() {
 
     const title = tab === 'to_buy' ? 'Купить' : tab === 'stock' ? 'Склад' : 'В пути';
 
+    // Цвет столбцов в бренд-палитре, меняется по активной вкладке (тихий индикатор)
+    const stops =
+      tab === 'to_buy'
+        ? [{ offset: 0, color: '#22d3ee' }, { offset: 1, color: '#14b8a6' }] // cyan-400 → teal-500
+        : tab === 'stock'
+          ? [{ offset: 0, color: '#7dd3fc' }, { offset: 1, color: '#0ea5e9' }] // sky-300 → sky-500
+          : [{ offset: 0, color: '#fcd34d' }, { offset: 1, color: '#f59e0b' }]; // amber-300 → amber-500
+    const barColor = { type: 'linear' as const, x: 0, y: 0, x2: 0, y2: 1, colorStops: stops };
+
     return {
       animation: false,
       grid: { top: 18, right: 14, bottom: 70, left: 54 },
@@ -2405,16 +2552,26 @@ export default function LensProcurementPage() {
       xAxis: {
         type: 'category',
         data: cats,
+        axisTick: { show: false },
+        axisLine: { lineStyle: { color: '#e2e8f0' } },
         axisLabel: {
           interval: 3, // показываем не каждую подпись, чтобы не было каши
           rotate: 0,
+          color: '#64748b',
+          fontSize: 11,
         },
       },
       yAxis: {
         type: 'value',
         name: title,
         nameGap: 12,
+        nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: '#e2e8f0', type: 'dashed' } },
         axisLabel: {
+          color: '#64748b',
+          fontSize: 11,
           formatter: (v: any) => nf(Number(v) || 0),
         },
       },
@@ -2423,7 +2580,11 @@ export default function LensProcurementPage() {
           type: 'bar',
           name: title,
           data: vals,
-          barMaxWidth: 14,
+          barMaxWidth: 16,
+          itemStyle: {
+            borderRadius: [6, 6, 0, 0],
+            color: barColor,
+          },
         },
       ],
     };
@@ -3160,73 +3321,48 @@ export default function LensProcurementPage() {
           }
         >
           <div className="grid gap-3 lg:grid-cols-12 lg:items-end">
-            <div className="lg:col-span-8 grid gap-3 sm:grid-cols-3">
-              <div className="sm:col-span-1">
-                <Label>Локация назначения</Label>
-                <select
-                  value={locationId}
-                  onChange={(e) => setLocationId(e.target.value)}
-                  className={[
-                    'w-full rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900',
-                    'ring-1 ring-sky-200/80',
-                    'shadow-[0_18px_45px_rgba(15,23,42,0.12)]',
-                    'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
-                  ].join(' ')}
-                >
-                  {loadingLocations && <option>Загрузка…</option>}
-                  {!loadingLocations &&
-                    locations.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name} ({locationKindLabel(l)})
-                      </option>
-                    ))}
-                </select>
+            <div className="lg:col-span-8">
+              <Label>Локация назначения</Label>
+              <select
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
+                className={[
+                  'w-full sm:max-w-sm rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900',
+                  'ring-1 ring-sky-200/80',
+                  'shadow-[0_18px_45px_rgba(15,23,42,0.12)]',
+                  'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
+                ].join(' ')}
+              >
+                {loadingLocations && <option>Загрузка…</option>}
+                {!loadingLocations &&
+                  locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} ({locationKindLabel(l)})
+                    </option>
+                  ))}
+              </select>
+
+              {/* параметры расчёта — read-only, настройка в «Настройки расчёта и формула» ниже */}
+              <button
+                type="button"
+                onClick={() => setInfoOpen(true)}
+                title="Изменить в «Настройки расчёта и формула» ниже"
+                className="mt-2 flex flex-wrap items-center gap-2 text-left"
+              >
                 {selectedLocation?.name && (
-                  <div className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500">
+                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
                     <MapPin className="h-3.5 w-3.5" />
-                    <span className="truncate max-w-[320px]">
-                      Назначение:{' '}
-                      <span className="font-medium text-slate-700">
-                        {selectedLocation.name} · {locationKindLabel(selectedLocation)}
-                      </span>
+                    <span className="truncate max-w-[260px] font-medium text-slate-700">
+                      {selectedLocation.name} · {locationKindLabel(selectedLocation)}
                     </span>
-                  </div>
+                  </span>
                 )}
-              </div>
-
-              <div>
-                <Label>Запас (коэфф.)</Label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="1"
-                  value={safetyFactor}
-                  onChange={(e) => setSafetyFactor(Number(e.target.value || 1))}
-                  className={[
-                    'w-full rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900',
-                    'ring-1 ring-sky-200/80',
-                    'shadow-[0_18px_45px_rgba(15,23,42,0.12)]',
-                    'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
-                  ].join(' ')}
-                />
-              </div>
-
-              <div>
-                <Label>Мин/диоптрия</Label>
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={minEach}
-                  onChange={(e) => setMinEach(Math.max(0, Math.floor(Number(e.target.value || 0))))}
-                  className={[
-                    'w-full rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900',
-                    'ring-1 ring-sky-200/80',
-                    'shadow-[0_18px_45px_rgba(15,23,42,0.12)]',
-                    'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
-                  ].join(' ')}
-                />
-              </div>
+                <span className="rounded-full bg-slate-900/5 px-2 py-0.5 text-[11px] text-slate-600 ring-1 ring-slate-200">запас ×{safetyFactor}</span>
+                <span className="rounded-full bg-slate-900/5 px-2 py-0.5 text-[11px] text-slate-600 ring-1 ring-slate-200">мин/диоптрия {minEach}</span>
+                <span className="rounded-full bg-slate-900/5 px-2 py-0.5 text-[11px] text-slate-600 ring-1 ring-slate-200">
+                  {applyMinToAll ? 'мин. ко всем' : 'мин. при спросе'}
+                </span>
+              </button>
             </div>
 
             <div className="lg:col-span-4 flex flex-wrap items-center justify-end gap-2">
@@ -3242,28 +3378,11 @@ export default function LensProcurementPage() {
             </div>
           </div>
 
-          {/* режим минимума + тоталы */}
-          <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center">
-            <div className="flex flex-wrap gap-2">
-              <SoftPrimaryButton onClick={() => setApplyMinToAll(true)} className={applyMinToAll ? '' : 'opacity-70'}>
-                Мин. ко всем
-              </SoftPrimaryButton>
-              <SoftGhostButton onClick={() => setApplyMinToAll(false)} className={!applyMinToAll ? '' : 'opacity-80'}>
-                Мин. только при спросе
-              </SoftGhostButton>
-            </div>
-
-            <div className="lg:ml-auto flex flex-wrap gap-2">
-              <div className="rounded-2xl bg-slate-900/5 px-3 py-2 text-[12px] ring-1 ring-slate-200">
-                Купить: <span className="font-semibold">{nf(totals.to_buy)}</span> шт
-              </div>
-              <div className="rounded-2xl bg-slate-900/5 px-3 py-2 text-[12px] ring-1 ring-slate-200">
-                Склад: <span className="font-semibold">{nf(totals.on_hand)}</span> шт
-              </div>
-              <div className="rounded-2xl bg-slate-900/5 px-3 py-2 text-[12px] ring-1 ring-slate-200">
-                В пути: <span className="font-semibold">{nf(totals.in_transit)}</span> шт
-              </div>
-            </div>
+          {/* KPI-плитки */}
+          <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
+            <StatTile label="Купить" value={totals.to_buy} accent="teal" />
+            <StatTile label="Склад" value={totals.on_hand} accent="sky" />
+            <StatTile label="В пути" value={totals.in_transit} accent="amber" />
           </div>
 
           {/* компактная подсказка (сворачиваемая) */}
@@ -3275,13 +3394,70 @@ export default function LensProcurementPage() {
             >
               <span className="inline-flex items-center gap-2 text-[12px] text-sky-900/80">
                 <Info className="h-4 w-4 text-sky-700" />
-                Формула и источник данных
+                Настройки расчёта и формула
               </span>
               {infoOpen ? <ChevronUp className="h-4 w-4 text-sky-700" /> : <ChevronDown className="h-4 w-4 text-sky-700" />}
             </button>
 
             {infoOpen && (
               <div className="px-4 pb-4 text-[12px] text-sky-900/80">
+                {/* настройки расчёта (перенесены из шапки ради чистоты) */}
+                <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <Label>Запас (коэфф.)</Label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="1"
+                      value={safetyFactor}
+                      onChange={(e) => setSafetyFactor(Number(e.target.value || 1))}
+                      className={[
+                        'w-full rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900',
+                        'ring-1 ring-sky-200/80 shadow-[0_18px_45px_rgba(15,23,42,0.10)]',
+                        'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
+                      ].join(' ')}
+                    />
+                  </div>
+                  <div>
+                    <Label>Мин/диоптрия</Label>
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={minEach}
+                      onChange={(e) => setMinEach(Math.max(0, Math.floor(Number(e.target.value || 0))))}
+                      className={[
+                        'w-full rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900',
+                        'ring-1 ring-sky-200/80 shadow-[0_18px_45px_rgba(15,23,42,0.10)]',
+                        'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
+                      ].join(' ')}
+                    />
+                  </div>
+                  <div>
+                    <Label>Режим минимума</Label>
+                    <div className="inline-flex w-full items-center rounded-[14px] bg-white/80 p-0.5 ring-1 ring-sky-200">
+                      {[
+                        { v: true, label: 'Ко всем' },
+                        { v: false, label: 'При спросе' },
+                      ].map((opt) => (
+                        <button
+                          key={String(opt.v)}
+                          type="button"
+                          onClick={() => setApplyMinToAll(opt.v)}
+                          className={[
+                            'flex-1 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition',
+                            applyMinToAll === opt.v
+                              ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                              : 'text-slate-600 hover:bg-sky-50',
+                          ].join(' ')}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="leading-relaxed">
                   <b>TO_BUY = max(0, plan − on_hand − in_transit)</b>.
                   <br />
@@ -3514,63 +3690,130 @@ export default function LensProcurementPage() {
                   </div>
 
                   {/* Table */}
-                  <div className="mt-4 overflow-auto max-h-[360px] rounded-2xl bg-white/90 ring-1 ring-sky-200/70 shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
-                    <table className="w-full text-[13px]">
-                      <thead className="bg-slate-50 text-slate-600 sticky top-0">
-                        <tr>
-                          <th className="px-3 py-2 text-left font-medium">SPH</th>
-                          <th className="px-3 py-2 text-right font-medium">
-                            {tab === 'to_buy' && 'Купить (шт)'}
-                            {tab === 'stock' && 'Склад (шт)'}
-                            {tab === 'transit' && 'В пути (шт)'}
-                          </th>
-                          <th className="px-3 py-2 text-right font-medium hidden sm:table-cell">Склад (шт)</th>
-                          <th className="px-3 py-2 text-right font-medium hidden sm:table-cell">В пути (шт)</th>
-                          <th className="px-3 py-2 text-right font-medium">TO_BUY (шт)</th>
-                          <th className="px-3 py-2 text-right font-medium">Доля</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {table.map((r, idx) => (
-                          <tr key={`${r.sph.toFixed(2)}:${idx}`} className="odd:bg-white even:bg-slate-50/40">
-                            <td className="px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap">
-                              {fmtSph(r.sph)}
-                              {!r.hasSku && (r.to_buy || 0) > 0 && (
-                                <span className="ml-2 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-700 ring-1 ring-rose-300/40">
-                                  нет SKU
-                                </span>
+                  {(() => {
+                    const isSig = (r: any) =>
+                      (r.v || 0) > 0 || (r.on_hand || 0) > 0 || (r.in_transit || 0) > 0 || (r.to_buy || 0) > 0;
+                    const visible = showOnlySignificant ? table.filter(isSig) : table;
+                    const hiddenCount = table.length - visible.length;
+                    const maxShare = Math.max(0.0001, ...table.map((r) => Number(r.share) || 0));
+                    return (
+                      <>
+                        <div className="mt-4 flex items-center justify-between gap-2">
+                          <div className="text-[11px] text-slate-500">
+                            Диоптрий: <span className="font-medium text-slate-700">{nf(visible.length)}</span>
+                            {hiddenCount > 0 && <span> · скрыто нулевых: {nf(hiddenCount)}</span>}
+                          </div>
+                          <div className="inline-flex items-center rounded-xl bg-white/80 p-0.5 ring-1 ring-sky-200">
+                            {[
+                              { v: true, label: 'Только значимые' },
+                              { v: false, label: 'Все' },
+                            ].map((opt) => (
+                              <button
+                                key={String(opt.v)}
+                                type="button"
+                                onClick={() => setShowOnlySignificant(opt.v)}
+                                className={[
+                                  'rounded-lg px-3 py-1 text-[12px] font-semibold transition',
+                                  showOnlySignificant === opt.v
+                                    ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                                    : 'text-slate-600 hover:bg-sky-50',
+                                ].join(' ')}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 overflow-auto max-h-[360px] rounded-2xl bg-white/90 ring-1 ring-sky-200/70 shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+                          <table className="w-full text-[13px]">
+                            <thead className="bg-slate-50 text-slate-600 sticky top-0">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">SPH</th>
+                                <th className="px-3 py-2 text-right font-medium">
+                                  {tab === 'to_buy' && 'Купить (шт)'}
+                                  {tab === 'stock' && 'Склад (шт)'}
+                                  {tab === 'transit' && 'В пути (шт)'}
+                                </th>
+                                <th className="px-3 py-2 text-right font-medium hidden sm:table-cell">Склад (шт)</th>
+                                <th className="px-3 py-2 text-right font-medium hidden sm:table-cell">В пути (шт)</th>
+                                <th className="px-3 py-2 text-right font-medium">TO_BUY (шт)</th>
+                                <th className="px-3 py-2 text-right font-medium w-28">Доля</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visible.map((r, idx) => (
+                                <tr key={`${r.sph.toFixed(2)}:${idx}`} className="odd:bg-white even:bg-slate-50/40">
+                                  <td className="px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap">
+                                    {fmtSph(r.sph)}
+                                    {!r.hasSku && (r.to_buy || 0) > 0 && (
+                                      <span className="ml-2 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-700 ring-1 ring-rose-300/40">
+                                        нет SKU
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right text-slate-900">{nf(r.v)}</td>
+                                  <td className="px-3 py-1.5 text-right text-slate-700 hidden sm:table-cell">{nf(r.on_hand)}</td>
+                                  <td className="px-3 py-1.5 text-right text-slate-700 hidden sm:table-cell">{nf(r.in_transit)}</td>
+                                  <td className="px-3 py-1.5 text-right text-slate-900 font-semibold">{nf(r.to_buy)}</td>
+                                  <td className="px-3 py-1.5">
+                                    {(r.share || 0) > 0 ? (
+                                      <div className="flex items-center justify-end gap-2">
+                                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
+                                          <div
+                                            className="h-full rounded-full bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400"
+                                            style={{ width: `${Math.min(100, Math.round(((r.share || 0) / maxShare) * 100))}%` }}
+                                          />
+                                        </div>
+                                        <span className="w-9 text-right text-[11px] tabular-nums text-slate-500">{Math.round((r.share || 0) * 100)}%</span>
+                                      </div>
+                                    ) : (
+                                      <div className="text-right text-slate-300">·</div>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+
+                              {loadingRows && (
+                                <tr>
+                                  <td colSpan={6} className="px-3 py-4 text-center text-slate-500">
+                                    Загружаю…
+                                  </td>
+                                </tr>
                               )}
-                            </td>
-                            <td className="px-3 py-1.5 text-right text-slate-900">{nf(r.v)}</td>
-                            <td className="px-3 py-1.5 text-right text-slate-700 hidden sm:table-cell">{nf(r.on_hand)}</td>
-                            <td className="px-3 py-1.5 text-right text-slate-700 hidden sm:table-cell">{nf(r.in_transit)}</td>
-                            <td className="px-3 py-1.5 text-right text-slate-900 font-semibold">{nf(r.to_buy)}</td>
-                            <td className="px-3 py-1.5 text-right text-slate-700">{Math.round((r.share || 0) * 100)}%</td>
-                          </tr>
-                        ))}
 
-                        {loadingRows && (
-                          <tr>
-                            <td colSpan={6} className="px-3 py-4 text-center text-slate-500">
-                              Загружаю…
-                            </td>
-                          </tr>
-                        )}
+                              {!loadingRows && rows.length === 0 && (
+                                <tr>
+                                  <td colSpan={6} className="px-3 py-4 text-center text-slate-500">
+                                    Нет данных. Проверь RPC <span className="font-medium">{RPC_PROCUREMENT_FN}</span>.
+                                  </td>
+                                </tr>
+                              )}
 
-                        {!loadingRows && rows.length === 0 && (
-                          <tr>
-                            <td colSpan={6} className="px-3 py-4 text-center text-slate-500">
-                              Нет данных. Проверь RPC <span className="font-medium">{RPC_PROCUREMENT_FN}</span>.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                              {!loadingRows && rows.length > 0 && visible.length === 0 && (
+                                <tr>
+                                  <td colSpan={6} className="px-3 py-4 text-center text-slate-500">
+                                    Нет значимых диоптрий.{' '}
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowOnlySignificant(false)}
+                                      className="font-medium text-teal-700 hover:underline"
+                                    >
+                                      Показать все
+                                    </button>
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
 
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    Экспорт/копирование формируют <span className="font-medium">TO_BUY</span>. Создание партии — в блоке ниже.
-                  </div>
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          Экспорт/копирование формируют <span className="font-medium">TO_BUY</span> по всем диоптриям (фильтр выше — только для просмотра). Создание партии — в блоке ниже.
+                        </div>
+                      </>
+                    );
+                  })()}
                 </>
               )}
             </LightCard>
@@ -3594,30 +3837,14 @@ export default function LensProcurementPage() {
                     <Plus className="h-3.5 w-3.5" />
                     Создать партию
                   </SoftPrimaryButton>
-
-                  <SoftGhostButton onClick={() => void loadBatches()} disabled={loadingBatches} className="px-3 py-1.5 text-xs">
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Обновить партии
-                  </SoftGhostButton>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={openClearStockModal}
-                  disabled={!locationId || clearingStock}
-                  className={[
-                    'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ring-1 transition',
-                    'bg-rose-600 text-white ring-rose-700 hover:opacity-95',
-                    !locationId || clearingStock ? 'opacity-50 cursor-not-allowed' : '',
-                  ].join(' ')}
-                  title="Жёстко очистить склад по выбранной локации (удалит движения/остатки)"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {clearingStock ? 'Очищаю склад…' : 'Очистить склад'}
-                </button>
-
                 <div className="flex items-center gap-2">
-                  <div className="inline-flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 ring-1 ring-slate-200 shadow-[0_12px_35px_rgba(15,23,42,0.10)]">
+                  <SoftGhostButton onClick={() => void loadBatches()} disabled={loadingBatches} className="px-2.5 py-2" title="Обновить список партий">
+                    <RefreshCw className="h-4 w-4" />
+                  </SoftGhostButton>
+
+                  <div className="inline-flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 ring-1 ring-sky-200 shadow-[0_12px_35px_rgba(15,23,42,0.10)]">
                     <Filter className="h-4 w-4 text-slate-500" />
                     <select
                       value={batchStatusFilter}
@@ -3625,11 +3852,25 @@ export default function LensProcurementPage() {
                       className="bg-transparent text-sm text-slate-800 focus:outline-none"
                     >
                       <option value="all">Все</option>
-                      <option value="draft">draft</option>
-                      <option value="in_transit">in_transit</option>
-                      <option value="received">received</option>
+                      <option value="draft">Черновик</option>
+                      <option value="in_transit">В пути</option>
+                      <option value="received">Прибыло</option>
                     </select>
                   </div>
+
+                  <OverflowMenu
+                    title="Опасные операции"
+                    align="right"
+                    items={[
+                      {
+                        label: clearingStock ? 'Очищаю склад…' : 'Очистить склад',
+                        onClick: openClearStockModal,
+                        danger: true,
+                        icon: <Trash2 className="h-4 w-4" />,
+                        disabled: !locationId || clearingStock,
+                      },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -3715,71 +3956,66 @@ export default function LensProcurementPage() {
                             {b.received_at ? `Прибыло: ${new Date(b.received_at).toLocaleDateString('ru-RU')}` : 'Прибыло: —'}
                           </div>
 
-                          {b.comment && (
-                            <div className="mt-2 rounded-2xl bg-slate-900/5 px-3 py-2 text-[12px] text-slate-700 ring-1 ring-slate-200 break-words">
-                              <span className="font-medium">Комментарий:</span> {b.comment}
-                            </div>
-                          )}
+                          {(() => {
+                            const c = parseBatchComment(b.comment);
+                            if (!c.note && !c.hasService) return null;
+                            return (
+                              <div className="mt-2 rounded-2xl bg-slate-900/5 px-3 py-2 text-[12px] text-slate-700 ring-1 ring-slate-200 break-words">
+                                {c.note ? (
+                                  <>
+                                    <span className="font-medium">Заметка:</span> {c.note}
+                                  </>
+                                ) : (
+                                  <span className="text-slate-400">Служебная метка</span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
-                          {/* draft -> in_transit */}
-                          <button
-                            type="button"
-                            className={[
-                              'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ring-1 transition',
-                              'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50',
-                              isBusy || b.status !== 'draft' ? 'opacity-50 cursor-not-allowed' : '',
-                            ].join(' ')}
-                            disabled={isBusy || b.status !== 'draft'}
-                            onClick={() => openCommentModal(b.id, 'ordered')}
-                            title="Перевести партию в статус in_transit"
-                          >
-                            <Truck className="h-4 w-4" />
-                            В пути
-                          </button>
+                          {/* единственное контекстное действие по статусу */}
+                          {b.status === 'draft' && (
+                            <SoftPrimaryButton
+                              onClick={() => openCommentModal(b.id, 'ordered')}
+                              disabled={isBusy}
+                              className="px-3 py-2 text-xs"
+                            >
+                              <Truck className="h-4 w-4" />
+                              В пути
+                            </SoftPrimaryButton>
+                          )}
+                          {b.status === 'in_transit' && (
+                            <SoftPrimaryButton
+                              onClick={() => openCommentModal(b.id, 'received')}
+                              disabled={isBusy}
+                              className="px-3 py-2 text-xs"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              Прибыло
+                            </SoftPrimaryButton>
+                          )}
 
-                          {/* in_transit -> received */}
-                          <button
-                            type="button"
-                            className={[
-                              'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ring-1 transition',
-                              'bg-slate-900 text-white ring-slate-900 hover:opacity-95',
-                              isBusy || b.status !== 'in_transit' ? 'opacity-50 cursor-not-allowed' : '',
-                            ].join(' ')}
-                            disabled={isBusy || b.status !== 'in_transit'}
-                            onClick={() => openCommentModal(b.id, 'received')}
-                            title="Перевести партию в статус received"
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                            Прибыло
-                          </button>
-
-                          <SoftGhostButton
-                            onClick={() => void exportExcelForBatch(b.id)}
-                            disabled={!selectedRpc}
-                            className="px-3 py-2 text-xs"
-                            title="Экспортирует содержимое партии (агрегация по SPH из lens_skus)"
-                          >
-                            <FileSpreadsheet className="h-4 w-4" />
-                            Excel по партии
-                          </SoftGhostButton>
-
-                          {/* ✅ delete */}
-                          <button
-                            type="button"
-                            className={[
-                              'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ring-1 transition',
-                              'bg-rose-600 text-white ring-rose-700 hover:opacity-95',
-                              isBusy ? 'opacity-50 cursor-not-allowed' : '',
-                            ].join(' ')}
-                            disabled={isBusy}
-                            onClick={() => openDeleteModal(b.id)}
-                            title="Удалить партию (тест/отмена): обнулит in_transit, и при включении — почистит lens_lots по comment"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Удалить
-                          </button>
+                          {/* вторичное и разрушительное — в меню «⋯» */}
+                          <OverflowMenu
+                            title="Ещё"
+                            align="right"
+                            items={[
+                              {
+                                label: 'Excel по партии',
+                                onClick: () => void exportExcelForBatch(b.id),
+                                icon: <FileSpreadsheet className="h-4 w-4" />,
+                                disabled: !selectedRpc,
+                              },
+                              {
+                                label: 'Удалить партию',
+                                onClick: () => openDeleteModal(b.id),
+                                danger: true,
+                                icon: <Trash2 className="h-4 w-4" />,
+                                disabled: isBusy,
+                              },
+                            ]}
+                          />
                         </div>
                       </div>
                     </div>
