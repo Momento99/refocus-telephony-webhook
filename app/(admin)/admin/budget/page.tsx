@@ -97,42 +97,6 @@ function formatDateRu(iso: string) {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 }
 
-/* ============ Периоды (календарные, TZ Бишкек) ============ */
-
-type PeriodKey = 'day' | 'week' | 'month' | 'year';
-const PERIODS: { key: PeriodKey; label: string }[] = [
-  { key: 'day', label: 'День' },
-  { key: 'week', label: 'Неделя' },
-  { key: 'month', label: 'Месяц' },
-  { key: 'year', label: 'Год' },
-];
-
-/** Филиалы бюджета «Мои» (Кант + Токмок) — для разнесения работы мастера. */
-const MINE_BRANCH_IDS = new Set<number>(BUDGETS[0].branchIds);
-
-/** Календарный диапазон [from, to] по TZ Бишкека: день = сегодня, неделя = с понедельника,
- *  месяц = с 1-го числа, год = с 1 января. `today` — UTC-полночь бишкекской даты (bishkekToday). */
-function calendarRange(period: PeriodKey, today: Date): { fromISO: string; toISO: string } {
-  const y = today.getUTCFullYear();
-  const m = today.getUTCMonth();
-  const d = today.getUTCDate();
-  const toISO = ymd(today);
-  if (period === 'day') return { fromISO: toISO, toISO };
-  if (period === 'week') {
-    const dow = today.getUTCDay();   // 0=вс … 6=сб
-    const back = (dow + 6) % 7;      // сколько дней назад до понедельника
-    return { fromISO: ymd(new Date(Date.UTC(y, m, d - back))), toISO };
-  }
-  if (period === 'month') return { fromISO: ymd(new Date(Date.UTC(y, m, 1))), toISO };
-  return { fromISO: ymd(new Date(Date.UTC(y, 0, 1))), toISO }; // year
-}
-
-/** Подпись периода для шапки блока. */
-function periodRangeLabel(period: PeriodKey, today: Date): string {
-  if (period === 'day') return 'сегодня';
-  return `с ${formatDateRu(calendarRange(period, today).fromISO)}`;
-}
-
 const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 function monthGenitive(mIdx: number) { return MONTHS_GEN[mIdx] ?? ''; }
 
@@ -277,24 +241,9 @@ type NextPayment = { daysLeft: number; dueLabel: string; items: { label: string;
 
 /* ============ Страница ============ */
 
-/** Строка P&L за период из RPC budget_period_summary (см. миграцию budget_period_summary).
- *  Чистая прибыль = Выручка − Возвраты − Себестоимость − Расходы(opex+ручные) − Зарплата.
- *  Кредиты в прибыль НЕ входят (погашение долга, не операционный расход). */
-type MasterBranchPay = { branch_id: number; master_pay: number };
-type SummaryRow = {
-  revenue: number;
-  refunds: number;
-  cogs_total: number;
-  opex_daily: number;
-  opex_manual: number;
-  opex_total: number;
-  payroll_total: number;
-  master_total: number;
-  net_profit: number;
-  master_by_branch: MasterBranchPay[];
-  n_days: number;
-};
+/** Справочная разбивка «работа мастера» (уже сидит в зарплате, не отдельная копилка). */
 type MasterRefRow = { label: string; amount: number; mine: boolean };
+type MasterRef = { total: number; mine: number; mama: number; rows: MasterRefRow[]; fromISO: string };
 
 export default function BudgetPage() {
   const today = useMemo(() => bishkekToday(), []);
@@ -309,14 +258,7 @@ export default function BudgetPage() {
   const [card, setCard] = useState<CardState | null>(null);
   const [nextPay, setNextPay] = useState<NextPayment | null>(null);
   const [totals, setTotals] = useState<Totals | null>(null);
-
-  // Независимые периоды для блоков «Работа мастера» и «Чистая прибыль» (календарные, TZ Бишкек).
-  const [masterPeriod, setMasterPeriod] = useState<PeriodKey>('week');
-  const [profitPeriod, setProfitPeriod] = useState<PeriodKey>('month');
-  const [masterData, setMasterData] = useState<SummaryRow | null>(null);
-  const [profitData, setProfitData] = useState<SummaryRow | null>(null);
-  const [masterBusy, setMasterBusy] = useState(true);
-  const [profitBusy, setProfitBusy] = useState(true);
+  const [masterRef, setMasterRef] = useState<MasterRef | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -524,20 +466,27 @@ export default function BudgetPage() {
         if (!bid) continue;
         revenueByBranch.set(bid, (revenueByBranch.get(bid) ?? 0) + (Number((p as any).amount) || 0));
       }
-      // Зарплата по филиалам для котла/бюджетов (период страницы). Работа мастера и чистая
-      // прибыль считаются отдельно — через RPC budget_period_summary с выбором периода.
+      // Мастера-сдельщики (динамически): их весь net_day в v_payroll_daily — это работа
+      // по 150 сом/заказ, уже РАЗНЕСЁННАЯ по филиалам пропорционально их заказам.
+      const { data: masterRows } = await supabase.from('master_shift_output').select('employee_id');
+      const masterIds = new Set<number>((masterRows ?? []).map((r: any) => Number(r.employee_id)));
+
       const { data: payRows, error: payErr } = await supabase
         .from('v_payroll_daily')
-        .select('day, net_day, branch_id')
+        .select('day, net_day, branch_id, employee_id')
         .gte('day', periodStart)
         .lte('day', todayISO)
         .in('branch_id', BRANCH_IDS);
       if (payErr) throw payErr;
       const payrollByBranch = new Map<number, number>();
+      const masterByBranch = new Map<number, number>();
       for (const r of payRows ?? []) {
         const bid = (r as any).branch_id as number;
         const amt = Number((r as any).net_day) || 0;
         payrollByBranch.set(bid, (payrollByBranch.get(bid) ?? 0) + amt);
+        if (masterIds.has(Number((r as any).employee_id))) {
+          masterByBranch.set(bid, (masterByBranch.get(bid) ?? 0) + amt);
+        }
       }
 
       /* 11. Бюджеты */
@@ -722,9 +671,26 @@ export default function BudgetPage() {
       const periodCogs   = budgetViews.reduce((s, bv) => s + bv.branches.reduce((ss, b) => ss + b.cogs, 0), 0);
       const expenses     = Math.round(periodRent + periodTax + periodCredit + periodCogs);
 
+      // Справочная разбивка «работа мастера» по бюджетам (Мама / Я)
+      const masterMineIds = new Set<number>(BUDGETS[0].branchIds); // Кант + Токмок
+      const masterRefRows: MasterRefRow[] = BRANCHES
+        .map((b) => ({ label: b.name, amount: Math.round(masterByBranch.get(b.id) ?? 0), mine: masterMineIds.has(b.id) }))
+        .filter((r) => r.amount > 0)
+        .sort((a, z) => z.amount - a.amount);
+      const masterMine = masterRefRows.filter((r) => r.mine).reduce((s, r) => s + r.amount, 0);
+      const masterMama = masterRefRows.filter((r) => !r.mine).reduce((s, r) => s + r.amount, 0);
+      const masterRefVal: MasterRef = {
+        total: masterMine + masterMama,
+        mine: masterMine,
+        mama: masterMama,
+        rows: masterRefRows,
+        fromISO: periodStart,
+      };
+
       setBudgets(budgetViews);
       setCredits(creditViews);
       setCategoryBoxes(categoryBoxesArr);
+      setMasterRef(masterRefVal);
       setPersonTotals(personTotalsVal);
       setCard(cardState);
       setNextPay(nextPayVal);
@@ -747,50 +713,6 @@ export default function BudgetPage() {
   }, [today, todayISO]);
 
   useEffect(() => { void load(); }, [load]);
-
-  // P&L за выбранный период (через RPC budget_period_summary — серверная агрегация, без лимита строк).
-  const fetchSummary = useCallback(async (period: PeriodKey): Promise<SummaryRow | null> => {
-    const { fromISO, toISO } = calendarRange(period, today);
-    const { data, error } = await supabase.rpc('budget_period_summary', {
-      from_dt: fromISO,
-      to_dt: toISO,
-      branch_ids: BRANCH_IDS,
-    });
-    if (error) { console.warn('[budget] budget_period_summary error', error); return null; }
-    const row: any = Array.isArray(data) ? data[0] : data;
-    if (!row) return null;
-    const num = (v: any) => Number(v) || 0;
-    return {
-      revenue: num(row.revenue),
-      refunds: num(row.refunds),
-      cogs_total: num(row.cogs_total),
-      opex_daily: num(row.opex_daily),
-      opex_manual: num(row.opex_manual),
-      opex_total: num(row.opex_total),
-      payroll_total: num(row.payroll_total),
-      master_total: num(row.master_total),
-      net_profit: num(row.net_profit),
-      master_by_branch: (row.master_by_branch ?? []).map((m: any) => ({
-        branch_id: Number(m.branch_id),
-        master_pay: num(m.master_pay),
-      })),
-      n_days: Number(row.n_days) || 0,
-    };
-  }, [today]);
-
-  useEffect(() => {
-    let alive = true;
-    setMasterBusy(true);
-    void fetchSummary(masterPeriod).then((r) => { if (alive) { setMasterData(r); setMasterBusy(false); } });
-    return () => { alive = false; };
-  }, [masterPeriod, fetchSummary]);
-
-  useEffect(() => {
-    let alive = true;
-    setProfitBusy(true);
-    void fetchSummary(profitPeriod).then((r) => { if (alive) { setProfitData(r); setProfitBusy(false); } });
-    return () => { alive = false; };
-  }, [profitPeriod, fetchSummary]);
 
   async function recordTransfer(person: 'A' | 'B', amount: number) {
     if (!Number.isFinite(amount) || amount <= 0) return;
@@ -875,13 +797,11 @@ export default function BudgetPage() {
           </div>
 
           <BranchSummary budgets={budgets} />
-          <MasterRefCard data={masterData} period={masterPeriod} onPeriod={setMasterPeriod} busy={masterBusy} today={today} />
+          {masterRef && masterRef.total > 0 && <MasterRefCard data={masterRef} />}
         </>
       )}
 
-      {!loading && (
-        <ProfitPanel data={profitData} period={profitPeriod} onPeriod={setProfitPeriod} busy={profitBusy} today={today} />
-      )}
+      {totals && <FreeMoneyPanel totals={totals} />}
     </div>
   );
 }
@@ -1163,85 +1083,34 @@ function BranchSummaryCard({ branch: b, accent }: { branch: BranchContribution; 
   );
 }
 
-/* ============ Переключатель периода ============ */
-
-const TOGGLE_ACTIVE: Record<string, string> = {
-  cyan: 'bg-cyan-500 text-white shadow-sm',
-  indigo: 'bg-indigo-500 text-white shadow-sm',
-  emerald: 'bg-emerald-500 text-white shadow-sm',
-};
-function PeriodToggle({ period, onPeriod, accent = 'cyan' }: {
-  period: PeriodKey;
-  onPeriod: (p: PeriodKey) => void;
-  accent?: 'cyan' | 'indigo' | 'emerald';
-}) {
-  return (
-    <div className="inline-flex rounded-xl bg-slate-100 p-0.5 ring-1 ring-slate-200">
-      {PERIODS.map((p) => (
-        <button
-          key={p.key}
-          type="button"
-          onClick={() => onPeriod(p.key)}
-          className={[
-            'rounded-lg px-3 py-1.5 text-xs font-semibold transition',
-            period === p.key ? TOGGLE_ACTIVE[accent] : 'text-slate-500 hover:text-slate-700',
-          ].join(' ')}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /* ============ Работа мастера (справочно) ============ */
 
-function MasterRefCard({ data, period, onPeriod, busy, today }: {
-  data: SummaryRow | null;
-  period: PeriodKey;
-  onPeriod: (p: PeriodKey) => void;
-  busy: boolean;
-  today: Date;
-}) {
-  const rows: MasterRefRow[] = (data?.master_by_branch ?? [])
-    .map((m) => ({ label: BRANCH_NAME.get(m.branch_id) ?? `#${m.branch_id}`, amount: Math.round(m.master_pay), mine: MINE_BRANCH_IDS.has(m.branch_id) }))
-    .filter((r) => r.amount > 0)
-    .sort((a, z) => z.amount - a.amount);
-  const mine = rows.filter((r) => r.mine).reduce((s, r) => s + r.amount, 0);
-  const mama = rows.filter((r) => !r.mine).reduce((s, r) => s + r.amount, 0);
-  const total = mine + mama;
-
+function MasterRefCard({ data }: { data: MasterRef }) {
   return (
     <div className="mt-8 overflow-hidden rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_12px_40px_rgba(15,23,42,0.10)]">
       <div className="h-1 bg-gradient-to-r from-indigo-400 via-violet-400 to-cyan-400" />
       <div className="px-6 py-6 md:px-8 md:py-7">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
               Работа мастера · справочно
             </div>
             <div className="mt-0.5 text-[11px] text-slate-400">
-              150 сом за заказ · уже сидит в строке «Зарплата» · {periodRangeLabel(period, today)}
+              150 сом за заказ · уже сидит в строке «Зарплата» · с {formatDateRu(data.fromISO)}
             </div>
           </div>
-          <PeriodToggle period={period} onPeriod={onPeriod} accent="indigo" />
-        </div>
-
-        <div className="mt-4 text-3xl md:text-4xl font-bold tabular-nums leading-none tracking-tight text-indigo-700">
-          {busy ? '…' : nf.format(Math.round(total))} <span className="text-base font-medium text-slate-400">сом</span>
-        </div>
-
-        {total > 0 ? (
-          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <MasterRefSide title="Я · Мои" subtitle="Кант + Токмок" amount={mine} rows={rows.filter((r) => r.mine)} accent="cyan" />
-            <MasterRefSide title="Мама" subtitle="Сокулук + Беловодск + Кара-Балта" amount={mama} rows={rows.filter((r) => !r.mine)} accent="emerald" />
+          <div className="text-3xl md:text-4xl font-bold tabular-nums leading-none tracking-tight text-indigo-700">
+            {nf.format(Math.round(data.total))} <span className="text-base font-medium text-slate-400">сом</span>
           </div>
-        ) : (
-          !busy && <div className="mt-4 text-[12px] text-slate-400">За выбранный период работы мастера нет.</div>
-        )}
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <MasterRefSide title="Я · Мои" subtitle="Кант + Токмок" amount={data.mine} rows={data.rows.filter((r) => r.mine)} accent="cyan" />
+          <MasterRefSide title="Мама" subtitle="Сокулук + Беловодск + Кара-Балта" amount={data.mama} rows={data.rows.filter((r) => !r.mine)} accent="emerald" />
+        </div>
 
         <div className="mt-3 text-[11px] text-slate-400">
-          Это не отдельная копилка — деньги мастера уже включены в «Зарплату». Разнесено по филиалам пропорционально числу заказов каждого.
+          Это не отдельная копилка — деньги мастера уже включены в «Зарплату» ниже. Разнесено по филиалам пропорционально числу заказов каждого.
         </div>
       </div>
     </div>
@@ -1280,51 +1149,39 @@ function MasterRefSide({ title, subtitle, amount, rows, accent }: {
   );
 }
 
-/* ============ Чистая прибыль ============ */
+/* ============ Свободные деньги ============ */
 
-function ProfitPanel({ data, period, onPeriod, busy, today }: {
-  data: SummaryRow | null;
-  period: PeriodKey;
-  onPeriod: (p: PeriodKey) => void;
-  busy: boolean;
-  today: Date;
-}) {
-  const net = data?.net_profit ?? 0;
-  const positive = net >= 0;
+function FreeMoneyPanel({ totals }: { totals: Totals }) {
+  const positive = totals.free >= 0;
   const stripe = positive ? 'from-emerald-400 via-teal-400 to-green-400' : 'from-rose-400 via-rose-500 to-orange-400';
   const amountColor = positive ? 'text-emerald-700' : 'text-rose-700';
-  const revenueNet = (data?.revenue ?? 0) - (data?.refunds ?? 0); // выручка за вычетом возвратов
 
   return (
     <div className="relative mt-8 rounded-3xl overflow-hidden bg-white ring-1 ring-slate-200 shadow-[0_12px_40px_rgba(15,23,42,0.10)]">
       <div className={`h-1 bg-gradient-to-r ${stripe}`} />
       <div className="relative px-6 py-6 md:px-8 md:py-7">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
-              {positive ? 'Чистая прибыль' : 'Убыток'}
+              {positive ? 'Свободные деньги' : 'Дефицит'}
             </div>
-            <div className="mt-0.5 text-[11px] text-slate-400">{periodRangeLabel(period, today)} · с учётом всех расходов</div>
+            <div className="mt-0.5 text-[11px] text-slate-400">с {formatDateRu(totals.fromISO)}</div>
           </div>
-          <PeriodToggle period={period} onPeriod={onPeriod} accent="emerald" />
+          <div className={`text-4xl md:text-5xl font-bold tabular-nums ${amountColor} leading-none tracking-tight`}>
+            {nf.format(Math.round(totals.free))} <span className="text-base font-medium text-slate-400">сом</span>
+          </div>
         </div>
 
-        <div className={`mt-4 text-4xl md:text-5xl font-bold tabular-nums ${amountColor} leading-none tracking-tight`}>
-          {busy ? '…' : nf.format(Math.round(net))} <span className="text-base font-medium text-slate-400">сом</span>
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] items-stretch gap-3">
-          <FormulaTile dot="bg-emerald-500" label="Выручка" value={`+${nf.format(Math.round(revenueNet))}`} tone="text-emerald-700" bg="from-emerald-50 to-teal-50/50" ring="ring-emerald-100" />
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-3">
+          <FormulaTile dot="bg-emerald-500" label="Выручка" value={`+${nf.format(Math.round(totals.revenue))}`} tone="text-emerald-700" bg="from-emerald-50 to-teal-50/50" ring="ring-emerald-100" />
           <Sign />
-          <FormulaTile dot="bg-slate-400" label="Себестоимость" value={`−${nf.format(Math.round(data?.cogs_total ?? 0))}`} tone="text-slate-700" bg="from-slate-50 to-slate-100/50" ring="ring-slate-200" />
+          <FormulaTile dot="bg-slate-400" label="Расходы" value={`−${nf.format(Math.round(totals.expenses))}`} tone="text-slate-700" bg="from-slate-50 to-slate-100/50" ring="ring-slate-200" />
           <Sign />
-          <FormulaTile dot="bg-amber-400" label="Расходы" value={`−${nf.format(Math.round(data?.opex_total ?? 0))}`} tone="text-amber-700" bg="from-amber-50 to-orange-50/50" ring="ring-amber-100" />
-          <Sign />
-          <FormulaTile dot="bg-rose-400" label="Зарплата" value={`−${nf.format(Math.round(data?.payroll_total ?? 0))}`} tone="text-rose-700" bg="from-rose-50 to-orange-50/50" ring="ring-rose-100" />
+          <FormulaTile dot="bg-rose-400" label="Зарплата" value={`−${nf.format(Math.round(totals.payroll))}`} tone="text-rose-700" bg="from-rose-50 to-orange-50/50" ring="ring-rose-100" />
         </div>
 
         <div className="mt-3 text-[11px] text-slate-400">
-          Выручка = полученные оплаты{data && data.refunds > 0 ? ` (минус возвраты ${nf.format(Math.round(data.refunds))})` : ''}. Расходы = аренда + коммуналка + налоги + ручные (промоутеры, дорога, прочее). Кредиты не вычитаются — это погашение долга, а не операционный расход.
+          Выручка = деньги, полученные за период (оплаты). Расходы = аренда + налоги + кредиты + себестоимость за период (без «авансов»). Это не котёл — котёл копится наперёд.
         </div>
       </div>
     </div>
