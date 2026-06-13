@@ -925,9 +925,6 @@ export default function Page() {
     [dailyRows]
   );
 
-  const adjForThisView = useMemo(() => (activeWeek ? 0 : dailyAdj), [activeWeek, dailyAdj]);
-  const dailyNetWithAdj = useMemo(() => dailyNetSum + adjForThisView, [dailyNetSum, adjForThisView]);
-
   async function openDaily(e: {
     id: number;
     fullName: string;
@@ -2598,52 +2595,15 @@ export default function Page() {
               </div>
 
               {showDailyFooter ? (
-                <div className="border-t border-slate-100 px-4 py-3 text-right text-sm space-y-1 bg-slate-50/80">
-                  <div>
-                    <span className="text-slate-600">
-                      {activeWeek ? "Итого по дням за неделю: " : "Итого по дням (без корректировок): "}
+                <div className="border-t border-slate-100 px-4 py-3 bg-slate-50/80">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-slate-600">
+                      {activeWeek ? "К выплате за неделю" : "К выплате за месяц"}
                     </span>
-                    <span className="font-semibold text-cyan-700 tabular-nums">
-                      {fmt(dailyNetSum)} сом
-                    </span>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-600">Корректировки месяца (включая премию за план): </span>
-                    <span className="font-semibold text-cyan-700 tabular-nums">
-                      {fmt(dailyAdj)} сом
-                    </span>
-                    {activeWeek ? (
-                      <span className="ml-2 text-xs text-slate-500">(не добавляются к итогу недели)</span>
-                    ) : null}
-                  </div>
-
-                  <div>
-                    <span className="text-slate-600">
-                      {activeWeek ? "К выплате за неделю (как в списке): " : "Итого за месяц (как в списке): "}
-                    </span>
-                    <span className="font-semibold text-cyan-700 tabular-nums">
+                    <span className="text-xl font-bold tabular-nums text-cyan-700">
                       {fmt(dailyMeta.netPeriod)} сом
                     </span>
-                    {activeWeek ? (
-                      <span className="ml-2 text-xs text-slate-500">• За месяц: {fmt(dailyMeta.netMonth)} сом</span>
-                    ) : null}
                   </div>
-
-                  {!activeWeek ? (
-                    <div>
-                      <span className="text-slate-600">Итого по дням + корректировки (для сверки): </span>
-                      <span className="font-semibold text-cyan-700 tabular-nums">
-                        {fmt(dailyNetWithAdj)} сом
-                      </span>
-                    </div>
-                  ) : null}
-
-                  {isMonthlyPlanMode ? (
-                    <div className="pt-1 text-xs text-slate-500">
-                      С 2026-02 месячная премия приходит через «корректировки месяца», в недельный итог не добавляется.
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
             </div>
