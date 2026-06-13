@@ -544,24 +544,24 @@ export default function TaxesPage() {
               { l: "Район", v: KANT.rayon },
               { l: "Режим", v: KANT.regime },
             ].map((r, i) => (
-              <div key={i} className="flex justify-between text-sm">
+              <div key={i} className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
                 <span className="text-slate-500">{r.l}</span>
                 <span className="font-medium text-slate-900">{r.v}</span>
               </div>
             ))}
             <div className="h-px bg-slate-200/40 my-1" />
             <p className="text-[10px] uppercase tracking-wider text-slate-400">Сотрудник (страховые взносы)</p>
-            <div className="flex justify-between text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
               <span className="text-slate-500">Кант</span>
               <span className="font-medium text-slate-900">Токтомушева Аэлина Мирлановна</span>
             </div>
             <div className="h-px bg-slate-200/40 my-1" />
             <p className="text-[10px] uppercase tracking-wider text-slate-400">Вход в cabinet.salyk.kg</p>
-            <div className="flex justify-between text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
               <span className="text-slate-500">Логин</span>
               <span className="font-mono font-medium text-slate-900">{KANT.login}</span>
             </div>
-            <div className="flex justify-between text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
               <span className="text-slate-500">Пароль</span>
               <span className="font-mono font-medium text-slate-900">{KANT.password}</span>
             </div>
@@ -577,32 +577,32 @@ export default function TaxesPage() {
               { l: "Районы", v: MAMA.rayon },
               { l: "Режим", v: MAMA.regime },
             ].map((r, i) => (
-              <div key={i} className="flex justify-between text-sm">
+              <div key={i} className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
                 <span className="text-slate-500">{r.l}</span>
                 <span className="font-medium text-slate-900">{r.v}</span>
               </div>
             ))}
             <div className="h-px bg-slate-200/40 my-1" />
             <p className="text-[10px] uppercase tracking-wider text-slate-400">Сотрудники (страховые взносы)</p>
-            <div className="flex justify-between text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
               <span className="text-slate-500">Кара-Балта</span>
               <span className="font-medium text-slate-900">Абдыразакова Гулзат Абдырасуловна</span>
             </div>
-            <div className="flex justify-between text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
               <span className="text-slate-500">Беловодск</span>
               <span className="font-medium text-slate-900">Аламанова Дилбара Байгазыевна</span>
             </div>
-            <div className="flex justify-between text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
               <span className="text-slate-500">Сокулук</span>
               <span className="font-medium text-slate-900">Токтобекова Аделя Бархатовна</span>
             </div>
             <div className="h-px bg-slate-200/40 my-1" />
             <p className="text-[10px] uppercase tracking-wider text-slate-400">Вход в cabinet.salyk.kg</p>
-            <div className="flex justify-between text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
               <span className="text-slate-500">Логин</span>
               <span className="font-mono font-medium text-slate-900">{MAMA.login}</span>
             </div>
-            <div className="flex justify-between text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-0.5 text-sm">
               <span className="text-slate-500">Пароль</span>
               <span className="font-mono font-medium text-slate-900">{MAMA.password}</span>
             </div>

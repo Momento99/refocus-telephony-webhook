@@ -175,7 +175,7 @@ export default function FranchiseSupplyPage() {
 
               return (
                 <div key={order.id} className="rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-                  <div className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-all"
+                  <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/50 transition-all"
                     onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(order.id) ? n.delete(order.id) : n.add(order.id); return n; })}>
                     <div className="flex items-center gap-4">
                       <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold text-[13px] shadow-md" style={{ background: COUNTRY_BG[order.country_id ?? 'kg'] }}>
@@ -234,7 +234,7 @@ export default function FranchiseSupplyPage() {
 
               return (
                 <div key={plan.branch_id} className="rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-                  <div className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-all"
+                  <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/50 transition-all"
                     onClick={() => { setExpandedPlan(prev => { const n = new Set(prev); n.has(plan.branch_id) ? n.delete(plan.branch_id) : n.add(plan.branch_id); return n; }); if (!result) loadPlanResult(plan.branch_id); }}>
                     <div className="flex items-center gap-4">
                       <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold text-[13px] shadow-md" style={{ background: COUNTRY_BG[plan.country_id] }}>
@@ -251,7 +251,7 @@ export default function FranchiseSupplyPage() {
                   {isExp && (
                     <div className="border-t border-slate-100 px-6 py-4 space-y-4">
                       {/* Параметры */}
-                      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                         {[
                           { label: 'Продаж/день', value: plan.sales_per_day, key: 'sales_per_day' },
                           { label: 'Месяцев', value: plan.plan_months, key: 'plan_months' },

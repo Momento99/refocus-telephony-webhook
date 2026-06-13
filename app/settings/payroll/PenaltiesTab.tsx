@@ -988,7 +988,7 @@ export default function PenaltiesTab() {
           </div>
 
           {/* Таблица */}
-          <div className="overflow-hidden rounded-2xl border border-slate-100">
+          <div className="overflow-x-auto rounded-2xl border border-slate-100">
             <div className="overflow-auto max-h-[60vh]">
               <table className="min-w-[900px] w-full text-sm">
                 <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">

@@ -634,7 +634,7 @@ export default function LensPricesSettingsPage() {
         </div>
 
         {/* ── Себестоимость линз (KGS, за одну линзу) ── */}
-        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <button
             type="button"
             onClick={() => setShowCosts((s) => !s)}
@@ -665,7 +665,7 @@ export default function LensPricesSettingsPage() {
                 const CatIcon = meta?.icon === 'layers' ? Layers : meta?.icon === 'star' ? Star : Crown;
 
                 return (
-                  <div key={cat} className="rounded-xl ring-1 ring-slate-200 overflow-hidden">
+                  <div key={cat} className="rounded-xl ring-1 ring-slate-200">
                     {/* Category header */}
                     <div className={cx('flex items-center gap-2.5 px-4 py-2.5', meta?.accentBg ?? 'bg-slate-500')}>
                       <CatIcon size={16} className="text-white" />
@@ -726,7 +726,7 @@ export default function LensPricesSettingsPage() {
         </div>
 
         {/* ── Предпросмотр формулы v6 (без записи в БД) ── */}
-        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <button
             type="button"
             onClick={() => setShowFormula((s) => !s)}
@@ -921,7 +921,7 @@ export default function LensPricesSettingsPage() {
         </div>
 
         {/* ── Филиальные цены по формуле ── */}
-        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
+        <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <button
             type="button"
             onClick={() => setShowBranches((s) => !s)}
@@ -1092,7 +1092,7 @@ export default function LensPricesSettingsPage() {
           ) : (
             <div className="space-y-6">
               {grouped.map(({ cat, meta, items }) => (
-                <div key={cat} className="overflow-hidden rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+                <div key={cat} className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
                   {/* Заголовок категории */}
                   <div className={cx('px-4 py-3.5 flex items-center gap-3', meta.accentBg)}>
                     <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">

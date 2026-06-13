@@ -416,7 +416,7 @@ export default function CustomersPage() {
               </div>
             </div>
 
-            <div className="md:col-span-2 flex gap-2">
+            <div className="md:col-span-2 flex flex-col sm:flex-row gap-2">
               <Select value={sortKey} onChange={(e) => setSortKey(e.target.value as typeof sortKey)}>
                 <option value="last_order_at">По дате последней покупки</option>
                 <option value="orders_count">По количеству заказов</option>

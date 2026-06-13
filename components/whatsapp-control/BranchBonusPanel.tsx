@@ -135,8 +135,8 @@ export default function BranchBonusPanel({ year, month }: { year: number; month:
       ) : rows.length === 0 ? (
         <div className="text-center py-6 text-slate-500 text-sm">Нет данных за выбранный месяц</div>
       ) : (
-        <div className="overflow-hidden rounded-xl ring-1 ring-slate-200">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200">
+          <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left">Филиал</th>
@@ -161,21 +161,21 @@ export default function BranchBonusPanel({ year, month }: { year: number; month:
                       onClick={() => toggle(r.branch_id)}
                     >
                       <td className="px-3 py-2.5 font-semibold text-slate-900">{r.branch_name}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
                         {r.wa_avg != null ? r.wa_avg.toFixed(1) : '—'}
                         <span className="ml-1 text-[10px] text-slate-400">({r.wa_threads})</span>
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
                         {r.ig_avg != null ? r.ig_avg.toFixed(1) : '—'}
                         <span className="ml-1 text-[10px] text-slate-400">({r.ig_threads})</span>
                       </td>
-                      <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${r.score_ok ? 'text-emerald-700' : 'text-slate-700'}`}>
+                      <td className={`px-3 py-2.5 text-right tabular-nums font-bold whitespace-nowrap ${r.score_ok ? 'text-emerald-700' : 'text-slate-700'}`}>
                         {r.combined_score != null ? r.combined_score.toFixed(2) : '—'}
                       </td>
-                      <td className={`px-3 py-2.5 text-right tabular-nums ${r.min_threads_ok ? 'text-slate-700' : 'text-orange-700 font-semibold'}`}>
+                      <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${r.min_threads_ok ? 'text-slate-700' : 'text-orange-700 font-semibold'}`}>
                         {r.total_threads}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">
                         {r.min_threads_required} <span className="text-[10px]">({r.total_shifts}см)</span>
                       </td>
                       <td className="px-3 py-2.5 text-right">

@@ -474,7 +474,7 @@ export default function FinanceSettingsPage() {
             <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Филиал</label>
             <div className="relative mt-1">
               <select
-                className="w-56 appearance-none rounded-xl bg-white px-3 py-2.5 pr-8 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
+                className="w-full sm:w-56 appearance-none rounded-xl bg-white px-3 py-2.5 pr-8 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
                 value={branchId}
                 onChange={(e) => setBranchId(Number(e.target.value))}
               >
@@ -580,7 +580,7 @@ export default function FinanceSettingsPage() {
             </ToolbarButton>
           }
         >
-          <div className="overflow-hidden rounded-xl ring-1 ring-sky-100 bg-white">
+          <div className="overflow-x-auto rounded-xl ring-1 ring-sky-100 bg-white">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
@@ -672,7 +672,7 @@ export default function FinanceSettingsPage() {
             </ToolbarButton>
           }
         >
-          <div className="overflow-hidden rounded-xl ring-1 ring-sky-100 bg-white">
+          <div className="overflow-x-auto rounded-xl ring-1 ring-sky-100 bg-white">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>

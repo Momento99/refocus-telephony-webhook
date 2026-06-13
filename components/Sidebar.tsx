@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ReceiptText, LineChart, WalletCards,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Menu, X,
   LogOut, LogIn, Boxes, FileText, Settings2,
   PackageCheck, Smartphone, BrainCircuit, Globe,
   Landmark, Map, MessageCircle, UsersRound, BookOpen,
@@ -88,8 +88,12 @@ export default function Sidebar({ role }: { role: Role }) {
   const router = useRouter();
 
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [unreadFranchise, setUnreadFranchise] = useState(0);
+
+  // Закрываем мобильный drawer при переходе на другую страницу
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   useEffect(() => {
     const supabase = getBrowserSupabase();
@@ -151,14 +155,38 @@ export default function Sidebar({ role }: { role: Role }) {
   }, [userEmail]);
 
   return (
-    <aside
-      className={`fixed top-0 left-0 z-30 flex h-full flex-col border-r transition-all duration-300 ${collapsed ? "w-[4.5rem]" : "w-64"}`}
-      style={{
-        background: "linear-gradient(180deg, #04070e, #030509)",
-        borderColor: "rgba(56,189,248,0.04)",
-        boxShadow: "4px 0 32px rgba(0,0,0,0.6)",
-      }}
-    >
+    <>
+      {/* Мобильная шапка с гамбургером (только < md) */}
+      <header
+        className="md:hidden fixed top-0 inset-x-0 z-30 flex h-14 items-center gap-3 border-b px-4"
+        style={{ background: "linear-gradient(180deg,#04070e,#030509)", borderColor: "rgba(56,189,248,0.06)" }}
+      >
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Открыть меню"
+          className="grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition hover:bg-white/5 hover:text-slate-100"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="font-kiona text-[13px] uppercase tracking-[0.25em] text-cyan-400">REFOCUS</div>
+      </header>
+
+      {/* Затемнение под drawer (только < md) */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed top-0 left-0 z-50 md:z-30 flex h-full flex-col border-r transition-all duration-300 md:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"} ${collapsed ? "w-[4.5rem]" : "w-64"}`}
+        style={{
+          background: "linear-gradient(180deg, #04070e, #030509)",
+          borderColor: "rgba(56,189,248,0.04)",
+          boxShadow: "4px 0 32px rgba(0,0,0,0.6)",
+        }}
+      >
       {/* Brand */}
       <div className="flex items-center gap-3.5 border-b px-4 py-5" style={{ borderColor: "rgba(56,189,248,0.06)" }}>
         <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 shadow-[0_2px_10px_rgba(56,189,248,0.2)] overflow-hidden">
@@ -174,6 +202,13 @@ export default function Sidebar({ role }: { role: Role }) {
             </div>
           </div>
         )}
+        <button
+          onClick={() => setMobileOpen(false)}
+          aria-label="Закрыть меню"
+          className="md:hidden ml-auto grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
       {/* Navigation */}
@@ -245,11 +280,12 @@ export default function Sidebar({ role }: { role: Role }) {
             </Link>
           )}
           <button onClick={() => setCollapsed((v) => !v)}
-            className="flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300 transition-colors">
+            className="hidden md:flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300 transition-colors">
             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>
     </aside>
+    </>
   );
 }

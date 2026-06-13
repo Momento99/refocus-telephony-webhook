@@ -136,13 +136,21 @@ body.pos-mode ::-webkit-scrollbar { width: 0; height: 0; }
 body.pos-mode { cursor: default !important; }
 
 /* === Авто-зум для кассового ПК (чтобы "всё влезало") === */
+/* Только на широких экранах (десктоп/касса). На телефонах zoom НЕ применяем. */
 body.pos-autozoom { zoom: 1; }
-@media (max-height: 840px) {
+@media (max-height: 840px) and (min-width: 1024px) {
   body.pos-autozoom { zoom: .90; }
 }
-@media (max-height: 740px) {
+@media (max-height: 740px) and (min-width: 1024px) {
   body.pos-autozoom { zoom: .80; }
 }
+
+/* === Каркас: отступ под сайдбар только на >=md; на мобильном контент во всю ширину === */
+.app-main { margin-left: 0; padding-top: 3.5rem; } /* 3.5rem = высота мобильной шапки (h-14) */
+@media (min-width: 768px) {
+  .app-main { margin-left: var(--sidebar-width, 16rem); padding-top: 0; }
+}
+body.pos-mode .app-main { padding-top: 0 !important; }
 
 /* === Печать: профили для чека (58 мм) и ценника (70×12 мм) === */
 

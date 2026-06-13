@@ -956,7 +956,7 @@ export default function AIControlPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 gap-y-2">
             <div className="relative">
               <select
                 value={selectedWeek}
@@ -978,7 +978,7 @@ export default function AIControlPage() {
 
         {/* ── Stats row ── */}
         <div className="mb-5 rounded-2xl bg-white p-4 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="text-center"><div className="text-2xl font-bold text-slate-900">{stats.total}</div><div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mt-0.5">в контуре</div></div>
             <div className="text-center"><div className="text-2xl font-bold text-emerald-600">{stats.generated}</div><div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mt-0.5">готово</div></div>
             <div className="text-center"><div className="text-2xl font-bold text-amber-600">{stats.riskyEmployees}</div><div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mt-0.5">риски</div></div>

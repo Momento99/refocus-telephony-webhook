@@ -414,7 +414,7 @@ function FourCaseView({ zones }: { zones: ZoneLayout[] }) {
       </div>
 
       {/* 4 витрины в ряд, на всю ширину — без горизонтальной прокрутки. */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {zones.map((z) => {
           const used = z.cells.flat().filter(Boolean).length;
           return (

@@ -1609,7 +1609,7 @@ export default function Page() {
   return (
     <div className="relative min-h-[100dvh] bg-transparent text-slate-50">
       {/* фоновые свечения */}
-      <div className="pointer-events-none absolute inset-0">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-24 left-1/2 h-72 w-[900px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[80px]" />
         <div className="absolute top-64 left-10 h-64 w-64 rounded-full bg-sky-500/10 blur-[70px]" />
         <div className="absolute bottom-0 right-0 h-72 w-72 rounded-full bg-emerald-500/10 blur-[80px]" />
@@ -1721,7 +1721,8 @@ export default function Page() {
         </div>
 
         {/* ===== Tab switcher ===== */}
-        <div className="mb-5 flex gap-1 rounded-2xl bg-white p-1 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] w-fit">
+        <div className="mb-5 overflow-x-auto">
+        <div className="flex gap-1 rounded-2xl bg-white p-1 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] w-fit">
           <button
             onClick={() => setTab("payroll")}
             className={cx(
@@ -1755,6 +1756,7 @@ export default function Page() {
           >
             Дисциплинарные взыскания
           </button>
+        </div>
         </div>
 
         {/* ===== Вкладка «Штрафы и графики» ===== */}
@@ -2455,7 +2457,7 @@ export default function Page() {
             onKeyDown={(e) => e.key === "Escape" && closeDaily()}
             tabIndex={-1}
           >
-            <div className="max-h-[90vh] w-[980px] overflow-hidden rounded-3xl bg-white/95 ring-1 ring-sky-200 shadow-[0_30px_120px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
+            <div className="max-h-[90vh] w-full max-w-[980px] overflow-hidden rounded-3xl bg-white/95 ring-1 ring-sky-200 shadow-[0_30px_120px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 bg-slate-50/80">
                 <div className="text-sm">
                   <div className="font-semibold text-slate-900">{dailyMeta.name}</div>

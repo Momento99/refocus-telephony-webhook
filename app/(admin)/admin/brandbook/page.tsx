@@ -76,14 +76,14 @@ export default function BrandbookPage() {
           <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-700 mb-2">
             Brand Book v1.0 · апрель 2026
           </div>
-          <div className="font-kiona text-slate-900 leading-none mb-3" style={{ fontSize: '52px', letterSpacing: '0.01em' }}>
+          <div className="font-kiona text-slate-900 leading-none mb-3 text-[clamp(28px,10vw,52px)]" style={{ letterSpacing: '0.01em' }}>
             refocus
           </div>
           <div
             className="rounded-full mb-5"
             style={{
               height: '4px',
-              width: '280px',
+              width: 'min(280px, 100%)',
               background: 'linear-gradient(90deg, #14B8A6 0%, #22D3EE 55%, #38BDF8 100%)',
             }}
           />
@@ -144,7 +144,7 @@ export default function BrandbookPage() {
           </div>
         </div>
 
-        <div className="mt-6 pt-5 border-t border-slate-100 grid grid-cols-3 gap-4">
+        <div className="mt-6 pt-5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Primary цвета</div>
             <div className="flex items-center gap-2">

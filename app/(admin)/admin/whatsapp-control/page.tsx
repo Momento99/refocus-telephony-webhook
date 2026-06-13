@@ -190,7 +190,7 @@ export default function WhatsAppControlPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1280px] px-6 py-8">
+    <div className="mx-auto max-w-[1280px] px-4 md:px-6 py-8">
       {/* Header */}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
@@ -253,7 +253,7 @@ export default function WhatsAppControlPage() {
       )}
 
       {/* Summary strip — две метрики раздельно: AI-качество и SLA-скорость */}
-      <div className="mb-4 grid grid-cols-2 md:grid-cols-6 gap-2">
+      <div className="mb-4 grid grid-cols-3 md:grid-cols-6 gap-2">
         <StripTile icon={MessageCircle} label="Всего диалогов за месяц" value={String(monthStrip.totalThreads)} />
         <StripTile icon={Sparkles} label="Качество AI · WA" value={monthStrip.waAvg != null ? monthStrip.waAvg.toFixed(1) : '—'} />
         <StripTile icon={Sparkles} label="Качество AI · IG" value={monthStrip.igAvg != null ? monthStrip.igAvg.toFixed(1) : '—'} />

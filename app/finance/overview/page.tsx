@@ -1007,7 +1007,7 @@ export default function FinanceOverviewPage() {
             <div className="flex flex-col">
               <label className="text-[11px] font-medium text-slate-500">Филиал</label>
               <select
-                className="mt-1 w-[220px] rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                className="mt-1 w-full sm:w-56 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                 value={branchId}
                 onChange={(e) => setBranchId(Number(e.target.value))}
               >
@@ -1023,7 +1023,7 @@ export default function FinanceOverviewPage() {
             <div className="flex flex-col">
               <label className="text-[11px] font-medium text-slate-500">Период</label>
               <select
-                className="mt-1 w-[190px] rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                className="mt-1 w-full sm:w-48 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                 value={periodMode}
                 onChange={(e) => setPeriodMode(e.target.value as PeriodMode)}
               >
@@ -1041,7 +1041,7 @@ export default function FinanceOverviewPage() {
                 <div className="relative mt-1">
                   <input
                     type="month"
-                    className="w-[210px] rounded-[14px] bg-white/90 pl-9 pr-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                    className="w-full sm:w-52 rounded-[14px] bg-white/90 pl-9 pr-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                     value={month}
                     onChange={(e) => setMonth(e.target.value)}
                   />
@@ -1059,7 +1059,7 @@ export default function FinanceOverviewPage() {
                     inputMode="numeric"
                     min={2000}
                     max={dayjs().year()}
-                    className="w-[150px] rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                    className="w-full sm:w-36 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                     value={year}
                     onChange={(e) => setYear(e.target.value)}
                   />
@@ -1073,7 +1073,7 @@ export default function FinanceOverviewPage() {
                   <label className="text-[11px] font-medium text-slate-500">С</label>
                   <input
                     type="date"
-                    className="mt-1 w-[170px] rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                    className="mt-1 w-full sm:w-44 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                     value={rangeFrom}
                     onChange={(e) => setRangeFrom(e.target.value)}
                   />
@@ -1082,7 +1082,7 @@ export default function FinanceOverviewPage() {
                   <label className="text-[11px] font-medium text-slate-500">По</label>
                   <input
                     type="date"
-                    className="mt-1 w-[170px] rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                    className="mt-1 w-full sm:w-44 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                     value={rangeTo}
                     onChange={(e) => setRangeTo(e.target.value)}
                   />
@@ -1204,7 +1204,7 @@ export default function FinanceOverviewPage() {
         {/* KPI блоки */}
         {summary && (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
               <StatCard title="Доходы" value={fmt(summary.total_income)} icon={CircleDollarSign} tone="ok" subtitle="Оплаченные заказы (без воскресенья)" />
               <StatCard title="Возвраты" value={fmt(summary.total_refunds)} icon={Undo2} tone="info" subtitle="Возвраты (без воскресенья)" />
               <StatCard title="OPEX" value={fmt(summary.opex_total)} icon={Cog} tone="warn" subtitle="Расходы (без воскресенья)" />
@@ -1260,7 +1260,7 @@ export default function FinanceOverviewPage() {
             </div>
 
             <div className="p-5 overflow-auto">
-              <div className="min-w-[860px] overflow-hidden rounded-2xl ring-1 ring-slate-200 bg-white/70 backdrop-blur-xl shadow-[0_18px_60px_rgba(15,23,42,0.12)]">
+              <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200 bg-white/70 backdrop-blur-xl shadow-[0_18px_60px_rgba(15,23,42,0.12)]">
                 <table className="w-full text-sm">
                   <thead className="bg-white/90">
                     <tr>
@@ -1302,7 +1302,7 @@ export default function FinanceOverviewPage() {
           </div>
 
           <div className="p-5">
-            <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200 bg-white/70 backdrop-blur-xl shadow-[0_18px_60px_rgba(15,23,42,0.12)]">
+            <div className="overflow-x-auto rounded-2xl ring-1 ring-slate-200 bg-white/70 backdrop-blur-xl shadow-[0_18px_60px_rgba(15,23,42,0.12)]">
               <table className="w-full text-sm">
                 <thead className="bg-white/90">
                   <tr>

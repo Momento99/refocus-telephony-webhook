@@ -140,7 +140,7 @@ export default function FranchisePortalPage() {
       </div>
 
       {/* ═══ STATS ═══ */}
-      <div className="px-5 max-w-5xl mx-auto mb-6 grid grid-cols-3 gap-3">
+      <div className="px-5 max-w-5xl mx-auto mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
           { label: 'Всего', value: users.length, bg: 'bg-cyan-50', ring: 'ring-cyan-200', dot: 'bg-cyan-500', text: 'text-cyan-700' },
           { label: 'Активных', value: activeCount, bg: 'bg-emerald-50', ring: 'ring-emerald-200', dot: 'bg-emerald-500', text: 'text-emerald-700' },
@@ -162,7 +162,7 @@ export default function FranchisePortalPage() {
       {showForm && (
         <div className="mb-6 rounded-3xl ring-1 ring-slate-200 bg-white p-6 shadow-[0_4px_24px_rgba(15,23,42,0.06)]">
           <div className="text-base font-bold text-slate-800 mb-4">Новый франчайзи</div>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
             <div>
               <label className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5 block">Логин</label>
               <input type="text" value={newLogin} onChange={(e) => setNewLogin(e.target.value)}
@@ -211,8 +211,8 @@ export default function FranchisePortalPage() {
         ) : (
           <div>
             {users.map((u) => (
-              <div key={u.id} className="flex items-center justify-between px-6 py-4 border-b border-sky-50 hover:bg-sky-50/30 transition-colors" style={{ opacity: u.is_active ? 1 : 0.55 }}>
-                <div className="flex items-center gap-4 flex-1">
+              <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-4 border-b border-sky-50 hover:bg-sky-50/30 transition-colors gap-3" style={{ opacity: u.is_active ? 1 : 0.55 }}>
+                <div className="flex items-center gap-4 flex-1 flex-wrap">
                   {/* Avatar */}
                   <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm ${u.is_active ? 'bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400' : 'bg-slate-300'}`}>
                     {u.login[0]?.toUpperCase()}

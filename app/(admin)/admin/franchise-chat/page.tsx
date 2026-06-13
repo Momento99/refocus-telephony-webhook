@@ -180,7 +180,7 @@ export default function FranchiseChatPage() {
       {showNotif && (
         <div className="mb-5 rounded-2xl bg-white ring-1 ring-slate-200 p-5">
           <div className="text-[13px] font-semibold text-slate-900 mb-3">Отправить уведомление</div>
-          <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="grid grid-cols-1 gap-3 mb-3 sm:grid-cols-3">
             <div>
               <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1 block">Кому</label>
               <select value={notifBranch ?? ''} onChange={(e) => setNotifBranch(e.target.value ? Number(e.target.value) : null)}
@@ -224,7 +224,7 @@ export default function FranchiseChatPage() {
       <div className="flex gap-4" style={{ height: 'calc(100vh - 220px)', minHeight: '500px' }}>
 
         {/* ── Branch list ── */}
-        <div className="w-[240px] shrink-0 rounded-2xl bg-white ring-1 ring-slate-200 overflow-hidden flex flex-col">
+        <div className="hidden sm:flex w-[240px] shrink-0 rounded-2xl bg-white ring-1 ring-slate-200 overflow-hidden flex-col">
           <div className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">Филиалы</div>
           {loading ? (
             <div className="p-4 text-sm text-slate-500 text-center">Загрузка...</div>

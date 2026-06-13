@@ -439,7 +439,7 @@ export default function TeamDashboardPage() {
                               )}
                             </div>
                             {/* Sub-scores */}
-                            <div className={`mt-3 grid gap-2 ${r.is_voice_pilot ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                            <div className={`mt-3 grid gap-2 ${r.is_voice_pilot ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
                               <MiniStat icon={Briefcase} label="Продажи" value={s.sales} />
                               <MiniStat icon={HeartPulse} label="Сервис" value={s.service} />
                               <MiniStat icon={Shield} label="Дисциплина" value={s.discipline} />
@@ -1087,7 +1087,7 @@ function EmployeeDrawer({
               <Receipt className="mr-1.5 inline h-4 w-4 text-cyan-500" />
               Лично пробитые чеки ({detail.orders.length})
             </h3>
-            <div className="overflow-hidden rounded-xl ring-1 ring-slate-100">
+            <div className="overflow-x-auto rounded-xl ring-1 ring-slate-100">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                   <tr>

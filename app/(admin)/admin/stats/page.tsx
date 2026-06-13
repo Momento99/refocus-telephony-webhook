@@ -2939,7 +2939,7 @@ function ChartFrame({
 
 function GlassTable({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-sky-100">
+    <div className="overflow-x-auto rounded-2xl bg-white ring-1 ring-sky-100">
       {children}
     </div>
   );
@@ -3088,7 +3088,7 @@ function DateField({
         max={max}
         onChange={(e) => onChange(e.target.value)}
         onClick={openPicker}
-        className="w-[150px] cursor-pointer rounded-xl bg-white px-3 py-2.5 pr-9 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-y-0 [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
+        className="w-full min-w-[120px] sm:w-[150px] cursor-pointer rounded-xl bg-white px-3 py-2.5 pr-9 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-y-0 [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
       />
       <button
         type="button"

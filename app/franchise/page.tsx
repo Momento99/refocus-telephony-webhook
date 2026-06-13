@@ -143,7 +143,7 @@ export default function FranchiseMapPage() {
       <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-sky-600/10 blur-[100px] rounded-full translate-x-1/3 translate-y-1/3 pointer-events-none" />
 
       {/* Верхний бар */}
-      <div className="relative z-10 px-8 py-6 flex items-center justify-between border-b border-slate-800/60 bg-slate-950/50 backdrop-blur-md">
+      <div className="relative z-10 px-4 sm:px-8 py-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-800/60 bg-slate-950/50 backdrop-blur-md">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center shadow-lg shadow-sky-500/30">
             <MapPin size={24} className="text-white" />
@@ -154,7 +154,7 @@ export default function FranchiseMapPage() {
           </div>
         </div>
         
-        <div className="flex gap-6">
+        <div className="flex flex-wrap gap-6">
           <div className="flex flex-col items-end">
             <span className="text-3xl font-bold text-white">5</span>
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Действующих точек</span>
@@ -178,7 +178,7 @@ export default function FranchiseMapPage() {
         </div>
 
         {/* Легенда (Информационная панель сбоку) */}
-        <div className="absolute bottom-10 left-10 w-80 bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 shadow-2xl flex flex-col gap-6">
+        <div className="absolute bottom-4 left-4 sm:bottom-10 sm:left-10 w-[calc(100vw-2rem)] sm:w-80 bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 shadow-2xl flex flex-col gap-6">
           
           <div>
             <div className="flex items-center gap-2 text-white font-bold text-sm uppercase tracking-wider mb-4 border-b border-slate-800 pb-2">

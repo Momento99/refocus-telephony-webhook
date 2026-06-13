@@ -1223,7 +1223,7 @@ export default function NewOrderPage(): JSX.Element {
     <div className="min-h-[calc(100vh-64px)] bg-[radial-gradient(1200px_600px_at_50%_-100px,rgba(99,102,241,0.08),transparent)]">
       <div className="mx-auto max-w-6xl px-4 py-6 space-y-5">
         {/* Заголовок страницы */}
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900">
               <Layers className="text-indigo-600" size={20} />
@@ -1638,7 +1638,7 @@ export default function NewOrderPage(): JSX.Element {
                       </div>
                     </div>
                   ))}
-                  <div className="md:col-span-3 flex gap-2">
+                  <div className="md:col-span-3 flex flex-wrap gap-2">
                     <button
                       className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50"
                       onClick={() => setActiveStep(3)}

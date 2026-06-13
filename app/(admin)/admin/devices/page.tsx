@@ -224,7 +224,7 @@ export default function DeviceHubPage() {
       </div>
 
       {/* ═══ STATS ═══ */}
-      <div className="px-5 max-w-6xl mx-auto mb-6 grid grid-cols-3 gap-4">
+      <div className="px-5 max-w-6xl mx-auto mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Всего устройств', value: allTerminals.length, bg: 'bg-cyan-50', ring: 'ring-cyan-200', dot: 'bg-cyan-500', text: 'text-cyan-700' },
           { label: 'Работают', value: activeCount, bg: 'bg-emerald-50', ring: 'ring-emerald-200', dot: 'bg-emerald-500', text: 'text-emerald-700' },
@@ -265,7 +265,7 @@ export default function DeviceHubPage() {
               <div className="text-[12px] text-slate-400">Загрузка версий и экстренные обновления</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 items-start">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
             {(countries.length > 0 ? countries : [
               { id: 'kg', name: 'Кыргызстан', currency_symbol: 'с' },
               { id: 'kz', name: 'Казахстан', currency_symbol: '₸' },
@@ -510,7 +510,7 @@ function BuildCard({ type, build, onBump, color }: {
 
         {/* Bump buttons */}
         {build?.state !== 'building' && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {bumps.map(b => (
               <button key={b.type} onClick={() => onBump(b.type)}
                 className={`rounded-2xl px-4 py-3.5 text-left transition-all ring-1 ${

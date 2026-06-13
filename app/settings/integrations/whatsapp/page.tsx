@@ -416,7 +416,7 @@ export default function WhatsAppIntegrationPage() {
               label="Webhook Verify Token"
               hint="Любая случайная строка. Понадобится при настройке вебхука в Meta Dashboard."
             >
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Input
                   value={verifyToken}
                   onChange={(e) => setVerifyToken(e.target.value)}

@@ -433,14 +433,14 @@ export default function DayDrawer({
                 defaultOpen={false}
                 count={(showWa ? filtered.wa.sla_threads.length : 0) + (showIg ? filtered.ig.sla_threads.length : 0)}
               >
-                <div className="rounded-xl overflow-hidden ring-1 ring-slate-200">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200">
+                  <table className="w-full min-w-[400px] text-sm">
                     <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-3 py-2 text-left">Канал</th>
                         <th className="px-3 py-2 text-left">Филиал</th>
                         <th className="px-3 py-2 text-left">Клиент</th>
-                        <th className="px-3 py-2 text-right">Время ответа</th>
+                        <th className="px-3 py-2 text-right whitespace-nowrap">Время ответа</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -686,7 +686,7 @@ function SlaRow({ channel, item }: { channel: 'wa' | 'ig'; item: ChannelDay['sla
       </td>
       <td className="px-3 py-2 text-[12px] text-slate-700">{item.branch_name ?? '—'}</td>
       <td className="px-3 py-2 text-[12px] text-slate-700">{item.customer_name || '—'}</td>
-      <td className="px-3 py-2 text-right text-[12px] font-semibold text-amber-700">
+      <td className="px-3 py-2 text-right text-[12px] font-semibold text-amber-700 whitespace-nowrap">
         {item.response_minutes != null ? `${item.response_minutes.toFixed(0)} мин` : '—'}
       </td>
     </tr>
@@ -708,13 +708,13 @@ function SellersTable({ wa, ig }: { wa: ChannelDay['sellers']; ig: ChannelDay['s
     return bv - av;
   });
   return (
-    <div className="rounded-xl overflow-hidden ring-1 ring-slate-200">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200">
+      <table className="w-full min-w-[320px] text-sm">
         <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-3 py-2 text-left">Продавец</th>
-            <th className="px-3 py-2 text-right">WA</th>
-            <th className="px-3 py-2 text-right">IG</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">WA</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">IG</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">

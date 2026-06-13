@@ -260,7 +260,7 @@ export default function InstagramControlPage() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <BranchPicker branches={branches} value={branchFilter} onChange={setBranchFilter} />
             <PeriodPicker value={period} onChange={setPeriod} />
             <button
@@ -303,7 +303,7 @@ export default function InstagramControlPage() {
             </span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[600px] text-sm">
               <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="text-left px-4 py-3">Продавец</th>
@@ -367,7 +367,7 @@ export default function InstagramControlPage() {
             <TrendingUp className="text-cyan-600" size={18} />
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[600px] text-sm">
               <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="text-left px-4 py-3">Филиал</th>

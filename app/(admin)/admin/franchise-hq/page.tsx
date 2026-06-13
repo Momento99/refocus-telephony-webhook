@@ -526,7 +526,7 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
     >
       {/* ── Top toolbar ── */}
       <div
-        className="shrink-0 flex items-center gap-3 px-5 py-2.5"
+        className="shrink-0 flex flex-wrap items-center gap-3 px-5 py-2.5"
         onMouseDown={e => e.stopPropagation()}
       >
         <div className="flex-1 min-w-0 flex items-center gap-2">
@@ -614,10 +614,10 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
           }}
         >
           {/* Document title block */}
-          <div className="px-14 pt-10 pb-6 border-b border-slate-100">
+          <div className="px-4 pt-10 pb-6 border-b border-slate-100 sm:px-10 md:px-14">
             <div
-              className="font-kiona text-slate-900 leading-none mb-2"
-              style={{ fontSize: '52px', letterSpacing: '0.01em' }}
+              className="font-kiona text-[clamp(28px,10vw,52px)] text-slate-900 leading-none mb-2"
+              style={{ letterSpacing: '0.01em' }}
             >
               refocus
             </div>
@@ -646,7 +646,7 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
           </div>
 
           {/* Content area */}
-          <div className="px-14 py-8">
+          <div className="px-4 py-8 sm:px-10 md:px-14">
             {trainerInfo.unbalanced && (
               <div className="mb-5 rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-3 text-[12.5px] text-amber-800">
                 <div className="font-semibold mb-0.5">Несбалансированные маркеры тренера</div>
@@ -1745,7 +1745,7 @@ export default function FranchiseHQPage() {
                                         />
                                         <button
                                           onClick={ev => { ev.stopPropagation(); void removeImage(item.id, item.initialStatus, imgIdx); }}
-                                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity hover:bg-red-500"
                                           title="Удалить"
                                         >×</button>
                                       </div>
@@ -1796,7 +1796,7 @@ export default function FranchiseHQPage() {
                                     </a>
                                     <button
                                       onClick={ev => { ev.stopPropagation(); void removeDocument(item.id, item.initialStatus, docIdx); }}
-                                      className="shrink-0 p-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                                      className="shrink-0 p-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                                       title="Удалить"
                                     >
                                       <Trash2 size={12} />
@@ -1856,7 +1856,7 @@ export default function FranchiseHQPage() {
                                       </a>
                                       <button
                                         onClick={ev => { ev.stopPropagation(); void removeVideo(item.id, item.initialStatus, vidIdx); }}
-                                        className="shrink-0 p-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                                        className="shrink-0 p-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                                         title="Удалить"
                                       >
                                         <Trash2 size={12} />

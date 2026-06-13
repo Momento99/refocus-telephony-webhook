@@ -43,10 +43,7 @@ export default async function RootLayout({
         <div className="flex relative">
           <PosAwareSidebar role={role} />
 
-          <main
-            className="flex-1 min-h-screen transition-all duration-300"
-            style={{ marginLeft: "var(--sidebar-width, 16rem)" }}
-          >
+          <main className="app-main flex-1 min-h-screen transition-all duration-300">
             <div className="mx-auto max-w-7xl px-5 pt-8 pb-10">
               <ClientShell>{children}</ClientShell>
             </div>

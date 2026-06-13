@@ -125,7 +125,7 @@ export default function FranchiseFinancePage() {
       </div>
 
       {/* Stats */}
-      <div className="px-5 max-w-5xl mx-auto mb-6 grid grid-cols-3 gap-4">
+      <div className="px-5 max-w-5xl mx-auto mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
           { label: 'Ожидает оплаты', value: fmtNum(totalPending), bg: 'bg-amber-50', ring: 'ring-amber-200', dot: 'bg-amber-500', text: 'text-amber-700' },
           { label: 'Оплачено', value: fmtNum(totalPaid), bg: 'bg-emerald-50', ring: 'ring-emerald-200', dot: 'bg-emerald-500', text: 'text-emerald-700' },
@@ -153,7 +153,7 @@ export default function FranchiseFinancePage() {
             <div key={c.id} className="rounded-3xl bg-white ring-1 ring-slate-200 shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-hidden">
               {/* Contract header */}
               <div className="px-6 py-5 cursor-pointer hover:bg-slate-50/50 transition-all" onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-[14px] shadow-md" style={{ background: COUNTRY_BG[c.country_id ?? 'kg'] ?? '#94a3b8' }}>
                       {(c.country_id ?? 'kg').toUpperCase()}
@@ -165,7 +165,7 @@ export default function FranchiseFinancePage() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     {pendingCount > 0 && (
                       <span className="text-[11px] font-bold text-amber-600 bg-amber-50 ring-1 ring-amber-200 rounded-full px-2.5 py-1">{pendingCount} к оплате</span>
                     )}
@@ -189,7 +189,7 @@ export default function FranchiseFinancePage() {
                   {cInvoices.length === 0 && <div className="text-center py-6 text-[13px] text-slate-400">Нет начислений. Нажмите «Начислить роялти».</div>}
 
                   {cInvoices.map(inv => (
-                    <div key={inv.id} className={`rounded-2xl px-5 py-4 ring-1 flex items-center justify-between ${
+                    <div key={inv.id} className={`rounded-2xl px-5 py-4 ring-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
                       inv.status === 'paid' ? 'bg-emerald-50/50 ring-emerald-100'
                       : inv.status === 'overdue' ? 'bg-rose-50/50 ring-rose-100'
                       : 'bg-amber-50/30 ring-amber-100'
@@ -297,7 +297,7 @@ function ContractModal({ sb, onClose, onCreated }: { sb: () => any; onClose: () 
               {branches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Дата начала</label>
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
@@ -311,7 +311,7 @@ function ContractModal({ sb, onClose, onCreated }: { sb: () => any; onClose: () 
           </div>
           <div>
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Роялти по годам (%)</label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div><div className="text-[10px] text-slate-400 mb-1">1-й год</div><input value={y1} onChange={e => setY1(e.target.value)} className="w-full rounded-xl bg-white px-3 py-2 text-sm text-center ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-emerald-400" /></div>
               <div><div className="text-[10px] text-slate-400 mb-1">2-й год</div><input value={y2} onChange={e => setY2(e.target.value)} className="w-full rounded-xl bg-white px-3 py-2 text-sm text-center ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-emerald-400" /></div>
               <div><div className="text-[10px] text-slate-400 mb-1">3-й год+</div><input value={y3} onChange={e => setY3(e.target.value)} className="w-full rounded-xl bg-white px-3 py-2 text-sm text-center ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-emerald-400" /></div>

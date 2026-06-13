@@ -189,7 +189,7 @@ export default function AnalysisCalendar({
   return (
     <section className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] overflow-hidden">
       {/* Header: nav + heatmap toggle */}
-      <div className="px-5 py-4 flex items-center justify-between gap-3 border-b border-slate-100">
+      <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -275,7 +275,7 @@ export default function AnalysisCalendar({
                 disabled={disabled}
                 onClick={() => { if (!disabled && hasAny) onDayClick(cell.date); }}
                 className={[
-                  'relative min-h-[140px] flex flex-col p-2 text-left transition rounded-xl',
+                  'relative min-h-[84px] sm:min-h-[140px] flex flex-col p-2 text-left transition rounded-xl',
                   !cell.isCurrentMonth ? 'opacity-20 pointer-events-none' :
                     cell.isFuture || cell.tooOld ? 'opacity-30 cursor-default' :
                     isSelected ? 'ring-2 ring-inset ring-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.35)] bg-white' :
@@ -299,7 +299,7 @@ export default function AnalysisCalendar({
                 {/* Мини-плитки по филиалам — одна строка из 5 колонок с
                     объединённой WA+IG оценкой. Видно сразу «общались/нет». */}
                 {cell.isCurrentMonth && !cell.isFuture && !cell.tooOld && branchesToRender.length > 0 && (
-                  <div className={`mt-1.5 grid gap-1`} style={{ gridTemplateColumns: `repeat(${branchesToRender.length}, minmax(0, 1fr))` }}>
+                  <div className={`hidden sm:grid mt-1.5 gap-1`} style={{ gridTemplateColumns: `repeat(${branchesToRender.length}, minmax(0, 1fr))` }}>
                     {branchesToRender.map((b) => {
                       const data = bucket ? combinedBranchScore(bucket, b.id) : null;
                       const hasActivity = !!data && data.threads > 0;

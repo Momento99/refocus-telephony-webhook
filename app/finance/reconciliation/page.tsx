@@ -586,7 +586,7 @@ export default function Page() {
         </div>
 
         {/* Навигация по неделям */}
-        <div className="flex items-center justify-between rounded-2xl bg-white ring-1 ring-sky-100 px-4 py-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white ring-1 ring-sky-100 px-4 py-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <button
             onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, -1))}
             className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors"
@@ -632,7 +632,7 @@ export default function Page() {
             />
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           </div>
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <LegendChip color="emerald" label={`Совпадает: ${cashSummary.match}`} />
             <LegendChip color="red" label={`Недостача: ${cashSummary.shortage}`} />
             <LegendChip color="yellow" label={`Переплата: ${cashSummary.overpay}`} />
@@ -1100,7 +1100,7 @@ function BranchCard({
 
       {/* Inputs */}
       <div className="mt-4 space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -1202,7 +1202,7 @@ function OnlineCard({
       </div>
 
       {/* Numbers */}
-      <div className="mt-4 grid grid-cols-4 gap-3">
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <MiniKV k="Должно по POS" v={fmtKGS(row.expected_amount)} />
         <MiniKV k="Факт по банку" v={fmtKGS(row.manual_amount)} />
         <MiniKV k="Комиссия" v={fmtKGS(row.commission)} />
@@ -1326,7 +1326,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl rounded-3xl bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100"
+        className="relative w-full max-w-2xl rounded-3xl bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100 max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <button

@@ -615,7 +615,7 @@ export default function FrameProcurementPage() {
   }, [catalog, filter]);
 
   return (
-    <div className="min-h-screen p-6">
+    <div className="min-h-screen p-4 md:p-6">
       {/* ─────── Шапка ─────── */}
       <div className="mb-6 flex items-start gap-3">
         <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
@@ -829,7 +829,7 @@ export default function FrameProcurementPage() {
                       toast.error(err.message || 'Ошибка', { id: t });
                     }
                   }}
-                  className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-rose-500/90 text-white opacity-0 shadow-md transition group-hover:opacity-100 hover:bg-rose-500"
+                  className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-rose-500/90 text-white opacity-100 sm:opacity-0 shadow-md transition sm:group-hover:opacity-100 hover:bg-rose-500"
                   title="Удалить эту карточку"
                 >
                   <X className="h-4 w-4" />
@@ -1100,7 +1100,7 @@ export default function FrameProcurementPage() {
               );
             })()}
 
-            <div className="overflow-hidden rounded-xl ring-1 ring-sky-100">
+            <div className="overflow-x-auto rounded-xl ring-1 ring-sky-100">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50/80">
                   <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1210,7 +1210,7 @@ export default function FrameProcurementPage() {
         {orders.length === 0 ? (
           <div className="py-6 text-center text-sm text-slate-500">Пока заказов нет.</div>
         ) : (
-          <div className="overflow-hidden rounded-xl ring-1 ring-sky-100">
+          <div className="overflow-x-auto rounded-xl ring-1 ring-sky-100">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/80">
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1380,7 +1380,7 @@ function ItemEditorModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl rounded-3xl bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100"
+        className="w-full max-w-4xl rounded-3xl bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100 max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between">
@@ -1407,7 +1407,7 @@ function ItemEditorModal({
           {/* Фото — sticky на больших экранах, чтобы при скролле полей оставалось видно.
               min-h гарантирует читаемый размер даже для маленьких/широких фото.
               Клик открывает полное фото в новой вкладке. */}
-          <div className="overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200 lg:sticky lg:top-2 self-start flex items-center justify-center min-h-[480px]">
+          <div className="overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200 lg:sticky lg:top-2 self-start flex items-center justify-center min-h-[220px] sm:min-h-[480px]">
             {item.signed_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <a

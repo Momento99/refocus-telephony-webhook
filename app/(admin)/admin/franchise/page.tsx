@@ -1305,7 +1305,7 @@ export default function FranchisePage() {
                 <Zap size={15} />
                 + Франчайзи
               </button>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div className="rounded-2xl bg-white/85 px-4 py-3 ring-1 ring-sky-200/70 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500/90">На сегодня</div>
                 <div className="mt-1 text-sm font-semibold text-slate-900">{TODAY}</div>
@@ -1448,9 +1448,9 @@ export default function FranchisePage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-2xl bg-white/70 ring-1 ring-sky-200/40 shadow-[0_20px_60px_rgba(15,23,42,0.14)] backdrop-blur-xl">
+        <div className="overflow-x-auto rounded-2xl bg-white/70 ring-1 ring-sky-200/40 shadow-[0_20px_60px_rgba(15,23,42,0.14)] backdrop-blur-xl">
           {/* Шапка */}
-          <div className="overflow-x-auto">
+          <div>
             <div className="min-w-[700px]">
               <div className="grid grid-cols-[2fr_60px_130px_110px_70px_70px_80px_90px_28px] gap-x-3 border-b border-sky-100/80 bg-gradient-to-r from-slate-50 via-white to-sky-50/70 px-4 py-3">
                 <SortTh label="Франчайзи" k="name" sort={sort} onSort={toggleSort} />
@@ -1779,7 +1779,7 @@ function CreateFranchiseeModal({ onClose, onSubmit }: {
           {/* Страна */}
           <div>
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Страна</label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {COUNTRIES.map(c => (
                 <button key={c.id} type="button" onClick={() => setCountryId(c.id)}
                   className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-[13px] font-medium ring-1 transition-all ${
@@ -1798,7 +1798,7 @@ function CreateFranchiseeModal({ onClose, onSubmit }: {
           </div>
 
           {/* Организация и Филиал */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                 Название организации <span className="text-rose-400">*</span>
@@ -1818,7 +1818,7 @@ function CreateFranchiseeModal({ onClose, onSubmit }: {
           </div>
 
           {/* Город и Часы работы */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Город</label>
               <input value={city} onChange={e => setCity(e.target.value)}
@@ -1836,7 +1836,7 @@ function CreateFranchiseeModal({ onClose, onSubmit }: {
           {/* Разделитель */}
           <div className="border-t border-slate-100 pt-4">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Контактное лицо (необязательно)</div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <label className="block text-[10px] font-medium text-slate-400 mb-1">ФИО</label>
                 <input value={contactName} onChange={e => setContactName(e.target.value)}
@@ -1861,7 +1861,7 @@ function CreateFranchiseeModal({ onClose, onSubmit }: {
           {/* Превью настроек */}
           <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 px-4 py-3">
             <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Будет создано автоматически</div>
-            <div className="grid grid-cols-3 gap-3 text-[12px]">
+            <div className="grid grid-cols-1 gap-3 text-[12px] sm:grid-cols-3">
               <div>
                 <div className="text-slate-400">Таймзона</div>
                 <div className="font-medium text-slate-800">

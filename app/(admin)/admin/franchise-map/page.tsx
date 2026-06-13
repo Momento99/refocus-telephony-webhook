@@ -699,7 +699,7 @@ export default function FranchiseMapPage() {
           {/* Управление сетью */}
           <div>
             <div className="mb-2 ml-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/60">Управление сетью</div>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {[
                 { href: '/admin/franchise', icon: BarChart3, label: 'Центр управления', sub: 'Филиалы, выручка, команда' },
                 { href: '/admin/devices', icon: Monitor, label: 'Центр устройств', sub: 'Терминалы и обновления' },
@@ -722,7 +722,7 @@ export default function FranchiseMapPage() {
           {/* Настройка и снабжение */}
           <div>
             <div className="mb-2 ml-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/60">Настройка и снабжение</div>
-            <div className="grid grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {[
                 { href: '/admin/franchise-ramp-up/setup', icon: Settings2, label: 'Настройка', sub: 'Организации, филиалы' },
                 { href: '/admin/franchise-portal', icon: KeyRound, label: 'Доступы', sub: 'Логины портала' },
@@ -744,11 +744,11 @@ export default function FranchiseMapPage() {
           </div>
 
           {/* Документация + Запуск/Отключение */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {/* Документация */}
             <div>
               <div className="mb-2 ml-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/60">Документация</div>
-              <div className="grid grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 {[
                   { href: '/admin/franchise-hq', icon: BookOpen, label: 'Материалы HQ' },
                   { href: '/admin/franchise-docs', icon: FileText, label: 'Документы' },
@@ -802,8 +802,7 @@ export default function FranchiseMapPage() {
       <div className="flex flex-col gap-6">
 
         {/* ── Контейнер карты ── */}
-        <div className="map-fs-wrapper w-full rounded-2xl overflow-hidden ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] relative bg-[#1e293b]"
-          style={{ minHeight: '830px' }}>
+        <div className="map-fs-wrapper w-full rounded-2xl overflow-hidden ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] relative bg-[#1e293b] min-h-[60vh] md:min-h-[830px]">
           {!mapReady && !mapError && (
             <div className="absolute inset-0 bg-slate-50 flex flex-col items-center justify-center z-10 gap-3">
               <div className="w-10 h-10 rounded-full border-4 border-cyan-200 border-t-cyan-500 animate-spin" />
@@ -820,7 +819,7 @@ export default function FranchiseMapPage() {
 
           {/* Кнопки управления картой */}
           {mapReady && (
-            <div className="absolute top-4 left-4 z-[500] flex items-center gap-2">
+            <div className="absolute top-4 left-4 z-[500] flex flex-wrap items-center gap-2">
               <button
                 onClick={toggleDensity}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg backdrop-blur-sm transition-all ${
