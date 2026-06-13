@@ -216,59 +216,85 @@ function PenaltyModal({
             <div className="py-10 text-center text-slate-500 text-sm">Штрафов нет</div>
           )}
 
-          {!loading && penalties.length > 0 && (
-            <div className="space-y-2">
-              {penalties.map((p) => (
-                <div
-                  key={p.id}
-                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 ring-1 transition-all ${
-                    p.is_cancelled
-                      ? 'bg-slate-50 ring-slate-200 opacity-50'
-                      : 'bg-white ring-slate-200 hover:ring-sky-200'
-                  }`}
-                >
-                  {/* date */}
-                  <span className="shrink-0 text-[12px] tabular-nums text-slate-500 w-20">{p.work_date}</span>
+          {!loading && penalties.length > 0 && (() => {
+            // Сортируем по дате: сегодня сверху, дальше — назад. Затем группируем по дню.
+            const sorted = [...penalties].sort(
+              (a, b) => (b.work_date || '').localeCompare(a.work_date || '') || (b.id - a.id)
+            );
+            const groups = new Map<string, SessionPenaltyRow[]>();
+            for (const p of sorted) {
+              const k = p.work_date || '—';
+              groups.set(k, [...(groups.get(k) ?? []), p]);
+            }
 
-                  {/* type badge */}
-                  <span className={`shrink-0 inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-medium ${
-                    p.type === 'late'
-                      ? 'bg-sky-100 text-sky-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {p.type === 'late'
-                      ? <><Clock className="h-3 w-3" /> Опоздание</>
-                      : <><LogOut className="h-3 w-3 rotate-180" /> Ранний уход</>}
-                  </span>
+            return (
+              <div className="space-y-4">
+                {[...groups.entries()].map(([day, rows]) => {
+                  return (
+                    <div key={day}>
+                      {/* Заголовок дня (липкий) */}
+                      <div className="sticky top-0 z-[1] -mx-6 mb-2 flex items-center border-b border-slate-100 bg-white/95 px-6 py-1.5 backdrop-blur">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[13px] font-semibold text-slate-900">{formatDayLabel(day)}</span>
+                          <span className="text-[11px] tabular-nums text-slate-400">{day}</span>
+                        </div>
+                      </div>
 
-                  {/* minutes */}
-                  {p.minutes != null && (
-                    <span className="text-[12px] text-slate-500 shrink-0">{p.minutes} мин</span>
-                  )}
+                      {/* Штрафы этого дня */}
+                      <div className="space-y-1.5">
+                        {rows.map((p) => (
+                          <div
+                            key={p.id}
+                            className={`flex items-center gap-3 rounded-2xl px-4 py-2.5 ring-1 transition-all ${
+                              p.is_cancelled
+                                ? 'bg-slate-50 ring-slate-200 opacity-50'
+                                : 'bg-white ring-slate-200 hover:ring-sky-200'
+                            }`}
+                          >
+                            {/* type badge */}
+                            <span className={`shrink-0 inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-medium ${
+                              p.type === 'late'
+                                ? 'bg-sky-100 text-sky-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {p.type === 'late'
+                                ? <><Clock className="h-3 w-3" /> Опоздание</>
+                                : <><LogOut className="h-3 w-3 rotate-180" /> Ранний уход</>}
+                            </span>
 
-                  {/* amount */}
-                  <span className={`ml-auto text-[13px] font-bold tabular-nums shrink-0 ${p.is_cancelled ? 'line-through text-slate-400' : 'text-rose-600'}`}>
-                    {p.amount.toLocaleString('ru-RU')} сом
-                  </span>
+                            {/* minutes */}
+                            {p.minutes != null && (
+                              <span className="text-[12px] text-slate-500 shrink-0">{p.minutes} мин</span>
+                            )}
 
-                  {/* cancel */}
-                  {p.is_cancelled ? (
-                    <span className="text-[10px] text-slate-400 shrink-0 w-24 text-right">
-                      {p.cancel_reason ? `Отменён: ${p.cancel_reason}` : 'Отменён'}
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => onCancel(p.id, p.session_id)}
-                      title="Отменить штраф"
-                      className="shrink-0 ml-1 rounded-xl p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                            {/* amount */}
+                            <span className={`ml-auto text-[13px] font-bold tabular-nums shrink-0 ${p.is_cancelled ? 'line-through text-slate-400' : 'text-rose-600'}`}>
+                              {p.amount.toLocaleString('ru-RU')} сом
+                            </span>
+
+                            {/* cancel */}
+                            {p.is_cancelled ? (
+                              <span className="text-[10px] text-slate-400 shrink-0 w-24 text-right">
+                                {p.cancel_reason ? `Отменён: ${p.cancel_reason}` : 'Отменён'}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => onCancel(p.id, p.session_id)}
+                                title="Отменить штраф"
+                                className="shrink-0 ml-1 rounded-xl p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         {/* footer hint */}
@@ -614,13 +640,9 @@ export default function PenaltiesTab() {
       : { branch_id: branchId, dow: 0, start_at: `${start}:00`, end_at: `${end}:00`, is_day_off: false }
     );
 
+    // Единственный источник расписания — branch_workhours (по дням недели).
     const { error } = await sb.from('branch_workhours').upsert(payload, { onConflict: 'branch_id,dow' });
     if (error) { alert(error.message); return; }
-
-    await sb.from('attendance_branch_schedules').upsert(
-      { branch_id: branchId, start_time: `${start}:00`, end_time: `${end}:00` },
-      { onConflict: 'branch_id' }
-    );
 
     alert('График сохранён.');
     void loadAll();

@@ -1,10 +1,11 @@
 /**
  * POST /api/admin/frame-procurement/plan
  *
- * Тело: { branchId, proxyBranchId, windowDays, targetQty, supplierMin, forceProxyOnly? }
+ * Тело: { branchIds: number[], mode, supplierMin?, customTarget? }
+ *   mode: 'sold' | 'scaled' | 'custom'
  *
- * Возвращает OrderPlan: распределение по секциям + список items для аннотации.
- * Ничего не сохраняет — просто пересчитывает по текущему каталогу и продажам.
+ * Возвращает OrderPlan: продажи по секциям с ценой + распределение + items.
+ * Ничего не сохраняет — просто пересчитывает по текущим продажам и каталогу.
  */
 
 import 'server-only';
@@ -12,7 +13,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabaseServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { buildOrderPlan } from '@/lib/frameProcurement';
-import type { BuildOrderInput } from '@/lib/frameProcurementTypes';
+import type { BuildOrderInput, PlanMode } from '@/lib/frameProcurementTypes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,11 @@ function parseInt32(v: unknown, def: number): number {
   return Math.max(0, Math.floor(n));
 }
 
+function parseMode(v: unknown): PlanMode {
+  if (v === 'sold' || v === 'scaled' || v === 'custom') return v;
+  return 'sold';
+}
+
 export async function POST(req: Request): Promise<NextResponse> {
   const auth = await checkOwner();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 403 });
@@ -43,22 +49,47 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Ожидается JSON' }, { status: 400 });
   }
 
-  const branchId = parseInt32(body.branchId, 0);
-  const proxyBranchId = parseInt32(body.proxyBranchId, 0);
-  if (!branchId || !proxyBranchId) {
+  // Body: branchIds: number[] — обязателен, непустой массив положительных целых.
+  const MAX_BRANCH_IDS = 20;
+  if (!Array.isArray(body.branchIds)) {
     return NextResponse.json(
-      { error: 'branchId и proxyBranchId обязательны' },
+      { error: 'branchIds обязателен (массив положительных целых)' },
+      { status: 400 },
+    );
+  }
+  if (body.branchIds.length > MAX_BRANCH_IDS) {
+    return NextResponse.json(
+      { error: `branchIds не должен превышать ${MAX_BRANCH_IDS} элементов` },
+      { status: 400 },
+    );
+  }
+  const branchIds: number[] = body.branchIds
+    .map((v) => parseInt32(v, 0))
+    .filter((n) => n > 0);
+  if (branchIds.length === 0) {
+    return NextResponse.json(
+      { error: 'branchIds обязателен (массив положительных целых)' },
       { status: 400 },
     );
   }
 
+  const VALID_SECTION_KEYS = new Set([
+    'PA_F', 'PA_M', 'MA_F', 'MA_M',
+    'RP_F', 'RM_F', 'KD_F', 'KD_M',
+    'RL_F', 'RL_M',
+  ]);
+  const excludedSections = Array.isArray(body.excludedSections)
+    ? body.excludedSections
+        .filter((s): s is string => typeof s === 'string')
+        .filter((s) => VALID_SECTION_KEYS.has(s)) as BuildOrderInput['excludedSections']
+    : undefined;
+
   const input: BuildOrderInput = {
-    branchId,
-    proxyBranchId,
-    windowDays: parseInt32(body.windowDays, 60) || 60,
-    targetQty: parseInt32(body.targetQty, 1000) || 1000,
+    branchIds,
+    mode: parseMode(body.mode),
     supplierMin: parseInt32(body.supplierMin, 500) || 500,
-    forceProxyOnly: Boolean(body.forceProxyOnly),
+    customTarget: parseInt32(body.customTarget, 0),
+    excludedSections,
   };
 
   const admin = getSupabaseAdmin();

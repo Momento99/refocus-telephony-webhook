@@ -45,6 +45,7 @@ const BRANCHES = [
   { id: 2, name: 'Беловодск' },
   { id: 3, name: 'Кара-Балта' },
   { id: 4, name: 'Кант' },
+  { id: 5, name: 'Токмок' },
 ];
 
 function fmt(n: number) {
@@ -296,13 +297,13 @@ export default function FinanceSettingsPage() {
         setOrdersCountMonth(count ?? 0);
       }
 
-      // зарплата — из v_payroll_monthly_ui (net по сотрудникам)
+      // зарплата — из v_payroll_monthly (net_total по сотрудникам)
       {
         const monthDate = dayjs().startOf('month').format('YYYY-MM-01');
 
         let qPayroll = sb
-          .from('v_payroll_monthly_ui')
-          .select('net')
+          .from('v_payroll_monthly')
+          .select('net_total')
           .eq('month', monthDate);
 
         if (branchId > 0) {
@@ -314,15 +315,23 @@ export default function FinanceSettingsPage() {
 
         const totalNet =
           (payRows ?? []).reduce(
-            (acc: number, row: any) => acc + Number(row.net || 0),
+            (acc: number, row: any) => acc + Number(row.net_total || 0),
             0,
           ) || 0;
 
         setPayrollNetMonth(totalNet);
       }
     } catch (e: any) {
-      console.error(e);
-      setErr(e?.message ?? 'Ошибка загрузки');
+      const msg =
+        e?.message ||
+        e?.error_description ||
+        e?.hint ||
+        e?.details ||
+        e?.code ||
+        (typeof e === 'string' ? e : '') ||
+        JSON.stringify(e);
+      console.error('[finance/settings] loadAll error:', msg, e);
+      setErr(msg || 'Ошибка загрузки');
       setOpexRates([]);
       setCogsRates([]);
       setOrdersCountMonth(null);

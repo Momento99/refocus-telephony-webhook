@@ -34,35 +34,99 @@ export const RECOGNITION_SYSTEM_PROMPT = `
 
 - "PA": пластик взрослый, полнооправный (включая TR-90 — это лёгкий пластик, помечен как "TR" на фото)
 - "MA": металл взрослый, полнооправный
-- "RP": пластик для чтения (только узкие классические формы для пресбиопии 60+)
-- "RM": металл для чтения (тонкие узкие женские для пресбиопии)
+- "RP": пластик для чтения (узкие классические для пресбиопии 60+)
+- "RM": металл для чтения (тонкие узкие для пресбиопии)
 - "KD": детские (маленький размер, яркие цвета)
 - "RL": безоправные (rimless, линзы на винтиках без рамки)
+
+═══════════════════════════════════════════════════════════════
+КРИТИЧНО: RP/RM (ЧТЕНИЕ) vs PA/MA (ОБЫЧНЫЕ) — частая ошибка
+═══════════════════════════════════════════════════════════════
+
+Оправы ДЛЯ ЧТЕНИЯ (RP пластик / RM металл) — это узкоспециализированная
+категория для пресбиопии у людей 60+. Их часто ПУТАЮТ с обычными PA/MA.
+
+СТАВЬ RP или RM (НЕ PA/MA) если ХОТЯ БЫ ОДИН признак:
+  • Линза УЗКАЯ и НИЗКАЯ — высота линзы заметно меньше обычной оправы,
+    форма прямоугольная или полу-овальная, "очки для чтения"
+  • Базовая утилитарная форма без декора — без рисунков, без узоров,
+    минималистичный дизайн "только для функции"
+  • Часто продаются комплектами разных цветов одной и той же простой формы
+  • Часто видна вместе с книгой/газетой/текстом на фото
+  • Китайские ярлыки/текст на фото:
+    - "老花" (lǎohuā) — пресбиопия, СИЛЬНЫЙ маркер RP/RM
+    - "阅读" (yuèdú) — чтение, СИЛЬНЫЙ маркер
+    - "老人" (lǎorén) — пожилой человек
+    - "高清" (gāoqīng) с указанием диоптрий (+1.0, +1.5, +2.0)
+    - Цифры вроде "+150", "+200", "+250" рядом с оправой → 100% это чтение
+  • Очень лёгкая конструкция, тонкие дужки, простой мост
+
+Различение RP vs RM по материалу:
+  • RP: пластиковый ободок (даже если тонкий)
+  • RM: тонкая металлическая проволока, металлический мост
+
+ЕСЛИ ОПРАВА ВЫГЛЯДИТ КАК МОДНАЯ/ТРЕНДОВАЯ/С УЗОРОМ — это PA/MA, НЕ чтение.
+ЕСЛИ ОПРАВА КРУПНАЯ ИЛИ КЛАССИЧЕСКАЯ AVIATOR/WAYFARER — это PA/MA, НЕ чтение.
+ЕСЛИ ОПРАВА ДЕТСКАЯ (мелкая + яркие цвета) — это KD, НЕ чтение.
+
+Чтение оправы продаются дешевле обычных (RP/RM полоса 800-2200 KGS vs
+PA/MA до 9000). Если оправа дешёвая, простая, узкая → склоняйся к RP/RM.
+
+Очки для чтения (RP/RM) НИКОГДА не имеют значения gender="M".
+Допустимые значения для RP/RM: ТОЛЬКО F или U.
+• Явно женские (cat-eye, пастель/розовый/мятный/градиент, стразы/декор) → F
+• Всё остальное (классические прямоугольники в чёрной/прозрачной/коричневой
+  оправе, нейтральный «учительский» силуэт без декора) → U
+• При сомнении → U (читалки одинаково носят и мужчины, и женщины).
+ЗАПРЕЩЕНО возвращать gender="M" вместе с type_code="RP" или "RM". Если
+оправа выглядит мужественно — это либо PA_M / MA_M (обычная мужская оправа,
+не для чтения), либо RP_U / RM_U (унисекс читалка).
 
 ═══════════════════════════════════════════════════════════════
 ПОЛ (поле gender) — ВАЖНО, ЧИТАЙ ВНИМАТЕЛЬНО
 ═══════════════════════════════════════════════════════════════
 
-"F" (женский) если есть ХОТЯ БЫ ОДИН из признаков:
-  • Округлые/овальные/cat-eye формы (классика женских)
-  • Деликатные тонкие линии, маленький-средний размер
-  • Материал TR-90 (лёгкий пластик, в Китае почти всегда позиционируется женский)
-  • Лайфстайл-фон с косметикой, журналами, тканями
-  • Полупрозрачные/градиентные/нежные цвета
+ГЛАВНОЕ ПРАВИЛО: "U" (унисекс) — ЭТО ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ.
+Большинство классических оправ (aviator, wayfarer, прямоугольник, овал, круг)
+без явных гендерных акцентов — это U. Реально 30–50% всех пластиковых оправ
+гендерно-нейтральны и подходят обоим полам.
+
+"F" (женский) — ставь ТОЛЬКО при УВЕРЕННОСТИ, когда есть ЯВНЫЕ женские маркеры
+(хотя бы один сильный или 2+ слабых):
+  • Cat-eye форма (приподнятые «лисьи» уголки) — СИЛЬНЫЙ маркер
+  • Пастельные / прозрачные / градиентные / нежные цвета: розовый, мятный,
+    сиреневый, персиковый, прозрачно-розовый,渐变 в тёплых тонах
+  • Стразы, цветочный декор, жемчуг, металлические узоры на дужках
+  • Видимо деликатный маленький размер (узкие тонкие дужки, миниатюрная рамка)
+  • Лайфстайл-фото с явно женским реквизитом: косметика, помада, духи, ткани,
+    украшения, женские журналы, маникюр в кадре
   • Китайский текст на фото содержит:
-    - "网红" (wǎnghóng — "интернет-популярный/трендовый" → женское позиционирование)
-    - "日系" (rìxì — "японский стиль" → женское)
-    - "慵懒" (yōnglǎn — "ленивый/расслабленный" → женский лайфстайл)
-    - "甜美" (tiánměi — "милый/сладкий" → женский)
-    - "气质" (qìzhì — "благородный темперамент" → женский)
-    - "ins风" — "инстаграм-стиль" → женский
+    - "网红" (wǎnghóng — «интернет-популярный/трендовый» → женское)
+    - "日系" (rìxì — «японский стиль» → женское)
+    - "慵懒" (yōnglǎn — «ленивый/расслабленный» → женский лайфстайл)
+    - "甜美" (tiánměi — «милый/сладкий» → женское)
+    - "气质" (qìzhì — «благородный темперамент» → женское)
+    - "ins风" — «инстаграм-стиль» → женское
+    - "女" (nǚ — «женский») в явном контексте позиционирования
 
-"M" (мужской) — массивные прямоугольные/трапеция, тёмно-чёрный/серый/коричневый,
-  широкая переносица, металлический строгий мост, "商务" (бизнес), "复古" (винтаж).
+"M" (мужской) — ставь ТОЛЬКО при УВЕРЕННОСТИ, когда есть ЯВНЫЕ мужские маркеры
+(хотя бы один сильный или 2+ слабых):
+  • Массивные прямоугольные / трапециевидные формы С тёмным цветом
+    (чёрный, тёмно-серый, тёмно-коричневый, gunmetal)
+  • Широкая переносица, толстый «брутальный» мост
+  • Крупный aviator в металле с явно мужскими акцентами (двойной мост,
+    плоский top-bar, тёмные линзы)
+  • Лайфстайл-фото с явно мужским реквизитом: костюм, галстук, часы,
+    деловой стол, мужские руки в кадре
+  • Китайские маркеры:
+    - "商务" (shāngwù — «бизнес/деловой» → мужское)
+    - "复古" (fùgǔ — «винтаж/ретро» в массивных формах → мужское)
+    - "男" (nán — «мужской») в явном контексте позиционирования
 
-"U" (унисекс) ставь ТОЛЬКО когда оправа реально гендерно-нейтральна — крупный классический
-  aviator или wayfarer без явных женских/мужских акцентов. Если сомневаешься между U и F —
-  ставь F (большинство китайских модных оправ ориентированы на женский рынок).
+ЕСЛИ НЕ ВИДИШЬ ЯВНЫХ F-МАРКЕРОВ И ЯВНЫХ M-МАРКЕРОВ — СТАВЬ U.
+F и M ставятся ТОЛЬКО при УВЕРЕННОСТИ в гендерном позиционировании.
+Нейтральный чёрный wayfarer, классический прозрачный прямоугольник,
+обычный коричневый овал без декора — это U, не F и не M.
 
 ═══════════════════════════════════════════════════════════════
 ЦВЕТА (поле colors) — КРИТИЧЕСКОЕ ПРАВИЛО
@@ -196,6 +260,23 @@ export const RECOGNITION_SYSTEM_PROMPT = `
 Заметь: каждый click_point попадает строго на центр левой линзы конкретной оправы.
 
 ═══════════════════════════════════════════════════════════════
+ОЦЕНКА РОЗНИЧНОЙ ЦЕНЫ В REFOCUS (поле estimated_price_kgs)
+═══════════════════════════════════════════════════════════════
+
+Авторитетная таблица розничных цен Refocus в KGS (по типу и полу):
+
+  PA_F: 800–9000      PA_M: 800–9000
+  MA_F: 1200–9000     MA_M: 1200–9000
+  RP_F: 800–2200      RM_F: 800–2200
+  KD_F: 800–2500      KD_M: 800–2500
+  RL_F: 6000–15000    RL_M: 6000–15000   (безоправные — премиум)
+
+Estimate the retail price in Refocus (KGS) for this frame, based on visible
+material quality, design complexity, and the price band for its type/gender.
+Return as an integer in the 'estimated_price_kgs' field. If unsure, pick the
+middle of the band.
+
+═══════════════════════════════════════════════════════════════
 ВЕРНИ СТРОГО ТАКОЙ JSON, БЕЗ ЛИШНЕГО ТЕКСТА
 ═══════════════════════════════════════════════════════════════
 
@@ -205,6 +286,7 @@ export const RECOGNITION_SYSTEM_PROMPT = `
   "gender": "F"|"M"|"U",
   "confidence": 0.0..1.0,
   "needs_review": boolean,
+  "estimated_price_kgs": integer | null,
   "colors": [
     {
       "label": string,
@@ -222,6 +304,22 @@ notes — короткая подсказка на русском: что был
 
 const VALID_TYPES = new Set(['PA', 'MA', 'RP', 'RM', 'KD', 'RL']);
 const VALID_GENDERS = new Set(['F', 'M', 'U']);
+
+/**
+ * Авторитетные диапазоны розничных цен Refocus (KGS) по type_code+gender.
+ * Должны соответствовать таблице в RECOGNITION_SYSTEM_PROMPT. Используются
+ * для клампинга оценки LLM, чтобы галлюцинации (50000 или 1) не попадали в БД.
+ * Для gender='U' берём объединение F/M (max диапазон). Для отсутствующих
+ * комбинаций (например RP_M, RM_M) используем соответствующий F-диапазон.
+ */
+const PRICE_BOUNDS: Record<string, [number, number]> = {
+  PA_F: [800, 9000], PA_M: [800, 9000], PA_U: [800, 9000],
+  MA_F: [1200, 9000], MA_M: [1200, 9000], MA_U: [1200, 9000],
+  RP_F: [800, 2200], RP_M: [800, 2200], RP_U: [800, 2200],
+  RM_F: [800, 2200], RM_M: [800, 2200], RM_U: [800, 2200],
+  KD_F: [800, 2500], KD_M: [800, 2500], KD_U: [800, 2500],
+  RL_F: [6000, 15000], RL_M: [6000, 15000], RL_U: [6000, 15000],
+};
 
 /* ────────── Fallback: Chinese label → русское название ────────── */
 
@@ -302,6 +400,102 @@ function clamp01(v: number): number {
   return v;
 }
 
+/* ────────── Дедуп перекрывающихся цветов ──────────
+ *
+ * GPT-5 иногда «видит» одну и ту же оправу 2-4 раза и создаёт дубли с одинаковым
+ * (или почти одинаковым) bbox и тем же name_ru. В UI это выглядит как ДВЕ красные
+ * цифры заказа на ОДНОЙ физической оправе → китайцу уходит неверный заказ.
+ *
+ * Эвристика дедупа:
+ *   - IoU(a, b) > 0.5                                — bbox'ы существенно перекрываются
+ *   - ИЛИ center_distance < min(w, h) * 0.3          — центры в пределах 30% размера
+ *   - И (если есть оба name_ru) совпадают (без учёта регистра)
+ *
+ * При совпадении оставляем запись с БОЛЕЕ ИНФОРМАТИВНЫМ name_ru (длиннее), остальные
+ * выбрасываем. Возвращаем флаг didDedup, чтобы вызывающий код мог поднять
+ * needs_review = true.
+ */
+
+function bboxIoU(
+  a: [number, number, number, number],
+  b: [number, number, number, number],
+): number {
+  const [ax, ay, aw, ah] = a;
+  const [bx, by, bw, bh] = b;
+  const x1 = Math.max(ax, bx);
+  const y1 = Math.max(ay, by);
+  const x2 = Math.min(ax + aw, bx + bw);
+  const y2 = Math.min(ay + ah, by + bh);
+  if (x2 <= x1 || y2 <= y1) return 0;
+  const inter = (x2 - x1) * (y2 - y1);
+  const areaA = Math.max(0, aw) * Math.max(0, ah);
+  const areaB = Math.max(0, bw) * Math.max(0, bh);
+  const union = areaA + areaB - inter;
+  if (union <= 0) return 0;
+  return inter / union;
+}
+
+function bboxCenter(
+  b: [number, number, number, number],
+): [number, number] {
+  return [b[0] + b[2] / 2, b[1] + b[3] / 2];
+}
+
+function bboxesAreDuplicates(a: CatalogColor, b: CatalogColor): boolean {
+  // Условие 1: имена должны совпадать (без учёта регистра, после трима).
+  // Это снижает риск ошибочного слияния двух близких, но РАЗНЫХ цветов
+  // (например «чёрный» рядом с «серый» в плотной сетке).
+  const an = (a.name_ru || '').trim().toLowerCase();
+  const bn = (b.name_ru || '').trim().toLowerCase();
+  if (!an || !bn) return false;
+  if (an !== bn) return false;
+
+  // Условие 2: пространственная близость.
+  if (bboxIoU(a.bbox, b.bbox) > 0.5) return true;
+
+  const [acx, acy] = bboxCenter(a.bbox);
+  const [bcx, bcy] = bboxCenter(b.bbox);
+  const dist = Math.hypot(acx - bcx, acy - bcy);
+  const minDim = Math.min(a.bbox[2], a.bbox[3], b.bbox[2], b.bbox[3]);
+  if (minDim > 0 && dist < minDim * 0.3) return true;
+
+  return false;
+}
+
+/**
+ * Удаляет цвета, у которых bbox перекрывается с уже принятыми и совпадает name_ru.
+ * Из группы дублей оставляем запись с самым длинным name_ru (более описательным).
+ * Возвращает (deduplicated, didDedup) — флаг сигнализирует, что нужно
+ * поднять needs_review=true в результирующем CatalogRecognitionResult.
+ */
+export function dedupOverlappingColors(
+  colors: CatalogColor[],
+): { colors: CatalogColor[]; didDedup: boolean } {
+  if (colors.length < 2) return { colors, didDedup: false };
+
+  const kept: CatalogColor[] = [];
+  let didDedup = false;
+
+  for (const c of colors) {
+    const dupIdx = kept.findIndex((k) => bboxesAreDuplicates(k, c));
+    if (dupIdx === -1) {
+      kept.push(c);
+      continue;
+    }
+    didDedup = true;
+    // Оставляем «лучшую» запись: с более длинным name_ru, иначе текущую
+    // (порядок уже сверху-вниз — раннюю можно считать корректнее).
+    const existing = kept[dupIdx];
+    const existingLen = (existing.name_ru || '').trim().length;
+    const candidateLen = (c.name_ru || '').trim().length;
+    if (candidateLen > existingLen) {
+      kept[dupIdx] = c;
+    }
+  }
+
+  return { colors: kept, didDedup };
+}
+
 export function validateRecognitionResult(raw: unknown): CatalogRecognitionResult {
   if (!raw || typeof raw !== 'object') {
     throw new Error('LLM вернул не-объект');
@@ -313,9 +507,18 @@ export function validateRecognitionResult(raw: unknown): CatalogRecognitionResul
     throw new Error(`Неизвестный type_code: ${r.type_code}`);
   }
 
-  const gender = String(r.gender || '').toUpperCase().trim();
+  let gender = String(r.gender || '').toUpperCase().trim();
   if (!VALID_GENDERS.has(gender)) {
     throw new Error(`Неизвестный gender: ${r.gender}`);
+  }
+
+  // Жёсткий программный guard: RP/RM никогда не M. Если LLM ослушался
+  // промпта — принудительно нормализуем M → U (читалки физически носят оба
+  // пола, M-кодировка для них бессмысленна для нашего бизнеса).
+  let genderGuardTriggered = false;
+  if ((type_code === 'RP' || type_code === 'RM') && gender === 'M') {
+    gender = 'U';
+    genderGuardTriggered = true;
   }
 
   const confidence = isFiniteNum(r.confidence) ? clamp01(r.confidence) : 0.5;
@@ -368,15 +571,68 @@ export function validateRecognitionResult(raw: unknown): CatalogRecognitionResul
     return ax - bx;
   });
 
+  // Дедуп перекрывающихся цветов: GPT-5 (и иногда Opus) повторяет одну и ту же
+  // оправу 2-4 раза с одинаковым name_ru и почти совпадающим bbox. См.
+  // discovery: 19 каталогов уже были «поломаны» этим, например 7bb80d8d с 4×
+  // "чёрный" подряд. Если дедуп сработал — поднимаем needs_review.
+  const dedupRes = dedupOverlappingColors(colors);
+  const colorsDeduped = dedupRes.colors;
+  const dedupHappened = dedupRes.didDedup;
+
+  // estimated_price_kgs — оценочная цена розницы в KGS. Принимаем число или
+  // строку с числом; всё, что не парсится как конечное положительное число,
+  // нормализуем в null. Сохраняем как целое.
+  let estimatedPriceKgs: number | null = null;
+  const epRaw = (r as Record<string, unknown>).estimated_price_kgs;
+  if (isFiniteNum(epRaw)) {
+    estimatedPriceKgs = epRaw > 0 ? Math.round(epRaw) : null;
+  } else if (typeof epRaw === 'string' && epRaw.trim()) {
+    const n = Number(epRaw.replace(/[^\d.-]/g, ''));
+    estimatedPriceKgs = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+  }
+
+  // Кламп по авторитетной таблице PRICE_BOUNDS. Если LLM вернул цену вне
+  // диапазона для данного type_code+gender — поджимаем к границе, выставляем
+  // needs_review=true и сохраняем исходное значение в raw_response, чтобы
+  // галлюцинации не попадали в БД как есть.
+  let priceOutOfBand = false;
+  let originalEstimatedPrice: number | null = null;
+  if (estimatedPriceKgs !== null) {
+    const bounds = PRICE_BOUNDS[`${type_code}_${gender}`];
+    if (bounds) {
+      const [lo, hi] = bounds;
+      if (estimatedPriceKgs < lo || estimatedPriceKgs > hi) {
+        priceOutOfBand = true;
+        originalEstimatedPrice = estimatedPriceKgs;
+        estimatedPriceKgs = Math.min(hi, Math.max(lo, estimatedPriceKgs));
+      }
+    }
+  }
+
+  const baseNotes = String(r.notes || '').slice(0, 500);
+  const notes = genderGuardTriggered
+    ? (baseNotes ? baseNotes + ' ' : '') +
+      '[guard: RP/RM с gender=M принудительно изменён на U; читалки не могут быть мужскими в нашей схеме]'
+    : baseNotes;
+
   return {
     supplier_model: r.supplier_model ? String(r.supplier_model).slice(0, 64) : null,
     type_code: type_code as CatalogRecognitionResult['type_code'],
     gender: gender as CatalogRecognitionResult['gender'],
     confidence,
-    needs_review: Boolean(r.needs_review) || confidence < 0.7,
-    colors,
-    notes: String(r.notes || '').slice(0, 500),
-  };
+    needs_review:
+      Boolean(r.needs_review) ||
+      confidence < 0.7 ||
+      priceOutOfBand ||
+      dedupHappened ||
+      genderGuardTriggered,
+    estimated_price_kgs: estimatedPriceKgs,
+    colors: colorsDeduped,
+    notes,
+    ...(priceOutOfBand
+      ? { estimated_price_kgs_original: originalEstimatedPrice }
+      : {}),
+  } as CatalogRecognitionResult;
 }
 
 /** Извлечь JSON из произвольного текста (LLM иногда обёртывает в ```json...```) */

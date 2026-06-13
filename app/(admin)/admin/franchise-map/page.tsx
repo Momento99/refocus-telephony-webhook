@@ -7,6 +7,7 @@ import {
   ChevronRight, Globe, TrendingUp, PowerOff,
   Phone, User, Users, Trophy, Zap, ShoppingBag, KeyRound, MessageCircle, FileText, Rocket, Check, Settings2, ShieldOff, CalendarDays,
   Monitor, Package, BookOpen, DollarSign, Maximize2, X, Eye, EyeOff, Inbox, PhoneCall, MapPinned,
+  Download, Lock,
 } from 'lucide-react';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 
@@ -959,29 +960,80 @@ export default function FranchiseMapPage() {
             </div>
           </div>
 
-          {/* Заявки на франшизу — компактный блок-ссылка */}
-          <Link href="/admin/franchise-applications"
-            className="group flex items-center gap-4 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5 transition hover:ring-cyan-300/40">
-            <div className="relative">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
-                <Inbox className="h-5 w-5 text-white" />
-              </div>
-              {apps.filter(a => a.status === 'new').length > 0 && (
-                <div className="absolute -top-1.5 -right-1.5 grid h-6 w-6 place-items-center rounded-full bg-rose-500 animate-pulse">
-                  <span className="text-[11px] font-bold text-white">{apps.filter(a => a.status === 'new').length}</span>
+          {/* Правая колонка: Заявки + Презентации для отправки */}
+          <div className="flex flex-col gap-4">
+
+            {/* Заявки на франшизу — компактный блок-ссылка */}
+            <Link href="/admin/franchise-applications"
+              className="group flex items-center gap-4 rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5 transition hover:ring-cyan-300/40">
+              <div className="relative">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+                  <Inbox className="h-5 w-5 text-white" />
                 </div>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[14px] font-semibold text-slate-900">Заявки на франшизу</div>
-              <div className="mt-0.5 text-[12px] text-slate-500">
-                {apps.length === 0
-                  ? 'Пока нет заявок'
-                  : `${apps.length} заявок · ${apps.filter(a => a.status === 'new').length} новых`}
+                {apps.filter(a => a.status === 'new').length > 0 && (
+                  <div className="absolute -top-1.5 -right-1.5 grid h-6 w-6 place-items-center rounded-full bg-rose-500 animate-pulse">
+                    <span className="text-[11px] font-bold text-white">{apps.filter(a => a.status === 'new').length}</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-semibold text-slate-900">Заявки на франшизу</div>
+                <div className="mt-0.5 text-[12px] text-slate-500">
+                  {apps.length === 0
+                    ? 'Пока нет заявок'
+                    : `${apps.length} заявок · ${apps.filter(a => a.status === 'new').length} новых`}
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-cyan-500 transition-colors" />
+            </Link>
+
+            {/* Презентации для отправки франчайзи */}
+            <div className="rounded-2xl bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="grid h-7 w-7 place-items-center rounded-lg bg-cyan-500">
+                  <FileText className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-sm font-semibold text-slate-800">Презентации для отправки</span>
+              </div>
+
+              <div className="space-y-2">
+
+                {/* Pre-call версия (активна) */}
+                <a
+                  href="/franchise/refocus-franchise-pre-call.pdf"
+                  download="refocus-franchise.pdf"
+                  className="group flex items-center gap-3 px-3 py-3 rounded-xl bg-cyan-50 ring-1 ring-cyan-200 hover:ring-cyan-400 hover:bg-cyan-100/60 transition"
+                >
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-500 shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+                    <Download className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-slate-900">Первая версия — для всех</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">Pre-call PDF · 18 страниц · 4 МБ</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-cyan-500 group-hover:translate-x-0.5 transition-transform" />
+                </a>
+
+                {/* Premium версия (неактивна) */}
+                <div
+                  aria-disabled="true"
+                  title="Будет доступно позже — для покупателей, в которых вы уверены"
+                  className="flex items-center gap-3 px-3 py-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 opacity-70 cursor-not-allowed select-none"
+                >
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-300">
+                    <Lock className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-slate-500">Premium — для подтверждённых</div>
+                    <div className="mt-0.5 text-[11px] text-slate-400">Внутренние цифры и реальные данные</div>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1 rounded-md bg-slate-200/70">скоро</span>
+                </div>
+
               </div>
             </div>
-            <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-cyan-500 transition-colors" />
-          </Link>
+
+          </div>
 
         </div>
 

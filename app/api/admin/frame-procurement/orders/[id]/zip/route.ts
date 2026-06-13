@@ -105,6 +105,17 @@ export async function GET(
 
     // click_point подтягиваем СВЕЖИЙ из каталога — даже если order создан
     // до улучшения распознавания, новый click_point применится при скачивании.
+    //
+    // Fix 1 — safety check: GPT-5 иногда ставит точку в правую линзу / на дужку.
+    // Считаем безопасный центр ЛЕВОЙ линзы из bbox и валидируем click_point:
+    //   - должен быть ВНУТРИ bbox
+    //   - должен быть в ЛЕВОЙ половине (x < bbox.x + bbox.w * 0.55)
+    //   - должен быть в центральной вертикальной полосе (cy ± bbox.h * 0.35)
+    // Если не прошёл — используем серверный fallback на левую линзу.
+    const [bx, by, bw, bh] = bbox;
+    const safeCx = bx + bw * 0.27;
+    const safeCy = by + bh * 0.50;
+
     let clickPoint: [number, number] | undefined;
     const cat = catalogById.get(it.catalog_id);
     if (cat?.colors && Array.isArray(cat.colors)) {
@@ -116,8 +127,31 @@ export async function GET(
         && Number.isFinite(Number(matched.click_point[0]))
         && Number.isFinite(Number(matched.click_point[1]))
       ) {
-        clickPoint = [Number(matched.click_point[0]), Number(matched.click_point[1])];
+        const cpx = Number(matched.click_point[0]);
+        const cpy = Number(matched.click_point[1]);
+
+        const insideBbox = cpx >= bx && cpx <= bx + bw && cpy >= by && cpy <= by + bh;
+        const inLeftHalf = cpx < bx + bw * 0.55;
+        const inCentralBand = Math.abs(cpy - (by + bh * 0.5)) <= bh * 0.35;
+
+        if (insideBbox && inLeftHalf && inCentralBand) {
+          clickPoint = [cpx, cpy];
+        } else {
+          console.warn(
+            `[annotate] click_point rejected for catalog ${it.catalog_id} ` +
+            `color="${it.color_label}" cp=[${cpx.toFixed(3)},${cpy.toFixed(3)}] ` +
+            `bbox=[${bx.toFixed(3)},${by.toFixed(3)},${bw.toFixed(3)},${bh.toFixed(3)}] ` +
+            `(insideBbox=${insideBbox} inLeftHalf=${inLeftHalf} inCentralBand=${inCentralBand}) ` +
+            `→ fallback to safe left-lens center`,
+          );
+          clickPoint = [safeCx, safeCy];
+        }
+      } else {
+        // GPT не дал click_point — используем серверный безопасный центр.
+        clickPoint = [safeCx, safeCy];
       }
+    } else {
+      clickPoint = [safeCx, safeCy];
     }
 
     const mark: AnnotationMark = {

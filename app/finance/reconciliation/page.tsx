@@ -19,7 +19,6 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
-  ChevronRight,
   Clock,
   History,
   RefreshCw,
@@ -620,23 +619,6 @@ export default function Page() {
               <RefreshCw className="h-4 w-4" />
             </button>
           </div>
-        </div>
-
-        {/* Переход на Бюджет расходов */}
-        <div className="mt-3">
-          <Link
-            href="/admin/budget"
-            className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] hover:ring-cyan-300/40 transition"
-          >
-            <div className="h-10 w-10 shrink-0 grid place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
-              <PiggyBank className="h-5 w-5 text-white" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-semibold text-slate-900">Бюджет расходов</div>
-              <div className="mt-0.5 text-[12px] text-slate-500">Планирование и контроль расходов по филиалам</div>
-            </div>
-            <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-cyan-500 transition-colors" />
-          </Link>
         </div>
 
         {/* поиск + легенда */}

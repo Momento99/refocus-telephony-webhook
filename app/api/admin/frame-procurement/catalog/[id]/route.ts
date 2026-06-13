@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabaseServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import type { CatalogColor } from '@/lib/frameProcurementTypes';
+import { dedupOverlappingColors } from '@/lib/frameVision';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -90,10 +91,19 @@ export async function PATCH(
     }
     update.gender = v;
   }
+  // dedupCleanupTriggered = одноразовая очистка существующих «битых» строк:
+  // если в текущей записи есть перекрывающиеся дубли цветов (GPT-5 наплодил),
+  // мы их вычищаем при первом же PATCH этой строки и поднимаем needs_review.
+  let dedupCleanupTriggered = false;
+
   if ('colors' in body) {
     const colors = sanitizeColors(body.colors);
     if (!colors) return NextResponse.json({ error: 'colors должен быть массивом' }, { status: 400 });
-    update.colors = colors;
+    // Дедуп присланных пользователем цветов — на случай если он сам не заметил
+    // или просто открыл/сохранил старую битую запись без редактирования.
+    const { colors: deduped, didDedup } = dedupOverlappingColors(colors);
+    if (didDedup) dedupCleanupTriggered = true;
+    update.colors = deduped;
   }
   if ('needs_review' in body) {
     update.needs_review = Boolean(body.needs_review);
@@ -101,13 +111,29 @@ export async function PATCH(
   if ('notes' in body) {
     update.notes = String(body.notes || '').slice(0, 500);
   }
+  if ('estimated_price' in body) {
+    const v = body.estimated_price;
+    if (v === null) {
+      update.estimated_price = null;
+    } else {
+      const n = typeof v === 'number' ? v : Number(v);
+      if (!Number.isFinite(n) || n <= 0 || n >= 100000) {
+        return NextResponse.json(
+          { error: 'estimated_price должен быть положительным числом меньше 100000 или null' },
+          { status: 400 },
+        );
+      }
+      update.estimated_price = n;
+    }
+  }
 
   // Если поправили хоть что-то семантическое — отмечаем как ручную коррекцию
   if (
     'type_code' in body ||
     'gender' in body ||
     'colors' in body ||
-    'supplier_model' in body
+    'supplier_model' in body ||
+    'estimated_price' in body
   ) {
     update.manually_corrected = true;
     if (!('needs_review' in body)) update.needs_review = false;
@@ -118,6 +144,36 @@ export async function PATCH(
   }
 
   const admin = getSupabaseAdmin();
+
+  // Одноразовая чистка существующих «битых» строк: если пользователь правит
+  // запись, но НЕ трогает colors[], всё равно подтянем текущие colors и
+  // прогоним через dedup. Так исторические дубли GPT-5 (19 каталогов из
+  // discovery) уйдут естественным путём при первом же сохранении.
+  if (!('colors' in body)) {
+    const { data: existing } = await admin
+      .from('frame_supplier_catalog')
+      .select('colors')
+      .eq('id', id)
+      .maybeSingle();
+    const existingColors = Array.isArray(existing?.colors)
+      ? (existing!.colors as CatalogColor[])
+      : null;
+    if (existingColors && existingColors.length >= 2) {
+      const { colors: deduped, didDedup } = dedupOverlappingColors(existingColors);
+      if (didDedup) {
+        update.colors = deduped;
+        dedupCleanupTriggered = true;
+      }
+    }
+  }
+
+  // Если дедуп сработал — пользователь должен ещё раз провериться глазами,
+  // поэтому ставим needs_review=true (даже если выше его сняли как «вручную
+  // поправлено»). Это не блокирует — просто метка в UI.
+  if (dedupCleanupTriggered) {
+    update.needs_review = true;
+  }
+
   const { data, error } = await admin
     .from('frame_supplier_catalog')
     .update(update)
@@ -126,7 +182,7 @@ export async function PATCH(
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ item: data });
+  return NextResponse.json({ item: data, dedup_cleanup: dedupCleanupTriggered });
 }
 
 export async function DELETE(
@@ -145,6 +201,16 @@ export async function DELETE(
     .select('storage_path')
     .eq('id', id)
     .maybeSingle();
+
+  // FK frame_procurement_order_items.catalog_id → frame_supplier_catalog.id
+  // имеет ON DELETE RESTRICT, поэтому сначала удаляем позиции из исторических
+  // заказов, где эта модель использовалась. Сам заказ (frame_procurement_orders)
+  // остаётся: total_qty/qty_by_section/sent_at сохраняются как аудит, теряем
+  // только детализацию позиций (ZIP уже отправлен в WeChat).
+  await admin
+    .from('frame_procurement_order_items')
+    .delete()
+    .eq('catalog_id', id);
 
   const { error: delErr } = await admin
     .from('frame_supplier_catalog')

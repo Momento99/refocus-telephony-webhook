@@ -40,3 +40,7 @@ desktop/build/
 .env.*
 
 .vercel
+
+# local snapshots / backups — never push (public repo)
+_backups/
+backups/

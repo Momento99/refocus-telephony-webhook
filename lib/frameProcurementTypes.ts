@@ -52,6 +52,8 @@ export interface SupplierCatalogRow {
   gender: CatalogGender | null;
   colors: CatalogColor[];
 
+  estimated_price: number | null;
+
   needs_review: boolean;
   manually_corrected: boolean;
   notes: string | null;
@@ -67,6 +69,8 @@ export interface CatalogRecognitionResult {
   gender: CatalogGender;
   confidence: number;
   needs_review: boolean;
+  /** Оценочная розничная цена в KGS (целое число) либо null, если LLM не смог оценить */
+  estimated_price_kgs: number | null;
   colors: CatalogColor[];
   notes: string;
 }
@@ -89,6 +93,7 @@ export type QtyBySection = Partial<Record<SectionKey, number>>;
 export interface ProcurementOrderRow {
   id: string;
   branch_id: number | null;
+  branch_ids: number[] | null;
   status: ProcurementOrderStatus;
 
   cold_start: boolean;
@@ -120,32 +125,77 @@ export interface ProcurementOrderItemRow {
   created_at: string;
 }
 
+/**
+ * Режим расчёта плана:
+ *   - 'sold'   — заказываем ровно столько, сколько продано за окно
+ *   - 'scaled' — масштабируем пропорции продаж до минималки поставщика
+ *   - 'custom' — масштабируем пропорции продаж до customTarget шт
+ */
+export type PlanMode = 'sold' | 'scaled' | 'custom';
+
 /** Параметры алгоритма построения заказа */
 export interface BuildOrderInput {
-  /** Filial — куда везём, обычно Токмок */
-  branchId: number;
-  /** Прокси для холодного старта (Кара-Балта) */
-  proxyBranchId: number;
-  /** Окно анализа продаж в днях, default 60 */
-  windowDays: number;
-  /** Целевой объём заказа (1000 — до полного склада) */
-  targetQty: number;
-  /** Минималка поставщика (500) */
+  /** Филиалы — куда везём (Tокмок+Кант group) */
+  branchIds: number[];
+  /** Режим расчёта */
+  mode: PlanMode;
+  /** Минималка поставщика (для режима 'scaled' — таргет; для 'sold' — отображение) */
   supplierMin: number;
-  /** Принудительно использовать прокси (если true, игнорируем продажи branchId) */
-  forceProxyOnly?: boolean;
+  /** Произвольная цель (только для режима 'custom') */
+  customTarget?: number;
+  /**
+   * Секции, исключённые из плана (например KD_F, KD_M если детских хватает дома).
+   * Продажи этих секций игнорируются при подсчёте долей и распределения.
+   * salesBySection в OrderPlan всё равно отдаст исходные продажи для UI-отображения.
+   */
+  excludedSections?: SectionKey[];
+}
+
+/** Данные продаж по одной секции в окне */
+export interface SectionSalesInfo {
+  soldQty: number;
+  revenue: number;
+  avgPrice: number;
+  /** Сырой список индивидуальных цен продаж в этой секции (для матчинга) */
+  prices?: number[];
 }
 
 /** Результат построения плана заказа */
 export interface OrderPlan {
-  /** Использован ли холодный старт (свои продажи < 100 за окно) */
-  coldStart: boolean;
-  /** Кол-во продаж branchId за окно — для отображения в UI */
-  ownSalesTotal: number;
-  /** Распределение по секциям (количество штук) */
+  /** Режим, использованный при расчёте */
+  mode: PlanMode;
+  /** Филиалы — куда везём (Tокмок+Кант group) */
+  branchIds: number[];
+  /**
+   * ISO-дата начала окна продаж.
+   * Если предыдущий sent-заказ есть — равна его sent_at.
+   * Если заказов нет — null (окно = «за всё время»).
+   */
+  windowSince: string | null;
+  /** Сырые продажи Tокмока по секциям (qty, revenue, avgPrice) */
+  salesBySection: Record<SectionKey, SectionSalesInfo>;
+  /** Итого продано шт за окно */
+  totalSoldQty: number;
+  /** Итого выручка за окно */
+  totalSoldRevenue: number;
+  /** Исключённые секции (для отображения серым в UI) */
+  excludedSections?: SectionKey[];
+  /**
+   * Сколько моделей в каталоге поставщика по каждой секции (type_code × gender).
+   * Если planned >> catalogModelsBySection[k], алгоритм вынужден наваливать
+   * по N штук на одну модель — нужно загрузить ещё скринов из WeChat.
+   */
+  catalogModelsBySection: Record<SectionKey, number>;
+  /** ПЛАН распределения по секциям (что хотим заказать) */
   qtyBySection: Record<SectionKey, number>;
+  /** ФАКТ распределения по секциям (что реально удалось разложить по items каталога) */
+  distributedBySection: Record<SectionKey, number>;
   /** Финальные доли по секциям (sum=1) */
   sharesBySection: Record<SectionKey, number>;
+  /** Целевой плановый объём после применения режима (sold → totalSoldQty; scaled → supplierMin; custom → customTarget) */
+  totalQtyTarget: number;
+  /** Достаточно ли РЕАЛЬНО распределилось до минималки поставщика (totalQty >= supplierMin) */
+  meetsSupplierMin: boolean;
   /** Конкретные позиции заказа */
   items: Array<{
     catalogId: string;
@@ -156,10 +206,20 @@ export interface OrderPlan {
     colorName: string | null;
     qty: number;
     bbox: [number, number, number, number];
+    /** Цена из catalog модели (estimated_price) */
+    estimatedPrice: number | null;
   }>;
-  /** Сколько моделей вошло, сколько секций без подходящих моделей */
+  /** Сколько моделей вошло */
   modelsUsed: number;
+  /** Сумма items.qty — может быть < totalQtyTarget, если каталог не покрывает все секции */
   totalQty: number;
-  /** Какие секции остались с неполным покрытием (мало моделей в каталоге) */
+  /** Какие секции остались без подходящих моделей */
   uncoveredSections: SectionKey[];
+  /** Проданные оправы, для которых не нашлось подходящего кандидата в каталоге */
+  unmatched: Array<{
+    soldPrice: number;
+    typeCode: FrameTypeCode;
+    gender: GenderCode;
+    reason: string;
+  }>;
 }

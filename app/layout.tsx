@@ -1,9 +1,13 @@
 // /app/layout.tsx
 import "./globals.css";
-// Onest 400 Regular (cyrillic + latin) — для цены на ценниках.
-// Через npm-пакет, чтобы шрифт реально попадал в document.fonts и был доступен canvas.
+// Onest 400 Regular + 700 Bold (cyrillic + latin) — для цены на ценниках.
+// Через npm-пакет, чтобы шрифт реально попадал в document.fonts и был доступен canvas
+// сразу при загрузке страницы (без runtime FontFace API + CDN fetch).
+// 700 нужен для премиум-ценников (≥4000с), включая всю RL-секцию (6000-17000).
 import "@fontsource/onest/cyrillic-400.css";
 import "@fontsource/onest/400.css";
+import "@fontsource/onest/cyrillic-700.css";
+import "@fontsource/onest/700.css";
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Toaster } from "react-hot-toast";

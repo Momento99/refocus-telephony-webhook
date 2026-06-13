@@ -7,9 +7,9 @@ import {
   ReceiptText, LineChart, WalletCards,
   ChevronLeft, ChevronRight,
   LogOut, LogIn, Boxes, FileText, Settings2,
-  PackageCheck, Users, Bell, BrainCircuit, Globe,
+  PackageCheck, Smartphone, BrainCircuit, Globe,
   Landmark, Map, MessageCircle, UsersRound, BookOpen,
-  Glasses,
+  Glasses, CalendarDays, PiggyBank, Package,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
@@ -26,7 +26,6 @@ const MENU_SECTIONS: MenuSection[] = [
       { label: "Сверка выручки", href: "/finance/reconciliation", icon: ReceiptText },
       { label: "Налоги", href: "/taxes", icon: Landmark },
       { label: "Заказы", href: "/orders", icon: PackageCheck },
-      { label: "Клиенты", href: "/customers", icon: Users },
     ],
   },
   {
@@ -39,7 +38,14 @@ const MENU_SECTIONS: MenuSection[] = [
     title: "Склад",
     items: [
       { label: "Склад", href: "/warehouse", icon: Boxes },
-      { label: "Закупка оправ", href: "/admin/frame-procurement", icon: Glasses },
+    ],
+  },
+  {
+    title: "Закуп",
+    items: [
+      { label: "Накопления",     href: "/admin/budget",            icon: PiggyBank },
+      { label: "Закупка оправ",  href: "/admin/frame-procurement", icon: Glasses },
+      { label: "Закупка линз",   href: "/admin/lens-procurement",  icon: Package },
     ],
   },
   {
@@ -62,10 +68,16 @@ const MENU_SECTIONS: MenuSection[] = [
   {
     title: "Настройки",
     items: [
-      { label: "Уведомления", href: "/admin/notifications", icon: Bell },
+      { label: "Мобильное приложение", href: "/admin/mobile-app", icon: Smartphone },
       { label: "Штрих-коды", href: "/settings/barcodes/overview", icon: FileText },
       { label: "Цены на линзы", href: "/settings/lens-prices", icon: LineChart },
       { label: "Настройки", href: "/settings", icon: Settings2 },
+    ],
+  },
+  {
+    title: "Календарь",
+    items: [
+      { label: "Календарь сотрудников", href: "/admin/employee-calendar", icon: CalendarDays },
     ],
   },
 ];
@@ -119,7 +131,7 @@ export default function Sidebar({ role }: { role: Role }) {
   function isActive(href: string) {
     if (pathname === href) return true;
     if (href === "/settings/barcodes/overview" && pathname.startsWith("/settings/barcodes")) return true;
-    if (href === "/admin/notifications" && pathname.startsWith("/admin/notifications")) return true;
+    if (href === "/admin/mobile-app" && pathname.startsWith("/admin/mobile-app")) return true;
     if (href === "/admin/ai-employee-messages" && pathname.startsWith("/admin/ai-employee-messages")) return true;
     if (href === "/admin/franchise-map" && pathname.startsWith("/admin/franchise")) return true;
     if (href === "/taxes" && pathname.startsWith("/taxes")) return true;

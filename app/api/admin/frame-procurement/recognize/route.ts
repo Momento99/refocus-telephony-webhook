@@ -25,6 +25,8 @@ export const maxDuration = 300; // секунд — батч 116 фото мож
 
 const BUCKET = 'frame-supplier-catalog';
 const VALID_ENGINES = new Set<RecognitionEngine>(['opus-4.7', 'gpt-5']);
+const MAX_BATCH = 50;
+const FORCE_RERUN_CONFIRM_THRESHOLD = 10;
 
 async function checkOwner(): Promise<{ ok: boolean; error?: string }> {
   const sb = getSupabaseServerClient();
@@ -40,6 +42,8 @@ type Body = {
   engine?: unknown;
   /** Если true — переразпознаём, даже если уже было */
   forceRerun?: unknown;
+  /** Обязательное подтверждение при forceRerun на пачке > FORCE_RERUN_CONFIRM_THRESHOLD */
+  confirmForceRerun?: unknown;
 };
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -59,12 +63,33 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (catalogIds.length === 0) {
     return NextResponse.json({ error: 'catalogIds пуст' }, { status: 400 });
   }
+  if (catalogIds.length > MAX_BATCH) {
+    return NextResponse.json(
+      {
+        error: `Слишком большая пачка: ${catalogIds.length}. Максимум за один запрос — ${MAX_BATCH}.`,
+      },
+      { status: 400 },
+    );
+  }
 
   const engine = body.engine as RecognitionEngine;
   if (!VALID_ENGINES.has(engine)) {
     return NextResponse.json({ error: `Неизвестный engine: ${body.engine}` }, { status: 400 });
   }
   const forceRerun = Boolean(body.forceRerun);
+  const confirmForceRerun = Boolean(body.confirmForceRerun);
+  if (
+    forceRerun &&
+    catalogIds.length > FORCE_RERUN_CONFIRM_THRESHOLD &&
+    !confirmForceRerun
+  ) {
+    return NextResponse.json(
+      {
+        error: `forceRerun на ${catalogIds.length} элементов требует confirmForceRerun=true (порог: ${FORCE_RERUN_CONFIRM_THRESHOLD}).`,
+      },
+      { status: 400 },
+    );
+  }
 
   const admin = getSupabaseAdmin();
 
@@ -142,6 +167,14 @@ export async function POST(req: Request): Promise<NextResponse> {
 
       const recognition = await recognize(base64, 'image/png', engine);
 
+      // estimated_price хранится в БД как numeric — приведём оценку
+      // LLM к числу, либо null, если поле отсутствует/невалидно.
+      const epRaw = recognition.estimated_price_kgs;
+      const estimatedPrice: number | null =
+        typeof epRaw === 'number' && Number.isFinite(epRaw) && epRaw > 0
+          ? epRaw
+          : null;
+
       const { error: updErr } = await admin
         .from('frame_supplier_catalog')
         .update({
@@ -153,6 +186,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           type_code: recognition.type_code,
           gender: recognition.gender,
           colors: recognition.colors,
+          estimated_price: estimatedPrice,
           needs_review: recognition.needs_review,
           notes: recognition.notes,
           manually_corrected: false,

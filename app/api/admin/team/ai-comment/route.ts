@@ -33,8 +33,10 @@ function buildUserPrompt(m: any, employeeName: string, branchName: string, from:
   lines.push('');
   lines.push('МЕТРИКИ ЗА ПЕРИОД:');
   lines.push('');
+  const revPerHour = Number(m.hours_worked) > 0 ? Math.round(Number(m.revenue_total) / Number(m.hours_worked)) : null;
   lines.push('Продажи:');
   lines.push(`  заказов: ${m.orders_count}, выручка: ${Number(m.revenue_total).toLocaleString('ru-RU')} KGS, средний чек: ${Number(m.avg_check).toLocaleString('ru-RU')} KGS`);
+  if (revPerHour != null) lines.push(`  выручка в час: ${revPerHour.toLocaleString('ru-RU')} KGS/час (ключевая метрика эффективности; выручка распределена по факту присутствия на смене)`);
   lines.push(`  оправ продано: ${m.frame_items_count}, линз: ${m.lens_items_count}`);
   lines.push('');
   lines.push('Сервис (качество коммуникации):');

@@ -23,7 +23,6 @@ import {
   Timer,
   Percent,
   ChevronRight,
-  PiggyBank,
 } from 'lucide-react';
 
 const ChevronRightIcon = () => (
@@ -35,13 +34,11 @@ import {
   rpcPeriodByBranch,
   rpcPaymentsBreakdown,
   rpcHeatmap,
-  rpcCheckHistogram,
   rpcRefundsByDay,
   rpcNewVsReturning,
   rpcAvgIntervalDays,
   rpcAvgMedianCheck,
   rpcAgeByYear, // возраста (М/Ж)
-  rpcLensStructure, // структура линз
   rpcNetProfitByDay, // чистая прибыль по дням
 } from '@/lib/adminStats';
 
@@ -61,6 +58,41 @@ const toISODateLocal = (d: Date) => {
 };
 
 const todayISO = () => toISODateLocal(new Date());
+
+/** Гранулярность временной оси тренда среднего чека (адаптивно от длины периода) */
+type TrendGran = 'day' | 'week' | 'month';
+
+/** Строка тренда среднего чека: один временной бакет (день/неделя/месяц) */
+type AvgCheckTrendRow = {
+  bucket: string; // ключ сортировки: YYYY-MM-DD (день / понедельник недели) или YYYY-MM (месяц)
+  label: string; // подпись на оси X
+  frameAvg: number | null; // средний чек оправ в бакете (null — нет продаж оправ)
+  lensAvg: number | null; // средний чек линз в бакете
+  frameCnt: number; // число заказов с оправой
+  lensCnt: number; // число заказов с линзой
+};
+
+/** Ключ бакета для даты YYYY-MM-DD при заданной гранулярности */
+function trendBucketKey(dateISO: string, gran: TrendGran): string {
+  if (gran === 'month') return dateISO.slice(0, 7); // YYYY-MM
+  if (gran === 'week') {
+    const d = new Date(`${dateISO}T00:00:00Z`);
+    const mondayOffset = (d.getUTCDay() + 6) % 7; // 0 = понедельник
+    d.setUTCDate(d.getUTCDate() - mondayOffset);
+    return d.toISOString().slice(0, 10);
+  }
+  return dateISO;
+}
+
+/** Короткая подпись бакета для оси X */
+function trendBucketLabel(bucket: string, gran: TrendGran): string {
+  if (gran === 'month') {
+    const [y, m] = bucket.split('-');
+    return `${m}.${y.slice(2)}`;
+  }
+  const [, m, d] = bucket.split('-');
+  return `${d}.${m}`;
+}
 
 /** Берём только YYYY-MM-DD */
 const onlyDate = (s: string | null) => {
@@ -83,6 +115,52 @@ const dropSundays = <T extends { day: string }>(rows: T[]) =>
   rows
     .map((r) => ({ ...r, day: normalizeDay(r.day) }))
     .filter((r) => !isSundayISO(r.day));
+
+/* ========== выборка БЕЗ лимита 1000 строк ==========
+ * PostgREST режет любую выборку на 1000 строк (db-max-rows). За «Всё время»
+ * у нас 1000+ заказов / 3000+ позиций / 1800+ платежей — без пагинации
+ * доходы, маржа и средние чеки молча занижались. Эти хелперы тянут все строки.
+ */
+const PAGE_SIZE = 1000;
+
+/** Тянет ВСЕ строки запроса постранично (.range), обходя лимит в 1000. */
+async function fetchAllPaged<T>(
+  makeQuery: (rangeFrom: number, rangeTo: number) => PromiseLike<{ data: T[] | null; error: any }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let page = 0; ; page++) {
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data, error } = await makeQuery(from, to);
+    if (error) throw error;
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+  }
+  return out;
+}
+
+/**
+ * Запрос с фильтром .in(col, ids) по чанкам id (защита и от лимита строк,
+ * и от слишком длинного URL при тысячах id), с пагинацией внутри каждого чанка.
+ */
+async function fetchByIdChunks<T>(
+  ids: Array<number | string>,
+  makeQuery: (
+    chunk: Array<number | string>,
+    rangeFrom: number,
+    rangeTo: number,
+  ) => PromiseLike<{ data: T[] | null; error: any }>,
+  chunkSize = 300,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const rows = await fetchAllPaged<T>((a, b) => makeQuery(chunk, a, b));
+    out.push(...rows);
+  }
+  return out;
+}
 
 /** Человекочитаемое имя метода оплаты */
 const paymentMethodLabel = (m: string) => {
@@ -150,7 +228,7 @@ type HeatRow = {
   orders_cnt: number;
   revenue_sum: number;
 };
-type BinRow = { from_amt: number; to_amt: number; cnt: number };
+type DistBin = { from_amt: number; cnt: number };
 type RefundRow = { day: string; refunds_cnt: number; refunds_sum: number };
 
 type CustKpis = {
@@ -166,11 +244,10 @@ type CustKpis = {
 // Возраст/пол
 type AgeRow = { age: number; gender: 'Муж' | 'Жен'; orders_cnt: number };
 
-// Структура линз
-type LensStructRow = {
-  lens_family: string;
-  items_cnt: number;
-  revenue_sum: number;
+// Виды линз: сгруппированы по типу покрытия с каталожными названиями
+type LensCatRow = {
+  name: string;
+  cnt: number;
 };
 
 // Конкретные диоптрии
@@ -178,6 +255,141 @@ type LensSphRow = {
   sph: string;
   cnt: number;
 };
+
+/**
+ * Полный список видов линз (по типу покрытия, каталожные названия).
+ * Цвета хамелеона и знаки +/− сливаются в один вид; индекс 1.67, асферика
+ * и астигматика остаются отдельными видами — это разные продукты с разной ценой.
+ * Показываем ВСЕ виды, даже с нулевыми продажами за период.
+ */
+const LENS_CATEGORIES: string[] = [
+  'Стандарт',
+  'Антиблик',
+  'Защита от экранов',
+  'Хамелеон',
+  'Стандарт 1.67',
+  'Антиблик 1.67',
+  'Защита от экранов 1.67',
+  'Blue Block X',
+  'Асферика стандарт',
+  'Асферика антиблик',
+  'Асферика защита от экрана',
+  'Поликарбонат',
+  'Контроль миопии',
+  'Астигматика стандарт',
+  'Астигматика антиблик',
+  'Астигматика защита от экрана',
+  'Астигматика хамелеон',
+  'Астигматика Blue Block X',
+];
+
+/** Первый токен lens_type ('AR_PLUS [0–2.75]' → 'AR_PLUS') → каталожное название вида. */
+function lensTypeToCategory(lensType: string | null | undefined): string {
+  const tok = String(lensType ?? '').trim().split(/\s+/)[0].toUpperCase();
+  if (!tok) return 'Прочее';
+  // Астигматика (AST_*) — отдельная ветка
+  if (tok.startsWith('AST_')) {
+    if (tok.startsWith('AST_CHAME')) return 'Астигматика хамелеон';
+    if (tok.startsWith('AST_BBX')) return 'Астигматика Blue Block X';
+    if (tok.startsWith('AST_BB')) return 'Астигматика защита от экрана';
+    if (tok.startsWith('AST_AR')) return 'Астигматика антиблик';
+    if (tok.startsWith('AST_WHITE')) return 'Астигматика стандарт';
+    return 'Астигматика прочее';
+  }
+  // Асферика (ASPH_*)
+  if (tok.startsWith('ASPH_')) {
+    if (tok.startsWith('ASPH_AR')) return 'Асферика антиблик';
+    if (tok.startsWith('ASPH_BB')) return 'Асферика защита от экрана';
+    if (tok.startsWith('ASPH_STANDARD') || tok.startsWith('ASPH_WHITE')) return 'Асферика стандарт';
+    return 'Асферика прочее';
+  }
+  if (tok === 'POLY' || tok.startsWith('PC_159')) return 'Поликарбонат';
+  if (tok.startsWith('MYOPIA')) return 'Контроль миопии';
+  if (tok.startsWith('CHAME')) return 'Хамелеон'; // все цвета: BLACK/BROWN/BLUE/GREEN/PURPLE/PLUS/MINUS
+  if (tok === 'BBX') return 'Blue Block X';
+  // утончённые 1.67 — отдельные виды (проверяем до общих WHITE/AR/BB)
+  if (tok === 'WHITE_167') return 'Стандарт 1.67';
+  if (tok === 'AR_PLUS_167' || tok === 'AR_MINUS_167' || tok === 'AR_167') return 'Антиблик 1.67';
+  if (tok === 'BB_167') return 'Защита от экранов 1.67';
+  // базовые покрытия
+  if (tok.startsWith('WHITE')) return 'Стандарт';
+  if (tok.startsWith('AR')) return 'Антиблик';
+  if (tok.startsWith('BB')) return 'Защита от экранов';
+  return 'Прочее';
+}
+
+/** Строит гистограмму (распределение) сумм по корзинам шириной `bucket`. */
+function buildHistogram(values: number[], bucket: number): DistBin[] {
+  if (!values.length) return [];
+  let maxV = 0;
+  for (const v of values) if (v > maxV) maxV = v;
+  const top = Math.max(bucket, Math.ceil((maxV + 1) / bucket) * bucket);
+  const counts = new Map<number, number>();
+  for (let e = 0; e < top; e += bucket) counts.set(e, 0);
+  for (const v of values) {
+    const e = Math.floor(v / bucket) * bucket;
+    counts.set(e, (counts.get(e) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([from_amt, cnt]) => ({ from_amt, cnt }))
+    .sort((a, b) => a.from_amt - b.from_amt);
+}
+
+/**
+ * lens_type → id вида в lens_catalog (для подтягивания себестоимости cost_price_*).
+ * У части видов (1.67-стандарт, Blue Block X, астигматика-стандарт/BBX) нет точного
+ * аналога в каталоге — берём ближайший по себестоимости (помечены в LENS_PROXY_COST).
+ */
+function lensTypeToCatalogId(lensType: string | null | undefined): string | null {
+  const tok = String(lensType ?? '').trim().split(/\s+/)[0].toUpperCase();
+  if (!tok) return null;
+  if (tok.startsWith('AST_')) {
+    if (tok.startsWith('AST_CHAME')) return 'ast-chameleon';
+    if (tok.startsWith('AST_BBX')) return 'ast-screen';   // прокси
+    if (tok.startsWith('AST_BB')) return 'ast-screen';
+    if (tok.startsWith('AST_AR')) return 'ast-antiglare';
+    if (tok.startsWith('AST_WHITE')) return 'ast-antiglare'; // прокси (нет ast-standard)
+    return 'ast-antiglare';
+  }
+  if (tok.startsWith('ASPH_')) {
+    if (tok.startsWith('ASPH_AR')) return 'asph-antiglare';
+    if (tok.startsWith('ASPH_BB')) return 'asph-screen';
+    if (tok.startsWith('ASPH_STANDARD') || tok.startsWith('ASPH_WHITE')) return 'asph-standard';
+    return 'asph-standard';
+  }
+  if (tok === 'POLY' || tok.startsWith('PC_159')) return 'polycarbonate';
+  if (tok.startsWith('MYOPIA')) return 'myopia-control';
+  if (tok.startsWith('CHAME')) return 'chameleon';
+  if (tok === 'BBX') return 'screen'; // прокси (нет отдельного BBX в каталоге)
+  if (tok === 'WHITE_167') return 'standard'; // прокси (нет thin-standard)
+  if (tok === 'AR_PLUS_167' || tok === 'AR_MINUS_167' || tok === 'AR_167') return 'thin-antiglare';
+  if (tok === 'BB_167') return 'thin-screen';
+  if (tok.startsWith('WHITE')) return 'standard';
+  if (tok.startsWith('AR')) return 'antiglare';
+  if (tok.startsWith('BB')) return 'screen';
+  return null;
+}
+
+/** Виды, у которых себестоимость взята с ближайшего аналога (для пометки «*» в таблице). */
+const LENS_PROXY_COST = new Set<string>([
+  'Стандарт 1.67',
+  'Blue Block X',
+  'Астигматика стандарт',
+  'Астигматика Blue Block X',
+]);
+
+/** Высокий тир рецепта по метке диапазона в lens_type ('[0–2.75]' → низкий, иначе высокий). */
+function lensTypeIsHighTier(lensType: string | null | undefined): boolean {
+  const m = String(lensType ?? '').match(/\[(\d+(?:\.\d+)?)/);
+  if (!m) return false;
+  return Number(m[1]) > 0; // диапазоны, начинающиеся не с 0 (3–5.5, 6–8.5, 2–3.75 …) = от ±3.0
+}
+
+// Маржа по видам линз (вычисляется на клиенте из order_items + lens_catalog.cost_price_*)
+type LensMarginRow = { name: string; units: number; revenue: number; cost: number };
+
+// Выручка на трудочас + ФОТ/выручка по филиалам
+type SplhRow = { branch: string; revenue: number; hours: number; gross: number; splh: number; lcr: number };
 
 // Чистая прибыль по дням (все поля из admin_net_profit_by_day)
 type NetProfitRow = { day: string; orders_count: number; income: number; refunds: number; opex_total: number; cogs_total: number; payroll_total: number; net_profit: number };
@@ -189,12 +401,14 @@ type Orders10Row = {
   revenue_sum: number;
 };
 
-// Дата старта POS по каждому филиалу (первый реальный оплаченный заказ)
+// Дата старта POS по каждому филиалу (первый реальный оплаченный заказ).
+// Порядок ключей задаёт порядок чипов в фильтре.
 const BRANCH_START_DATE: Record<string, string> = {
   'Сокулук': '2025-11-15',
+  'Беловодск': '2026-06-03',
   'Кара-Балта': '2025-11-20',
   'Кант': '2025-12-17',
-  // Беловодск и Токмок ещё не подключены к POS
+  'Токмок': '2026-05-21',
 };
 
 // Только подключённые филиалы
@@ -208,57 +422,6 @@ function getEffectiveStartDate(selectedBranches: string[]): string {
   return dates.sort()[0];
 }
 
-/* ====== попытка получить границы "за всё время" ====== */
-async function fetchAllTimeBounds(p_branches: string[]) {
-  const sb = getSupabase();
-
-  // 1) Если вдруг есть RPC под границы — попробуем (не обязателен)
-  try {
-    const { data, error } = await sb.rpc(
-      'stats_date_bounds',
-      {
-        p_branches: p_branches.length ? p_branches : null,
-      } as any,
-    );
-
-    if (!error && data && (data.min_day || data.max_day)) {
-      const from = onlyDate(data.min_day) ?? '2020-01-01';
-      const to = onlyDate(data.max_day) ?? todayISO();
-      return { from, to };
-    }
-  } catch {
-    // ignore
-  }
-
-  // 2) Фолбэк: попробуем по stats_daily (если таблица есть)
-  try {
-    const { data: minArr, error: e1 } = await sb
-      .from('stats_daily' as any)
-      .select('day')
-      .order('day', { ascending: true })
-      .limit(1);
-
-    const { data: maxArr, error: e2 } = await sb
-      .from('stats_daily' as any)
-      .select('day')
-      .order('day', { ascending: false })
-      .limit(1);
-
-    if (!e1 && !e2) {
-      const minDay = Array.isArray(minArr) ? minArr[0]?.day : null;
-      const maxDay = Array.isArray(maxArr) ? maxArr[0]?.day : null;
-      const from = onlyDate(minDay ?? null) ?? '2020-01-01';
-      const to = onlyDate(maxDay ?? null) ?? todayISO();
-      return { from, to };
-    }
-  } catch {
-    // ignore
-  }
-
-  // 3) Самый безопасный фолбэк
-  return { from: '2025-11-15', to: todayISO() };
-}
-
 export default function AdminStatsPage() {
   /* --- доступ --- */
   const [gate, setGate] = React.useState<'pending' | 'ok' | 'denied'>('pending');
@@ -270,17 +433,12 @@ export default function AdminStatsPage() {
   const [fromISO, setFromISO] = React.useState<string>(() => getEffectiveStartDate([]));
   const [toISO, setToISO] = React.useState<string>(() => todayISO());
 
-  // При смене филиалов — подставляем правильную дату старта
-  const prevBranchesRef = React.useRef<string[]>([]);
-  React.useEffect(() => {
-    const prev = prevBranchesRef.current;
-    if (JSON.stringify(prev) !== JSON.stringify(branches)) {
-      prevBranchesRef.current = branches;
-      const effectiveStart = getEffectiveStartDate(branches);
-      // Обновляем только если текущая fromISO раньше чем дата старта филиала
-      setFromISO((cur) => cur < effectiveStart ? effectiveStart : cur);
-    }
-  }, [branches]);
+  // Режим расчёта доходов:
+  //   'gross' — по выручке (сумма заказов, включая долги — как будто их вернут)
+  //   'cash'  — по фактическим поступлениям (платежам)
+  // По умолчанию gross: 99% долгов возвращаются, и так маржа реалистичнее.
+  const [revenueMode, setRevenueMode] = React.useState<'gross' | 'cash'>('gross');
+
   const [filtersReady, setFiltersReady] = React.useState(false);
 
   /* --- данные --- */
@@ -289,11 +447,14 @@ export default function AdminStatsPage() {
   const [payments, setPayments] = React.useState<PayRow[]>([]);
   const [custKpis, setCustKpis] = React.useState<CustKpis | null>(null);
   const [heat, setHeat] = React.useState<HeatRow[]>([]);
-  const [bins, setBins] = React.useState<BinRow[]>([]);
+  const [frameBins, setFrameBins] = React.useState<DistBin[]>([]);
+  const [lensBins, setLensBins] = React.useState<DistBin[]>([]);
   const [refunds, setRefunds] = React.useState<RefundRow[]>([]);
   const [ageRows, setAgeRows] = React.useState<AgeRow[]>([]);
-  const [lensStruct, setLensStruct] = React.useState<LensStructRow[]>([]);
+  const [lensCats, setLensCats] = React.useState<LensCatRow[]>([]);
+  const [lensMargin, setLensMargin] = React.useState<LensMarginRow[]>([]);
   const [lensSph, setLensSph] = React.useState<LensSphRow[]>([]);
+  const [splh, setSplh] = React.useState<SplhRow[]>([]);
   const [netProfit, setNetProfit] = React.useState<NetProfitRow[]>([]);
   const [orders10, setOrders10] = React.useState<Orders10Row[]>([]);
 
@@ -304,13 +465,25 @@ export default function AdminStatsPage() {
   const [realPayroll, setRealPayroll] = React.useState(0);
   const [avgFrameCheck, setAvgFrameCheck] = React.useState(0);
   const [avgLensCheck, setAvgLensCheck] = React.useState(0);
+  // Динамика среднего чека оправ/линз по бакетам времени
+  const [avgCheckTrend, setAvgCheckTrend] = React.useState<AvgCheckTrendRow[]>([]);
+  const [avgCheckGran, setAvgCheckGran] = React.useState<TrendGran>('week');
+  // Аренда (фикс. OPEX) за воскресенья — нужна для итогов, т.к. она платится в т.ч. в выходные,
+  // хотя из дневных рядов воскресенья исключаются для других метрик.
+  const [sundayOpex, setSundayOpex] = React.useState(0);
 
   // навигация/URL
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // ВАЖНО: null = "все филиалы" (и для RPC это обычно правильнее, чем [])
-  const brArg = React.useMemo<string[] | null>(() => (branches.length ? branches : null), [branches]);
+  // Счётчик загрузок: защита от гонок — результат устаревшего запроса не должен
+  // перетирать свежий (быстрые клики по фильтрам).
+  const runIdRef = React.useRef(0);
+  // Запоминаем дату «С», выставленную автоматически от старта филиала. Если пользователь
+  // её не трогал — при смене филиала следуем за филиалом (и вперёд, и назад).
+  const autoFromRef = React.useRef<string>('');
+  // Гарантируем единоразовую первичную загрузку.
+  const didInitRef = React.useRef(false);
 
   /* --- проверка доступа --- */
   React.useEffect(() => {
@@ -339,13 +512,23 @@ export default function AdminStatsPage() {
 
       if (initialBranches.length) setBranches(initialBranches);
 
+      // Защита от перевёрнутого диапазона в ссылке (from > to) — меняем местами,
+      // чтобы поля и запрашиваемый период совпадали с первого рендера.
+      let f = urlFrom;
+      let t = urlTo;
+      if (f && t && f > t) [f, t] = [t, f];
+
       // Если из URL дали диапазон — используем его
-      if (urlFrom) setFromISO(urlFrom);
-      if (urlTo) setToISO(urlTo);
+      if (f) setFromISO(f);
+      if (t) setToISO(t);
 
       // Если диапазона нет — с даты старта выбранных филиалов
-      if (!urlFrom) setFromISO(getEffectiveStartDate(initialBranches));
-      if (!urlTo) setToISO(todayISO());
+      if (!f) {
+        const eff = getEffectiveStartDate(initialBranches);
+        setFromISO(eff);
+        autoFromRef.current = eff; // дата выставлена автоматически
+      }
+      if (!t) setToISO(todayISO());
 
       setFiltersReady(true);
     })();
@@ -365,7 +548,9 @@ export default function AdminStatsPage() {
 
   /* --- загрузчик (устойчивый к падению отдельных RPC) --- */
   const loadAll = React.useCallback(
-    async (override?: { fromISO?: string; toISO?: string; branches?: string[] }) => {
+    async (override?: { fromISO?: string; toISO?: string; branches?: string[]; revenueMode?: 'gross' | 'cash' }) => {
+      const myRun = ++runIdRef.current;
+      const isStale = () => runIdRef.current !== myRun;
       setLoading(true);
       setErr(null);
 
@@ -373,7 +558,14 @@ export default function AdminStatsPage() {
       setRealPayroll(0);
       setAvgFrameCheck(0);
       setAvgLensCheck(0);
+      setAvgCheckTrend([]);
+      setFrameBins([]);
+      setLensBins([]);
+      setLensCats([]);
+      setLensMargin([]);
+      setSplh([]);
       setNetProfit([]);
+      setSundayOpex(0);
 
       // берём либо override, либо стейт
       let from = (override?.fromISO ?? fromISO).slice(0, 10);
@@ -388,6 +580,14 @@ export default function AdminStatsPage() {
       }
 
       const brForRpc: string[] | null = br.length ? br : null;
+      const mode = override?.revenueMode ?? revenueMode;
+      // Верхняя граница created_at — эксклюзивный +1 день, единообразно для всех прямых
+      // запросов (раньше часть запросов брала "to + 'T23:59:59'" и теряла последнюю секунду).
+      const toExcISO = (() => {
+        const d = new Date(`${to}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + 1);
+        return d.toISOString().slice(0, 10);
+      })();
 
       try {
         const results = await Promise.allSettled([
@@ -398,11 +598,9 @@ export default function AdminStatsPage() {
           rpcAvgIntervalDays(from, to, brForRpc as any), // 4
           rpcAvgMedianCheck(from, to, brForRpc as any), // 5
           rpcHeatmap(from, to, brForRpc as any), // 6
-          rpcCheckHistogram(from, to, 200, 30000, brForRpc as any), // 7
-          rpcRefundsByDay(from, to, brForRpc as any), // 8
-          rpcAgeByYear(from, to, brForRpc as any), // 9
-          rpcLensStructure(from, to, brForRpc as any), // 10
-          rpcNetProfitByDay(from, to, brForRpc as any), // 11
+          rpcRefundsByDay(from, to, brForRpc as any), // 7
+          rpcAgeByYear(from, to, brForRpc as any), // 8
+          rpcNetProfitByDay(from, to, brForRpc as any), // 9
         ]);
 
         const warns: string[] = [];
@@ -433,24 +631,149 @@ export default function AdminStatsPage() {
           median_check: 0,
         });
         const heatRows = get<HeatRow[]>(6, []);
-        const binRows = get<BinRow[]>(7, []);
-        const refundRows = get<RefundRow[]>(8, []);
-        const ages = get<AgeRow[]>(9, []);
-        const lens = get<LensStructRow[]>(10, []);
-        const np = get<NetProfitRow[]>(11, []);
+        const refundRows = get<RefundRow[]>(7, []);
+        const ages = get<AgeRow[]>(8, []);
+        const np = get<NetProfitRow[]>(9, []);
+
+        // Сохраняем аренду (фикс. OPEX) за воскресенья — она входит в общие итоги,
+        // хотя из дневных рядов воскресенья исключаются (в выходной не работают,
+        // но аренда платится за все 365 дней).
+        const sundayOpexSum = (np || [])
+          .filter((r) => isSundayISO(String(r.day)))
+          .reduce((s, r) => s + (Number(r.opex_total) || 0), 0);
+        if (isStale()) return;
+        setSundayOpex(sundayOpexSum);
+
+        // Серверная выручка по дням (rpcRevenueInflowByDay) — потолок для cash-режима;
+        // доступна в обоих режимах (в отличие от grossByDay, который пуст в cash).
+        const revByDay = new Map<string, number>();
+        for (const r of d || []) revByDay.set(String(r.day).slice(0, 10), Number(r.revenue) || 0);
+
+        // Заранее получаем branch_id'ы выбранных филиалов (используются и для ЗП, и для выручки).
+        let branchIds: number[] | null = null;
+        if (brForRpc && brForRpc.length > 0) {
+          try {
+            const sb = getSupabase();
+            const { data: brIds } = await sb.from('branches').select('id').in('name', brForRpc);
+            if (brIds?.length) branchIds = brIds.map((b: any) => b.id);
+          } catch {
+            branchIds = null;
+          }
+        }
+
+        // === Выручка по дням (для режима 'gross': income = sum(orders.total_amount)) ===
+        // В режиме 'cash' оставляем income из RPC (= фактические поступления).
+        const grossByDay = new Map<string, number>();
+        if (mode === 'gross') {
+          try {
+            const sb = getSupabase();
+            const ordersData = await fetchAllPaged<any>((a, bb) => {
+              let qo = sb
+                .from('orders')
+                .select('created_at, total_amount, branch_id')
+                .gte('created_at', from)
+                .lt('created_at', toExcISO)
+                .eq('is_deleted', false)
+                .range(a, bb);
+              if (branchIds) qo = qo.in('branch_id', branchIds);
+              return qo;
+            });
+            for (const r of ordersData as any[]) {
+              const d = String(r.created_at).slice(0, 10);
+              grossByDay.set(d, (grossByDay.get(d) || 0) + (Number(r.total_amount) || 0));
+            }
+          } catch {
+            /* при ошибке оставляем grossByDay пустым → откатимся к cash */
+            warns.push('Не удалось посчитать выручку (режим «по выручке») — показаны поступления');
+          }
+        }
+
+        // Загружаем реальную ЗП по дням и патчим net_profit в np
+        // (RPC admin_net_profit_by_day возвращает payroll_total=0, поэтому график без патча
+        // показывает "прибыль" БЕЗ учёта ЗП — не сходится с KPI).
+        let npPatched = np;
+        let totalPayroll = 0;
+        try {
+          const sb = getSupabase();
+          let payErr: any = null;
+          let rows = await fetchAllPaged<any>((a, bb) => {
+            let q = sb
+              .from('v_payroll_daily_canonical')
+              .select('day, net_day')
+              .gte('day', from)
+              .lte('day', to)
+              .range(a, bb);
+            if (branchIds) q = q.in('branch_id', branchIds);
+            return q;
+          }).catch((e) => { payErr = e; return [] as any[]; });
+          // Fallback на v_payroll_daily, если canonical недоступен
+          if (payErr || rows.length === 0) {
+            rows = await fetchAllPaged<any>((a, bb) => {
+              let q2 = sb
+                .from('v_payroll_daily')
+                .select('day, net_day')
+                .gte('day', from)
+                .lte('day', to)
+                .range(a, bb);
+              if (branchIds) q2 = q2.in('branch_id', branchIds);
+              return q2;
+            }).catch(() => [] as any[]);
+          }
+          // Карта day → сумма net_day (по всем сотрудникам выбранных филиалов)
+          const payByDay = new Map<string, number>();
+          for (const r of rows) {
+            const d = String(r.day).slice(0, 10);
+            payByDay.set(d, (payByDay.get(d) || 0) + (Number(r.net_day) || 0));
+          }
+          npPatched = (np || []).map((r) => {
+            const dayKey = String(r.day).slice(0, 10);
+            const p = payByDay.get(dayKey) || 0;
+            const rpcIncome = Number(r.income) || 0;
+            const grossIncome = grossByDay.get(dayKey);
+            // Потолок дня: gross-выручка (если считали) либо серверная revenue.
+            const dayCap = grossIncome !== undefined ? grossIncome : revByDay.get(dayKey);
+            // В cash mode: если платежи (rpcIncome) превышают выручку дня — это
+            // переплата/сиротский платёж, обрезаем до выручки. Иначе маржа надувается.
+            const cashIncome = dayCap !== undefined && rpcIncome > dayCap ? dayCap : rpcIncome;
+            const income = mode === 'gross' && grossIncome !== undefined ? grossIncome : cashIncome;
+            const refunds = Number(r.refunds) || 0;
+            const opex = Number(r.opex_total) || 0;
+            const cogs = Number(r.cogs_total) || 0;
+            return {
+              ...r,
+              income,
+              payroll_total: p,
+              net_profit: income - refunds - opex - cogs - p,
+            };
+          });
+          // Сумма ЗП за весь период, включая воскресенья — симметрично воскресной аренде
+          // в OPEX (в выходные бывают бонусы/корректировки net_day).
+          totalPayroll = rows.reduce((s: number, r: any) => s + (Number(r.net_day) || 0), 0);
+        } catch {
+          /* фолбэк — оставляем np как есть */
+        }
+        if (isStale()) return;
+        setRealPayroll(totalPayroll);
+
+        // КЛЭМП: поступления не могут превышать выручку за день
+        // (защита от платежей за удалённые/чужие заказы — отрицательного долга не бывает).
+        const dClamped = (d || []).map((r) => {
+          const rev = Number(r.revenue) || 0;
+          const inf = Number(r.inflow) || 0;
+          return inf > rev ? { ...r, inflow: rev } : r;
+        });
 
         // УБИРАЕМ ВОСКРЕСЕНЬЯ ИЗ ДНЕВНЫХ РЯДОВ
-        setByDay(dropSundays(d));
+        if (isStale()) return;
+        setByDay(dropSundays(dClamped));
         setRefunds(dropSundays(refundRows));
-        setNetProfit(dropSundays(np));
+        setNetProfit(dropSundays(npPatched));
 
         // Остальное
         setByBranch(b);
         setPayments(p);
         setHeat(heatRows);
-        setBins(binRows);
         setAgeRows(ages);
-        setLensStruct(lens);
 
         setCustKpis({
           avg_check: Number(ck.avg_check || 0),
@@ -462,40 +785,65 @@ export default function AdminStatsPage() {
           customers_total: nv.customers_total,
         });
 
-        // === конкретные диоптрии (прямой запрос) ===
+        // === Универсум заказов за период (с учётом режима и филиалов) — общий
+        //    для распределения диоптрий и средних чеков/маржи.
+        //    gross = все заказы (вкл. долг), cash = только оплаченные. ===
+        let validIds: number[] = [];
         try {
           const sb = getSupabase();
-          // SQL через RPC не нужен — делаем join через JS
-          // Сначала получаем order_id из payments за период
-          let pq = sb.from('payments').select('order_id, created_at').gte('created_at', from).lt('created_at', to + 'T23:59:59');
-          const { data: payRows } = await pq;
-          const orderIds = [...new Set((payRows || []).map((r: any) => r.order_id))];
-
-          if (orderIds.length > 0) {
-            // Берём sph из order_items для этих заказов, с фильтром по филиалам
-            let oiq = sb.from('order_items').select('sph, order_id').in('order_id', orderIds).eq('item_type', 'lens').not('sph', 'is', null);
-            const { data: oiRows } = await oiq;
-
-            // Если нужен фильтр по филиалам — дополнительно фильтруем
-            let filteredRows = oiRows || [];
-            if (brForRpc && brForRpc.length > 0) {
-              const { data: brOrders } = await sb.from('orders').select('id, branch_id').in('id', orderIds);
-              const { data: brList } = await sb.from('branches').select('id, name').in('name', brForRpc);
-              const brIdSet = new Set((brList || []).map((b: any) => b.id));
-              const validOrderIds = new Set((brOrders || []).filter((o: any) => brIdSet.has(o.branch_id)).map((o: any) => o.id));
-              filteredRows = filteredRows.filter((r: any) => validOrderIds.has(r.order_id));
+          if (mode === 'gross') {
+            const ordRows = await fetchAllPaged<any>((a, bb) => {
+              let oq = sb
+                .from('orders')
+                .select('id')
+                .gte('created_at', from)
+                .lt('created_at', toExcISO)
+                .eq('is_deleted', false)
+                .range(a, bb);
+              if (branchIds) oq = oq.in('branch_id', branchIds);
+              return oq;
+            });
+            validIds = (ordRows || []).map((o: any) => o.id);
+          } else {
+            const paidRows = await fetchAllPaged<any>((a, bb) =>
+              sb.from('payments').select('order_id')
+                .gte('created_at', from).lt('created_at', toExcISO).range(a, bb),
+            );
+            const paidIds = [...new Set((paidRows || []).map((r: any) => r.order_id))];
+            if (paidIds.length > 0 && branchIds) {
+              const ordRows = await fetchByIdChunks<any>(paidIds, (chunk, a, bb) =>
+                sb.from('orders').select('id, branch_id').in('id', chunk).range(a, bb),
+              );
+              const brIdSet = new Set(branchIds);
+              validIds = (ordRows || []).filter((o: any) => brIdSet.has(o.branch_id)).map((o: any) => o.id);
+            } else {
+              validIds = paidIds;
             }
+          }
+        } catch {
+          validIds = [];
+        }
 
+        // === конкретные диоптрии (SPH) — по тому же универсуму заказов ===
+        try {
+          const sb = getSupabase();
+          if (validIds.length > 0) {
+            const oiRows = await fetchByIdChunks<any>(validIds, (chunk, a, bb) =>
+              sb.from('order_items').select('sph, order_id')
+                .in('order_id', chunk).eq('item_type', 'lens').not('sph', 'is', null).range(a, bb),
+            );
             const sphMap = new Map<string, number>();
-            for (const r of filteredRows) {
+            for (const r of oiRows) {
               const sph = String(r.sph);
               sphMap.set(sph, (sphMap.get(sph) || 0) + 1);
             }
             const sphRows = [...sphMap.entries()]
               .map(([sph, cnt]) => ({ sph, cnt }))
               .sort((a, b) => parseFloat(a.sph) - parseFloat(b.sph));
+            if (isStale()) return;
             setLensSph(sphRows);
           } else {
+            if (isStale()) return;
             setLensSph([]);
           }
         } catch (e: any) {
@@ -503,71 +851,190 @@ export default function AdminStatsPage() {
           setLensSph([]);
         }
 
-        // === реальные зарплаты из v_payroll_daily ===
+        // === средние чеки оправ/линз + виды/маржа линз — по тому же универсуму заказов ===
         try {
           const sb = getSupabase();
-          let q = sb.from('v_payroll_daily').select('net_day, day').gte('day', from).lte('day', to);
-          if (brForRpc && brForRpc.length > 0) {
-            const { data: brIds } = await sb.from('branches').select('id').in('name', brForRpc);
-            if (brIds?.length) q = q.in('branch_id', brIds.map((b: any) => b.id));
-          }
-          const { data: payData } = await q;
-          // Исключаем воскресенья для консистентности с другими метриками
-          const totalPayroll = (payData || [])
-            .filter((r: any) => !isSundayISO(String(r.day)))
-            .reduce((s: number, r: any) => s + (Number(r.net_day) || 0), 0);
-          setRealPayroll(totalPayroll);
-        } catch {
-          setRealPayroll(0);
-        }
-
-        // === средние чеки оправ/линз — прямой запрос к order_items ===
-        try {
-          const sb = getSupabase();
-          // Получаем оплаченные заказы за период
-          let pq = sb.from('payments').select('order_id').gte('created_at', from).lt('created_at', to + 'T23:59:59');
-          const { data: paidRows } = await pq;
-          const paidIds = [...new Set((paidRows || []).map((r: any) => r.order_id))];
-
-          if (paidIds.length > 0) {
-            // Фильтр по филиалам если нужен
-            let validIds = paidIds;
-            if (brForRpc && brForRpc.length > 0) {
-              const { data: brList } = await sb.from('branches').select('id').in('name', brForRpc);
-              const brIdSet = new Set((brList || []).map((b: any) => b.id));
-              const { data: ordRows } = await sb.from('orders').select('id, branch_id').in('id', paidIds);
-              validIds = (ordRows || []).filter((o: any) => brIdSet.has(o.branch_id)).map((o: any) => o.id);
+          if (validIds.length > 0) {
+            // Себестоимость линз из каталога (для маржи по видам)
+            const { data: catRows } = await sb.from('lens_catalog').select('id, cost_price_from, cost_price_to');
+            const costMap = new Map<string, { from: number; to: number }>();
+            for (const c of (catRows || [])) {
+              costMap.set(String(c.id), { from: Number(c.cost_price_from) || 0, to: Number(c.cost_price_to) || 0 });
             }
 
-            if (validIds.length > 0) {
-              const { data: oiRows } = await sb.from('order_items').select('order_id, item_type, price, qty').in('order_id', validIds);
-              const byOrder = new Map<number, { frame: number; lens: number }>();
-              for (const r of (oiRows || [])) {
-                const oid = r.order_id;
-                const prev = byOrder.get(oid) ?? { frame: 0, lens: 0 };
-                const amt = (Number(r.price) || 0) * (Number(r.qty) || 1);
-                if (r.item_type === 'frame') prev.frame += amt;
-                else if (r.item_type === 'lens') prev.lens += amt;
-                byOrder.set(oid, prev);
+            const oiRows = await fetchByIdChunks<any>(validIds, (chunk, a, bb) =>
+              sb.from('order_items')
+                .select('order_id, item_type, price, qty, lens_type')
+                .in('order_id', chunk).range(a, bb),
+            );
+            const byOrder = new Map<number, { frame: number; lens: number }>();
+            const catMap = new Map<string, number>(); // вид линзы → кол-во проданных линз
+            const marginMap = new Map<string, { units: number; revenue: number; cost: number }>();
+            for (const r of (oiRows || [])) {
+              const oid = r.order_id;
+              const prev = byOrder.get(oid) ?? { frame: 0, lens: 0 };
+              const amt = (Number(r.price) || 0) * (Number(r.qty) || 1);
+              if (r.item_type === 'frame') prev.frame += amt;
+              else if (r.item_type === 'lens') {
+                prev.lens += amt;
+                const cat = lensTypeToCategory(r.lens_type);
+                catMap.set(cat, (catMap.get(cat) || 0) + 1);
+                // Маржа: выручка = факт. price, себестоимость = каталожная по тиру (за линзу)
+                const catId = lensTypeToCatalogId(r.lens_type);
+                const c = catId ? costMap.get(catId) : undefined;
+                const unitCost = c ? (lensTypeIsHighTier(r.lens_type) ? c.to : c.from) : 0;
+                const qn = Number(r.qty) || 1;
+                const mm = marginMap.get(cat) ?? { units: 0, revenue: 0, cost: 0 };
+                mm.units += qn;
+                mm.revenue += amt;
+                mm.cost += unitCost * qn;
+                marginMap.set(cat, mm);
               }
-              let frameSum = 0, frameCnt = 0, lensSum = 0, lensCnt = 0;
-              for (const v of byOrder.values()) {
-                if (v.frame > 0) { frameSum += v.frame; frameCnt++; }
-                if (v.lens > 0) { lensSum += v.lens; lensCnt++; }
-              }
-              setAvgFrameCheck(frameCnt > 0 ? Math.round(frameSum / frameCnt) : 0);
-              setAvgLensCheck(lensCnt > 0 ? Math.round(lensSum / lensCnt) : 0);
-            } else {
-              setAvgFrameCheck(0);
-              setAvgLensCheck(0);
+              byOrder.set(oid, prev);
             }
+            // Средние чеки + распределения по оправам/линзам (только заказы, где есть такая позиция)
+            let frameSum = 0, frameCnt = 0, lensSum = 0, lensCnt = 0;
+            const frameAmts: number[] = [], lensAmts: number[] = [];
+            for (const v of byOrder.values()) {
+              if (v.frame > 0) { frameSum += v.frame; frameCnt++; frameAmts.push(v.frame); }
+              if (v.lens > 0) { lensSum += v.lens; lensCnt++; lensAmts.push(v.lens); }
+            }
+            if (isStale()) return;
+            setAvgFrameCheck(frameCnt > 0 ? Math.round(frameSum / frameCnt) : 0);
+            setAvgLensCheck(lensCnt > 0 ? Math.round(lensSum / lensCnt) : 0);
+            setFrameBins(buildHistogram(frameAmts, 500));
+            setLensBins(buildHistogram(lensAmts, 250));
+            // Виды линз: все каталожные виды (0 у непроданных) + нераспознанные снизу
+            const extra = [...catMap.keys()].filter((k) => !LENS_CATEGORIES.includes(k));
+            setLensCats(
+              [...LENS_CATEGORIES, ...extra].map((name) => ({ name, cnt: catMap.get(name) || 0 })),
+            );
+            // Маржа по видам линз (только проданные виды)
+            setLensMargin(
+              [...marginMap.entries()]
+                .map(([name, m]) => ({ name, units: m.units, revenue: Math.round(m.revenue), cost: Math.round(m.cost) }))
+                .filter((r) => r.units > 0),
+            );
+
+            // === Динамика среднего чека оправ/линз по бакетам времени ===
+            // Гранулярность адаптивная: короткий период — по дням, средний — по неделям, год+ — по месяцам.
+            const spanDays =
+              Math.round(
+                (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000,
+              ) + 1;
+            const gran: TrendGran = spanDays <= 21 ? 'day' : spanDays <= 210 ? 'week' : 'month';
+
+            // order_id → дата заказа (YYYY-MM-DD), чтобы разложить byOrder по бакетам
+            const dateById = new Map<number, string>();
+            try {
+              const ordDateRows = await fetchByIdChunks<any>(validIds, (chunk, a, bb) =>
+                sb.from('orders').select('id, created_at').in('id', chunk).range(a, bb),
+              );
+              for (const o of ordDateRows || []) {
+                dateById.set(Number(o.id), String(o.created_at).slice(0, 10));
+              }
+            } catch {
+              /* при ошибке dateById пуст → тренд будет пустым */
+            }
+
+            const bucketAgg = new Map<
+              string,
+              { frameSum: number; frameCnt: number; lensSum: number; lensCnt: number }
+            >();
+            for (const [oid, v] of byOrder.entries()) {
+              const dISO = dateById.get(Number(oid));
+              if (!dISO || dISO < from || dISO >= toExcISO) continue;
+              const key = trendBucketKey(dISO, gran);
+              const agg = bucketAgg.get(key) ?? { frameSum: 0, frameCnt: 0, lensSum: 0, lensCnt: 0 };
+              if (v.frame > 0) {
+                agg.frameSum += v.frame;
+                agg.frameCnt++;
+              }
+              if (v.lens > 0) {
+                agg.lensSum += v.lens;
+                agg.lensCnt++;
+              }
+              bucketAgg.set(key, agg);
+            }
+            const trendRows: AvgCheckTrendRow[] = [...bucketAgg.entries()]
+              .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+              .map(([bucket, agg]) => ({
+                bucket,
+                label: trendBucketLabel(bucket, gran),
+                frameAvg: agg.frameCnt > 0 ? Math.round(agg.frameSum / agg.frameCnt) : null,
+                lensAvg: agg.lensCnt > 0 ? Math.round(agg.lensSum / agg.lensCnt) : null,
+                frameCnt: agg.frameCnt,
+                lensCnt: agg.lensCnt,
+              }));
+            if (isStale()) return;
+            setAvgCheckGran(gran);
+            setAvgCheckTrend(trendRows);
           } else {
             setAvgFrameCheck(0);
             setAvgLensCheck(0);
+            setFrameBins([]);
+            setLensBins([]);
+            setLensCats([]);
+            setLensMargin([]);
+            setAvgCheckTrend([]);
           }
         } catch {
           setAvgFrameCheck(0);
           setAvgLensCheck(0);
+          setFrameBins([]);
+          setLensBins([]);
+          setLensCats([]);
+          setLensMargin([]);
+          setAvgCheckTrend([]);
+        }
+
+        // === SPLH (выручка/час) + ФОТ/выручка (LCR, брутто) по филиалам ===
+        try {
+          const sb = getSupabase();
+          // Часы и брутто-ФОТ по филиалам за период (постранично — обход лимита 1000)
+          const spRows = await fetchAllPaged<any>((a, bb) => {
+            let qsp = sb
+              .from('v_payroll_daily_canonical')
+              .select('branch_id, hours, hour_pay, bonus, penalties')
+              .gte('day', from)
+              .lte('day', to)
+              .range(a, bb);
+            if (branchIds) qsp = qsp.in('branch_id', branchIds);
+            return qsp;
+          });
+          const payByBr = new Map<number, { hours: number; gross: number }>();
+          for (const r of spRows) {
+            const bid = Number(r.branch_id);
+            const prev = payByBr.get(bid) ?? { hours: 0, gross: 0 };
+            prev.hours += Number(r.hours) || 0;
+            prev.gross += (Number(r.hour_pay) || 0) + (Number(r.bonus) || 0) - (Number(r.penalties) || 0);
+            payByBr.set(bid, prev);
+          }
+          // branch_id ↔ name
+          const { data: brAll } = await sb.from('branches').select('id, name');
+          const nameToId = new Map<string, number>((brAll || []).map((x: any) => [x.name, Number(x.id)]));
+          // Выручка по филиалу — из byBranch (orders_view), как в таблице сравнения
+          const rows: SplhRow[] = (b || [])
+            .map((br) => {
+              const bid = nameToId.get(br.branch);
+              const pay = bid != null ? payByBr.get(bid) : undefined;
+              const revenue = Number(br.ov_revenue) || 0;
+              const hours = pay?.hours || 0;
+              const gross = pay?.gross || 0;
+              return {
+                branch: br.branch,
+                revenue,
+                hours: Math.round(hours),
+                gross, // сырой брутто-ФОТ (для точного агрегата ФОТ/выручка)
+                splh: hours > 0 ? Math.round(revenue / hours) : 0,
+                lcr: revenue > 0 ? Math.round((gross / revenue) * 1000) / 10 : 0,
+              };
+            })
+            .filter((r) => r.revenue > 0 || r.hours > 0);
+          if (isStale()) return;
+          setSplh(rows);
+        } catch {
+          setSplh([]);
         }
 
         // === заказы по 10-минутным интервалам ===
@@ -579,6 +1046,7 @@ export default function AdminStatsPage() {
             p_branches: brForRpc,
           });
 
+          if (isStale()) return;
           if (err10) {
             warns.push(err10.message);
             setOrders10([]);
@@ -598,44 +1066,122 @@ export default function AdminStatsPage() {
           setOrders10([]);
         }
 
+        if (isStale()) return;
         if (warns.length) setErr(warns.join(' · '));
         else setErr(null);
 
         pushFiltersToURL(from, to, br);
       } finally {
-        setLoading(false);
+        // спиннер гасит только актуальный запрос (устаревший — молчит)
+        if (!isStale()) setLoading(false);
       }
     },
-    [fromISO, toISO, branches, pushFiltersToURL],
+    [fromISO, toISO, branches, revenueMode, pushFiltersToURL],
   );
 
-  /* --- первичная загрузка (только когда фильтры готовы) --- */
+  /* --- первичная загрузка: ровно один раз, когда доступ и фильтры готовы.
+     Дальше перезагружают только явные действия (пресеты/даты/филиалы/режим/«Обновить»),
+     чтобы не было скрытой авто-перезагрузки и двойных запросов. --- */
   React.useEffect(() => {
-    if (gate === 'ok' && filtersReady) void loadAll();
-  }, [gate, filtersReady, loadAll]);
+    if (gate === 'ok' && filtersReady && !didInitRef.current) {
+      didInitRef.current = true;
+      void loadAll();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gate, filtersReady]);
 
   /* --- быстрые пресеты (сразу грузим данные, чтобы не было "нажал — ничего не изменилось") --- */
   const applyPreset = React.useCallback(
-    async (preset: 'all' | 'month' | '30d' | '7d' | 'year') => {
+    async (preset: 'all' | 'month' | '30d' | '7d' | 'year' | 'branch_start') => {
       let r: { from: string; to: string };
 
       if (preset === 'month') r = getCurrentMonthRange();
       else if (preset === '30d') r = getLastNDaysRange(30);
       else if (preset === '7d') r = getLastNDaysRange(7);
       else if (preset === 'year') r = getCurrentYearRange();
-      else r = { from: getEffectiveStartDate(branches), to: todayISO() };
+      else if (preset === 'branch_start') {
+        // Старт = дата открытия выбранного филиала (если выбран один филиал — берём его,
+        // если выбрано несколько — самую раннюю из выбранных, как и "Всё время")
+        r = { from: getEffectiveStartDate(branches), to: todayISO() };
+      } else r = { from: getEffectiveStartDate(branches), to: todayISO() };
 
       const nextFrom = r.from.slice(0, 10);
       const nextTo = r.to.slice(0, 10);
 
       setFromISO(nextFrom);
       setToISO(nextTo);
+      // 'all'/'branch_start' выставляют дату старта филиала автоматически — запоминаем,
+      // чтобы смена филиала могла за ней следовать; явный период (7д/30д/месяц/год) — нет.
+      autoFromRef.current = (preset === 'all' || preset === 'branch_start') ? nextFrom : '';
 
       // мгновенная подгрузка по новому диапазону
       void loadAll({ fromISO: nextFrom, toISO: nextTo, branches });
     },
     [branches, loadAll],
   );
+
+  /* --- смена филиалов: следуем за датой старта (если её не трогали вручную) и грузим --- */
+  const applyBranches = React.useCallback(
+    (next: string[]) => {
+      const eff = getEffectiveStartDate(next);
+      // дату «С» не меняли вручную → следуем за филиалом (вперёд И назад);
+      // иначе не даём периоду начинаться раньше старта POS филиала.
+      const followAuto = fromISO === autoFromRef.current;
+      const nextFrom = followAuto ? eff : (fromISO < eff ? eff : fromISO);
+      autoFromRef.current = nextFrom;
+      setBranches(next);
+      setFromISO(nextFrom);
+      void loadAll({ branches: next, fromISO: nextFrom });
+    },
+    [fromISO, loadAll],
+  );
+
+  const toggleBranch = React.useCallback(
+    (b: string) => {
+      const active = branches.includes(b);
+      applyBranches(active ? branches.filter((x) => x !== b) : [...branches, b]);
+    },
+    [branches, applyBranches],
+  );
+
+  const applyRevenueMode = React.useCallback(
+    (m: 'gross' | 'cash') => {
+      if (m === revenueMode) return;
+      setRevenueMode(m);
+      void loadAll({ revenueMode: m });
+    },
+    [revenueMode, loadAll],
+  );
+
+  const applyFrom = React.useCallback(
+    (v: string) => {
+      const nv = v.slice(0, 10);
+      if (!nv) return;
+      setFromISO(nv);
+      void loadAll({ fromISO: nv });
+    },
+    [loadAll],
+  );
+
+  const applyTo = React.useCallback(
+    (v: string) => {
+      const nv = v.slice(0, 10);
+      if (!nv) return;
+      setToISO(nv);
+      void loadAll({ toISO: nv });
+    },
+    [loadAll],
+  );
+
+  /* --- дата открытия выбранного филиала (для подписи кнопки "С открытия") --- */
+  const branchStartInfo = React.useMemo(() => {
+    if (branches.length !== 1) return null;
+    const name = branches[0];
+    const iso = BRANCH_START_DATE[name];
+    if (!iso) return null;
+    const [y, m, d] = iso.split('-');
+    return { name, iso, label: `${d}.${m}.${y}` };
+  }, [branches]);
 
   /* --- агрегаты KPI --- */
   const totals = React.useMemo(() => {
@@ -651,18 +1197,25 @@ export default function AdminStatsPage() {
 
   // Финансовые итоги из netProfit + реальные зарплаты + средние чеки
   const financeTotals = React.useMemo(() => {
-    let income = 0, opex = 0, cogs = 0, netProfitSum = 0;
+    let income = 0, opexWorkdays = 0, cogs = 0, refunds = 0;
     for (const r of netProfit) {
       income += r.income || 0;
-      opex += r.opex_total || 0;
+      refunds += r.refunds || 0;
+      opexWorkdays += r.opex_total || 0;
       cogs += r.cogs_total || 0;
-      netProfitSum += r.net_profit || 0;
     }
-    // Реальная прибыль = доходы - расходы (opex+cogs) - реальные зарплаты
-    const realNet = income - opex - cogs - realPayroll;
+    // OPEX за все дни = рабочие дни + воскресенья (аренда платится и в выходные)
+    const opex = opexWorkdays + (sundayOpex || 0);
+    // Реальная прибыль = доходы − возвраты − расходы (opex+cogs) − реальные зарплаты.
+    // Та же формула, что в дневном ряду net_profit, поэтому верхний KPI «Чистая прибыль»
+    // и график «Чистая прибыль по дням» сходятся (с точностью до воскресной аренды).
+    const realNet = income - refunds - opex - cogs - realPayroll;
     const margin = income > 0 ? Math.round((realNet / income) * 100) : 0;
-    return { income, opex, cogs, payroll: realPayroll, netProfit: realNet, margin, frameAvg: avgFrameCheck, lensAvg: avgLensCheck };
-  }, [netProfit, realPayroll, avgFrameCheck, avgLensCheck]);
+    // Чистая прибыль в среднем за день. Делим на число рабочих дней с данными в периоде.
+    const workDays = netProfit.length;
+    const profitPerDay = workDays > 0 ? Math.round(realNet / workDays) : 0;
+    return { income, opex, cogs, payroll: realPayroll, netProfit: realNet, margin, profitPerDay, workDays, frameAvg: avgFrameCheck, lensAvg: avgLensCheck };
+  }, [netProfit, realPayroll, avgFrameCheck, avgLensCheck, sundayOpex]);
 
   const paymentsTotals = React.useMemo(
     () => ({
@@ -863,6 +1416,89 @@ export default function AdminStatsPage() {
       ],
     };
   }, [byDay, axisCommon, chartTheme, gradTeal, gradMoneyArea, tooltipGlass]);
+
+  // Динамика среднего чека: две линии (оправы / линзы) на общей временной оси
+  const optionAvgCheckTrend: EChartsOption = React.useMemo(() => {
+    const x = avgCheckTrend.map((r) => r.label);
+    const frame = avgCheckTrend.map((r) => r.frameAvg);
+    const lens = avgCheckTrend.map((r) => r.lensAvg);
+    const cntByLabel = new Map(
+      avgCheckTrend.map((r) => [r.label, { f: r.frameCnt, l: r.lensCnt }]),
+    );
+    const granRu = avgCheckGran === 'day' ? 'День' : avgCheckGran === 'week' ? 'Неделя с' : 'Месяц';
+
+    return {
+      backgroundColor: 'transparent',
+      grid: { top: 46, right: 18, bottom: 38, left: 56 },
+      legend: {
+        top: 8,
+        itemWidth: 14,
+        itemHeight: 8,
+        textStyle: { color: chartTheme.subtext, fontSize: 12, fontWeight: 600 },
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'line', lineStyle: { color: 'rgba(56,189,248,0.45)' } },
+        ...(tooltipGlass as any),
+        formatter: (params: any) => {
+          const arr = Array.isArray(params) ? params : [params];
+          const label = arr[0]?.axisValue ?? '';
+          const c = cntByLabel.get(label);
+          const lines = arr
+            .map((p: any) => {
+              const val =
+                p.value === null || p.value === undefined
+                  ? '—'
+                  : `${nf(Math.round(p.value))} сом`;
+              const cnt = p.seriesName === 'Оправы' ? c?.f : c?.l;
+              const cntTxt =
+                cnt !== undefined
+                  ? ` <span style="color:rgba(15,23,42,0.5)">· ${cnt} зак.</span>`
+                  : '';
+              return `${p.marker} ${p.seriesName}: <b>${val}</b>${cntTxt}`;
+            })
+            .join('<br/>');
+          return `<div style="font-weight:600;margin-bottom:2px">${granRu} ${label}</div>${lines}`;
+        },
+      },
+      xAxis: { type: 'category', data: x, boundaryGap: false, ...axisCommon },
+      yAxis: {
+        type: 'value',
+        ...axisCommon,
+        axisLabel: {
+          color: chartTheme.axis,
+          fontSize: 11,
+          formatter: (v: number) => nf(Number(v)),
+        },
+      },
+      series: [
+        {
+          name: 'Оправы',
+          type: 'line',
+          smooth: 0.35,
+          symbol: 'circle',
+          symbolSize: 6,
+          connectNulls: true,
+          lineStyle: { width: 3, color: chartTheme.cyan },
+          itemStyle: { color: chartTheme.cyan },
+          emphasis: { focus: 'series' },
+          data: frame,
+        },
+        {
+          name: 'Линзы',
+          type: 'line',
+          smooth: 0.35,
+          symbol: 'circle',
+          symbolSize: 6,
+          connectNulls: true,
+          lineStyle: { width: 3, color: chartTheme.violet },
+          itemStyle: { color: chartTheme.violet },
+          emphasis: { focus: 'series' },
+          data: lens,
+        },
+      ],
+    };
+  }, [avgCheckTrend, avgCheckGran, axisCommon, chartTheme, tooltipGlass]);
 
   const optionNetProfit: EChartsOption = React.useMemo(() => {
     const x = netProfit.map((r) => r.day);
@@ -1135,60 +1771,65 @@ export default function AdminStatsPage() {
     };
   }, [heat, axisCommon, gradTeal, tooltipGlass]);
 
-  const optionBins: EChartsOption = React.useMemo(() => {
-    if (!bins.length) {
-      return {
-        backgroundColor: 'transparent',
-        xAxis: { type: 'value' },
-        yAxis: { type: 'value' },
-        series: [{ type: 'line', data: [] }],
-      };
-    }
-    const nonEmpty = bins.filter((b) => (b.cnt || 0) > 0);
-    if (!nonEmpty.length) {
-      return {
-        backgroundColor: 'transparent',
-        xAxis: { type: 'value' },
-        yAxis: { type: 'value' },
-        series: [{ type: 'line', data: [] }],
-      };
-    }
-    const sorted = [...nonEmpty].sort((a, b) => (a.from_amt || 0) - (b.from_amt || 0));
-    const points = sorted.map((b) => [Number(b.from_amt || 0), Number(b.cnt || 0)]);
+  // Общий билдер кривой распределения чеков (по корзинам сумм)
+  const buildDistOption = React.useCallback(
+    (data: DistBin[], unit: string): EChartsOption => {
+      const nonEmpty = (data || []).filter((b) => (b.cnt || 0) > 0);
+      if (!nonEmpty.length) {
+        return {
+          backgroundColor: 'transparent',
+          xAxis: { type: 'value' },
+          yAxis: { type: 'value' },
+          series: [{ type: 'line', data: [] }],
+        };
+      }
+      const sorted = [...data].sort((a, b) => (a.from_amt || 0) - (b.from_amt || 0));
+      const points = sorted.map((b) => [Number(b.from_amt || 0), Number(b.cnt || 0)]);
 
-    return {
-      backgroundColor: 'transparent',
-      grid: { top: 26, right: 18, bottom: 42, left: 56 },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'line', lineStyle: { color: 'rgba(56,189,248,0.45)' } },
-        formatter: (params: any) => {
-          const p = Array.isArray(params) ? params[0] : params;
-          const [amount, count] = p.data as [number, number];
-          return `Чек: <b>${nf(Math.round(amount))}</b> сом<br/>Кол-во чеков: <b>${nf(Math.round(count))}</b>`;
+      return {
+        backgroundColor: 'transparent',
+        grid: { top: 26, right: 18, bottom: 42, left: 56 },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'line', lineStyle: { color: 'rgba(56,189,248,0.45)' } },
+          formatter: (params: any) => {
+            const p = Array.isArray(params) ? params[0] : params;
+            const [amount, count] = p.data as [number, number];
+            return `Чек ${unit}: <b>${nf(Math.round(amount))}</b> сом<br/>Кол-во чеков: <b>${nf(Math.round(count))}</b>`;
+          },
+          ...(tooltipGlass as any),
         },
-        ...(tooltipGlass as any),
-      },
-      xAxis: {
-        type: 'value',
-        ...axisCommon,
-        axisLabel: { color: chartTheme.axis, formatter: (v: number) => nf(v) },
-      },
-      yAxis: { type: 'value', ...axisCommon, minInterval: 1 },
-      series: [
-        {
-          type: 'line',
-          smooth: 0.35,
-          symbol: 'circle',
-          symbolSize: 5,
-          lineStyle: { width: 3, color: gradTeal as any },
-          itemStyle: { color: chartTheme.cyan },
-          data: points,
-          areaStyle: { opacity: 1, color: gradMoneyArea as any },
+        xAxis: {
+          type: 'value',
+          ...axisCommon,
+          axisLabel: { color: chartTheme.axis, formatter: (v: number) => nf(v) },
         },
-      ],
-    };
-  }, [bins, axisCommon, chartTheme, gradTeal, gradMoneyArea, tooltipGlass]);
+        yAxis: { type: 'value', ...axisCommon, minInterval: 1 },
+        series: [
+          {
+            type: 'line',
+            smooth: 0.35,
+            symbol: 'circle',
+            symbolSize: 5,
+            lineStyle: { width: 3, color: gradTeal as any },
+            itemStyle: { color: chartTheme.cyan },
+            data: points,
+            areaStyle: { opacity: 1, color: gradMoneyArea as any },
+          },
+        ],
+      };
+    },
+    [axisCommon, chartTheme, gradTeal, gradMoneyArea, tooltipGlass],
+  );
+
+  const optionFrameBins: EChartsOption = React.useMemo(
+    () => buildDistOption(frameBins, 'по оправам'),
+    [buildDistOption, frameBins],
+  );
+  const optionLensBins: EChartsOption = React.useMemo(
+    () => buildDistOption(lensBins, 'по линзам'),
+    [buildDistOption, lensBins],
+  );
 
   const optionRefunds: EChartsOption = React.useMemo(() => {
     const x = refunds.map((r) => r.day);
@@ -1310,7 +1951,7 @@ export default function AdminStatsPage() {
   }, [ageRows, axisCommon, chartTheme, tooltipGlass]);
 
   const optionLensTypes: EChartsOption = React.useMemo(() => {
-    if (!lensStruct || lensStruct.length === 0) {
+    if (!lensCats || lensCats.length === 0) {
       return {
         backgroundColor: 'transparent',
         xAxis: { type: 'value' },
@@ -1318,13 +1959,14 @@ export default function AdminStatsPage() {
         series: [{ type: 'bar', data: [] }],
       };
     }
-    const sorted = [...lensStruct].sort((a, b) => b.items_cnt - a.items_cnt);
-    const cats = sorted.map((r) => r.lens_family || '—').reverse();
-    const vals = sorted.map((r) => r.items_cnt || 0).reverse();
+    // По убыванию продаж; непроданные виды (0) уходят вниз графика
+    const sorted = [...lensCats].sort((a, b) => b.cnt - a.cnt);
+    const cats = sorted.map((r) => r.name || '—').reverse();
+    const vals = sorted.map((r) => r.cnt || 0).reverse();
 
     return {
       backgroundColor: 'transparent',
-      grid: { top: 14, right: 18, bottom: 12, left: 190 },
+      grid: { top: 14, right: 40, bottom: 12, left: 210 },
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
@@ -1332,17 +1974,29 @@ export default function AdminStatsPage() {
         ...(tooltipGlass as any),
       },
       xAxis: { type: 'value', ...axisCommon, minInterval: 1 },
-      yAxis: { type: 'category', data: cats, ...axisCommon },
+      yAxis: {
+        type: 'category',
+        data: cats,
+        ...axisCommon,
+        axisLabel: { color: chartTheme.axis, fontSize: 11 },
+      },
       series: [
         {
           type: 'bar',
-          barMaxWidth: 22,
+          barMaxWidth: 16,
           itemStyle: { borderRadius: 10, color: gradTeal as any },
           data: vals,
+          label: {
+            show: true,
+            position: 'right',
+            color: chartTheme.axis,
+            fontSize: 11,
+            formatter: (p: any) => (Number(p.value) > 0 ? nf(Number(p.value)) : ''),
+          },
         },
       ],
     };
-  }, [lensStruct, axisCommon, gradTeal, tooltipGlass]);
+  }, [lensCats, axisCommon, chartTheme, gradTeal, tooltipGlass]);
 
   const optionLensSphRanges: EChartsOption = React.useMemo(() => {
     if (!lensSph || lensSph.length === 0) {
@@ -1385,6 +2039,126 @@ export default function AdminStatsPage() {
     };
   }, [lensSph, axisCommon, chartTheme, gradTeal, tooltipGlass]);
 
+  // Маржа по видам линз: таблица + Парето (по убыванию абсолютной маржи)
+  const lensMarginView = React.useMemo(() => {
+    const base = lensMargin
+      .map((r) => {
+        const margin = r.revenue - r.cost;
+        return {
+          name: r.name,
+          units: r.units,
+          revenue: r.revenue,
+          cost: r.cost,
+          margin,
+          marginPct: r.revenue > 0 ? (margin / r.revenue) * 100 : 0,
+          proxy: LENS_PROXY_COST.has(r.name),
+        };
+      })
+      .sort((a, b) => b.margin - a.margin);
+    const totalMargin = base.reduce((s, r) => s + r.margin, 0);
+    const totalRevenue = base.reduce((s, r) => s + r.revenue, 0);
+    let cum = 0;
+    const rows = base.map((r) => {
+      const share = totalMargin > 0 ? (r.margin / totalMargin) * 100 : 0;
+      cum += share;
+      return { ...r, share, cumShare: Math.round(cum * 10) / 10 };
+    });
+    return {
+      rows,
+      totalMargin,
+      totalRevenue,
+      avgMarginPct: totalRevenue > 0 ? (totalMargin / totalRevenue) * 100 : 0,
+    };
+  }, [lensMargin]);
+
+  const optionLensMargin: EChartsOption = React.useMemo(() => {
+    const rows = lensMarginView.rows;
+    if (!rows.length) {
+      return { backgroundColor: 'transparent', xAxis: { type: 'category', data: [] }, yAxis: { type: 'value' }, series: [{ type: 'bar', data: [] }] };
+    }
+    const names = rows.map((r) => r.name);
+    const margins = rows.map((r) => Math.round(r.margin));
+    const cum = rows.map((r) => r.cumShare);
+    return {
+      backgroundColor: 'transparent',
+      grid: { top: 32, right: 52, bottom: 96, left: 64 },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (params: any) => {
+          const arr = Array.isArray(params) ? params : [params];
+          const r = rows[arr[0].dataIndex];
+          return `${r.name}${r.proxy ? ' *' : ''}<br/>Маржа: <b>${nf(Math.round(r.margin))}</b> сом (${Math.round(r.marginPct)}%)<br/>Выручка: <b>${nf(r.revenue)}</b> · Себест.: ${nf(r.cost)}<br/>Доля в марже: <b>${r.share.toFixed(1)}%</b> (накоп. ${r.cumShare}%)`;
+        },
+        ...(tooltipGlass as any),
+      },
+      legend: { top: 0, data: ['Маржа, сом', 'Накопленная доля'], textStyle: { color: chartTheme.subtext, fontWeight: 600 } },
+      xAxis: { type: 'category', data: names, ...axisCommon, axisLabel: { color: chartTheme.axis, fontSize: 10, rotate: 38, interval: 0 } },
+      yAxis: [
+        { type: 'value', ...axisCommon, axisLabel: { color: chartTheme.axis, formatter: (v: number) => nf(v) } },
+        { type: 'value', min: 0, max: 100, position: 'right', axisLabel: { color: chartTheme.axis, formatter: '{value}%' }, splitLine: { show: false } },
+      ],
+      series: [
+        { name: 'Маржа, сом', type: 'bar', barMaxWidth: 26, itemStyle: { borderRadius: [8, 8, 0, 0], color: gradTeal as any }, data: margins },
+        { name: 'Накопленная доля', type: 'line', yAxisIndex: 1, smooth: 0.2, symbol: 'circle', symbolSize: 5, lineStyle: { width: 2.5, color: chartTheme.rose }, itemStyle: { color: chartTheme.rose }, data: cum },
+      ],
+    };
+  }, [lensMarginView, axisCommon, chartTheme, gradTeal, tooltipGlass]);
+
+  // SPLH + LCR по филиалам (агрегат для KPI)
+  const splhTotals = React.useMemo(() => {
+    const revenue = splh.reduce((s, r) => s + r.revenue, 0);
+    const hours = splh.reduce((s, r) => s + r.hours, 0);
+    const gross = splh.reduce((s, r) => s + r.gross, 0);
+    return {
+      splh: hours > 0 ? Math.round(revenue / hours) : 0,
+      lcr: revenue > 0 ? Math.round((gross / revenue) * 1000) / 10 : 0,
+      revenue,
+      hours,
+    };
+  }, [splh]);
+
+  const optionSplh: EChartsOption = React.useMemo(() => {
+    if (!splh.length) {
+      return { backgroundColor: 'transparent', xAxis: { type: 'category', data: [] }, yAxis: { type: 'value' }, series: [{ type: 'bar', data: [] }] };
+    }
+    const rows = [...splh].sort((a, b) => b.splh - a.splh);
+    const names = rows.map((r) => r.branch);
+    const splhVals = rows.map((r) => r.splh);
+    const lcrVals = rows.map((r) => r.lcr);
+    return {
+      backgroundColor: 'transparent',
+      grid: { top: 36, right: 56, bottom: 36, left: 64 },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (params: any) => {
+          const arr = Array.isArray(params) ? params : [params];
+          const r = rows[arr[0].dataIndex];
+          return `${r.branch}<br/>Выручка/час: <b>${nf(r.splh)}</b> сом<br/>ФОТ/выручка: <b>${r.lcr}%</b><br/>Часы: ${nf(r.hours)} · Выручка: ${nf(r.revenue)}`;
+        },
+        ...(tooltipGlass as any),
+      },
+      legend: { top: 0, data: ['Выручка/час', 'ФОТ/выручка, %'], textStyle: { color: chartTheme.subtext, fontWeight: 600 } },
+      xAxis: { type: 'category', data: names, ...axisCommon },
+      yAxis: [
+        { type: 'value', ...axisCommon, axisLabel: { color: chartTheme.axis, formatter: (v: number) => nf(v) } },
+        { type: 'value', position: 'right', min: 0, axisLabel: { color: chartTheme.axis, formatter: '{value}%' }, splitLine: { show: false } },
+      ],
+      series: [
+        {
+          name: 'Выручка/час',
+          type: 'bar',
+          barMaxWidth: 40,
+          itemStyle: { borderRadius: [10, 10, 6, 6], color: gradTeal as any },
+          data: splhVals,
+          label: { show: true, position: 'top', color: chartTheme.axis, fontSize: 11, formatter: (p: any) => nf(Number(p.value)) },
+        },
+        { name: 'ФОТ/выручка, %', type: 'line', yAxisIndex: 1, smooth: 0.2, symbol: 'circle', symbolSize: 6, lineStyle: { width: 2.5, color: chartTheme.rose }, itemStyle: { color: chartTheme.rose }, data: lcrVals },
+      ],
+    };
+  }, [splh, axisCommon, chartTheme, gradTeal, tooltipGlass]);
+
   /* ========== UI ========== */
   return (
     <div className="text-slate-50">
@@ -1420,7 +2194,7 @@ export default function AdminStatsPage() {
             </div>
 
             {/* Навигация */}
-            <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="mb-5 grid grid-cols-1 gap-3">
               <Link
                 href="/finance/settings"
                 className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40"
@@ -1434,54 +2208,104 @@ export default function AdminStatsPage() {
                 </div>
                 <ChevronRightIcon />
               </Link>
-
-              <Link
-                href="/admin/budget"
-                className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40"
-              >
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
-                  <PiggyBank className="h-5 w-5 text-white" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[15px] font-semibold text-slate-900">Бюджет расходов</div>
-                  <div className="mt-0.5 text-xs text-slate-500">План и контроль расходов по филиалам</div>
-                </div>
-                <ChevronRightIcon />
-              </Link>
             </div>
 
             {/* Filters */}
             <Section tone="neutral">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <SoftGhostButton onClick={() => applyPreset('7d')}>7д</SoftGhostButton>
-                  <SoftGhostButton onClick={() => applyPreset('month')}>Месяц</SoftGhostButton>
-                  <SoftGhostButton onClick={() => applyPreset('all')}>Всё время</SoftGhostButton>
+              <div className="flex flex-col gap-4">
+                {/* Строка 1: период (пресеты), даты, режим расчёта, обновить */}
+                <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
+                  <FilterGroup label="Период">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <SoftGhostButton onClick={() => applyPreset('7d')}>7 дней</SoftGhostButton>
+                      <SoftGhostButton onClick={() => applyPreset('30d')}>30 дней</SoftGhostButton>
+                      <SoftGhostButton onClick={() => applyPreset('month')}>Месяц</SoftGhostButton>
+                      <SoftGhostButton onClick={() => applyPreset('year')}>Год</SoftGhostButton>
+                      <SoftGhostButton onClick={() => applyPreset('all')}>Всё время</SoftGhostButton>
+                      {branchStartInfo && (
+                        <SoftGhostButton
+                          onClick={() => applyPreset('branch_start')}
+                          title={`Считать с даты открытия филиала ${branchStartInfo.name} (${branchStartInfo.label})`}
+                        >
+                          С открытия ({branchStartInfo.label})
+                        </SoftGhostButton>
+                      )}
+                    </div>
+                  </FilterGroup>
+
+                  <FilterGroup label="Даты">
+                    <div className="flex items-center gap-2">
+                      <DateField ariaLabel="Дата начала периода" value={fromISO} max={toISO || todayISO()} onChange={applyFrom} />
+                      <span className="text-slate-400 text-xs">—</span>
+                      <DateField ariaLabel="Дата конца периода" value={toISO} min={fromISO} max={todayISO()} onChange={applyTo} />
+                    </div>
+                  </FilterGroup>
+
+                  <FilterGroup label="Расчёт финансов">
+                    <div
+                      className="inline-flex items-center rounded-xl bg-white ring-1 ring-slate-200 p-0.5 text-xs font-medium"
+                      title="Доходы, маржа и средние чеки считаются от выручки (включая долги) или только от поступивших платежей"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => applyRevenueMode('gross')}
+                        className={[
+                          'px-3 py-1.5 rounded-lg transition',
+                          revenueMode === 'gross'
+                            ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                            : 'text-slate-600 hover:bg-slate-50',
+                        ].join(' ')}
+                      >
+                        По выручке
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyRevenueMode('cash')}
+                        className={[
+                          'px-3 py-1.5 rounded-lg transition',
+                          revenueMode === 'cash'
+                            ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                            : 'text-slate-600 hover:bg-slate-50',
+                        ].join(' ')}
+                      >
+                        По поступлениям
+                      </button>
+                    </div>
+                  </FilterGroup>
+
+                  <div className="ml-auto self-end">
+                    <SoftPrimaryButton onClick={() => loadAll()} loading={loading} icon={RefreshCw}>
+                      {loading ? 'Обновляю…' : 'Обновить'}
+                    </SoftPrimaryButton>
+                  </div>
                 </div>
 
-                <div className="h-5 w-px bg-slate-200 mx-1" />
+                {/* Строка 2: филиалы — отдельной строкой, удобно выбрать один или несколько */}
+                <FilterGroup label={branches.length ? `Филиалы · выбрано ${branches.length}` : 'Филиалы · все'}>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Chip active={branches.length === 0} onClick={() => applyBranches([])}>Все</Chip>
+                    {branchOptions.map((b) => (
+                      <Chip key={b} active={branches.includes(b)} onClick={() => toggleBranch(b)}>
+                        {b}
+                      </Chip>
+                    ))}
+                  </div>
+                </FilterGroup>
+              </div>
 
-                <InputDate value={fromISO} onChange={(v) => setFromISO(v.slice(0, 10))} />
-                <span className="text-slate-400 text-xs">—</span>
-                <InputDate value={toISO} onChange={(v) => setToISO(v.slice(0, 10))} />
-
-                <div className="h-5 w-px bg-slate-200 mx-1" />
-
-                <Chip active={branches.length === 0} onClick={() => setBranches([])}>Все</Chip>
-                {branchOptions.map((b) => {
-                  const active = branches.includes(b);
-                  return (
-                    <Chip key={b} active={active} onClick={() => setBranches((prev) => (active ? prev.filter((x) => x !== b) : [...prev, b]))}>
-                      {b}
-                    </Chip>
-                  );
-                })}
-
-                <div className="h-5 w-px bg-slate-200 mx-1" />
-
-                <SoftPrimaryButton onClick={() => loadAll()} disabled={loading} icon={TrendingUp}>
-                  {loading ? '…' : 'Показать'}
-                </SoftPrimaryButton>
+              {/* Подпись о режиме расчёта финансов */}
+              <div className="mt-3 text-xs text-slate-500">
+                {revenueMode === 'gross' ? (
+                  <>
+                    💡 Доходы, маржа и средние чеки считаются <b>по выручке</b> (включая долг — как будто все долги вернут).
+                    Верхние KPI «Выручка/Поступления/Долг» показывают факт независимо от режима.
+                  </>
+                ) : (
+                  <>
+                    💡 Доходы, маржа и средние чеки считаются <b>по поступлениям</b> (только оплаченные заказы).
+                    Долги в финансы не входят. Верхние KPI «Выручка/Поступления/Долг» — факт по БД.
+                  </>
+                )}
               </div>
 
               {err && (
@@ -1527,20 +2351,64 @@ export default function AdminStatsPage() {
 
             {/* Finance KPIs */}
             <div className="mt-4 grid gap-4 md:grid-cols-5">
-              <KPI label="Доходы" value={loading ? '0' : nf(financeTotals.income)} icon={HandCoins} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
-              <KPI label="OPEX" value={loading ? '0' : nf(financeTotals.opex)} icon={CreditCard} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-slate-200/40" />
-              <KPI label="Себестоимость" value={loading ? '0' : nf(financeTotals.cogs)} icon={CreditCard} iconTone="money" accent="from-slate-200/55 via-sky-200/45 to-cyan-200/40" />
-              <KPI label="Зарплаты" value={loading ? '0' : nf(financeTotals.payroll)} icon={CreditCard} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
-              <KPI label="Чистая прибыль" value={loading ? '0' : nf(financeTotals.netProfit)} icon={TrendingUp} iconTone="money" accent="from-cyan-200/55 via-sky-200/45 to-teal-200/40" />
+              <KPI label="Доходы" value={loading ? '…' : nf(financeTotals.income)} icon={HandCoins} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
+              <KPI label="OPEX" value={loading ? '…' : nf(financeTotals.opex)} icon={CreditCard} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-slate-200/40" />
+              <KPI label="Себестоимость" value={loading ? '…' : nf(financeTotals.cogs)} icon={CreditCard} iconTone="money" accent="from-slate-200/55 via-sky-200/45 to-cyan-200/40" />
+              <KPI label="Зарплаты" value={loading ? '…' : nf(financeTotals.payroll)} icon={CreditCard} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
+              <KPI label="Чистая прибыль" value={loading ? '…' : nf(financeTotals.netProfit)} icon={TrendingUp} iconTone="money" accent="from-cyan-200/55 via-sky-200/45 to-teal-200/40" />
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <KPI label="Маржа" value={loading ? '0%' : `${financeTotals.margin}%`} icon={Percent} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
-              <KPI label="Средний чек оправы" value={loading ? '0' : financeTotals.frameAvg > 0 ? nf(financeTotals.frameAvg) : '—'} icon={BarChart3} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-teal-200/40" />
-              <KPI label="Средний чек линз" value={loading ? '0' : financeTotals.lensAvg > 0 ? nf(financeTotals.lensAvg) : '—'} icon={BarChart3} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
+            <div className="mt-4 grid gap-4 md:grid-cols-4">
+              <KPI label="Маржа" value={loading ? '…' : `${financeTotals.margin}%`} icon={Percent} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
+              <KPI
+                label="Чистая прибыль / день"
+                value={loading ? '…' : `${nf(financeTotals.profitPerDay)} сом`}
+                icon={TrendingUp}
+                iconTone="money"
+                accent="from-emerald-200/55 via-teal-200/45 to-cyan-200/40"
+              />
+              <KPI label="Средний чек оправы" value={loading ? '…' : financeTotals.frameAvg > 0 ? nf(financeTotals.frameAvg) : '—'} icon={BarChart3} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-teal-200/40" />
+              <KPI label="Средний чек линз" value={loading ? '…' : financeTotals.lensAvg > 0 ? nf(financeTotals.lensAvg) : '—'} icon={BarChart3} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
             </div>
 
             {/* Charts */}
+
+            {/* Изменение среднего чека по оправам и линзам */}
+            <Section
+              tone="money"
+              title={
+                <span className="inline-flex items-center gap-2">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+                    <LineChart className="h-4 w-4" />
+                  </div>
+                  Изменение среднего чека
+                </span>
+              }
+              aside={
+                <span className="text-xs text-slate-600/80">
+                  Оправы и линзы, динамика по{' '}
+                  {avgCheckGran === 'day' ? 'дням' : avgCheckGran === 'week' ? 'неделям' : 'месяцам'} (по{' '}
+                  {revenueMode === 'gross' ? 'выручке' : 'поступлениям'})
+                </span>
+              }
+            >
+              {avgCheckTrend.length > 0 ? (
+                <ChartFrame height={360}>
+                  <ReactECharts
+                    option={optionAvgCheckTrend}
+                    lazyUpdate
+                    notMerge
+                    opts={{ renderer: 'svg' }}
+                    style={{ height: '100%', width: '100%' }}
+                  />
+                </ChartFrame>
+              ) : (
+                <div className="flex h-[180px] items-center justify-center text-sm text-slate-500">
+                  {loading ? 'Загрузка…' : 'Нет данных за период'}
+                </div>
+              )}
+            </Section>
+
             <Section
               tone="money"
               title={
@@ -1651,6 +2519,59 @@ export default function AdminStatsPage() {
                   </tbody>
                 </table>
               </GlassTable>
+            </Section>
+
+            {/* Производительность: SPLH + ФОТ/выручка */}
+            <Section
+              tone="money"
+              title={
+                <span className="inline-flex items-center gap-2">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+                    <Timer className="h-4 w-4" />
+                  </div>
+                  Производительность: выручка на час и ФОТ
+                </span>
+              }
+              aside={<span className="text-xs text-slate-600/80">SPLH = выручка / трудочас · ФОТ брутто (до налогов сотрудника)</span>}
+            >
+              <div className="mb-4 grid gap-4 md:grid-cols-2">
+                <StatBox label="Выручка на трудочас (выбранные)" value={`${nf(splhTotals.splh)} сом`} icon={TrendingUp} tone="neutral" />
+                <StatBox label="ФОТ / выручка" value={`${splhTotals.lcr}%`} icon={Percent} tone={splhTotals.lcr > 25 ? 'warn' : 'ok'} />
+              </div>
+              <ChartFrame height={340}>
+                <ReactECharts option={optionSplh} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
+              </ChartFrame>
+              <div className="mt-4">
+                <GlassTable>
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50/80 text-slate-600">
+                      <tr>
+                        <Th>Филиал</Th>
+                        <ThRight>Выручка</ThRight>
+                        <ThRight>Часы</ThRight>
+                        <ThRight>Выручка / час</ThRight>
+                        <ThRight>ФОТ / выручка</ThRight>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...splh].sort((a, b) => b.splh - a.splh).map((r) => (
+                        <tr key={r.branch} className="odd:bg-white even:bg-slate-50/60">
+                          <td className="px-3 py-2 font-medium text-slate-800">{r.branch}</td>
+                          <td className="px-3 py-2 text-right">{nf(r.revenue)}</td>
+                          <td className="px-3 py-2 text-right">{nf(r.hours)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900">{nf(r.splh)}</td>
+                          <td className={'px-3 py-2 text-right font-semibold ' + (r.lcr > 25 ? 'text-rose-600' : 'text-slate-900')}>{r.lcr}%</td>
+                        </tr>
+                      ))}
+                      {splh.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-6 text-center text-slate-500">Нет данных за период</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </GlassTable>
+              </div>
             </Section>
 
             {/* Payments (Статусы заказов УБРАНЫ) */}
@@ -1779,13 +2700,77 @@ export default function AdminStatsPage() {
               aside={<span className="text-xs text-slate-600/80">Срез по продажам</span>}
             >
               <div className="grid gap-4 md:grid-cols-2">
-                <ChartFrame height={420} title="По видам линз" icon={BarChart3}>
+                <ChartFrame height={560} title="По видам линз" icon={BarChart3}>
                   <ReactECharts option={optionLensTypes} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
                 </ChartFrame>
 
-                <ChartFrame height={420} title="По диоптриям (SPH)" icon={BarChart3}>
+                <ChartFrame height={560} title="По диоптриям (SPH)" icon={BarChart3}>
                   <ReactECharts option={optionLensSphRanges} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
                 </ChartFrame>
+              </div>
+            </Section>
+
+            {/* Маржа по видам линз */}
+            <Section
+              tone="money"
+              title={
+                <span className="inline-flex items-center gap-2">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
+                    <HandCoins className="h-4 w-4" />
+                  </div>
+                  Маржа по видам линз
+                </span>
+              }
+              aside={<span className="text-xs text-slate-600/80">Себестоимость из каталога · только линзы (оправы не учитываются)</span>}
+            >
+              <div className="mb-4 grid gap-4 md:grid-cols-3">
+                <StatBox label="Выручка по линзам" value={nf(lensMarginView.totalRevenue)} icon={HandCoins} tone="neutral" />
+                <StatBox label="Маржа по линзам" value={nf(lensMarginView.totalMargin)} icon={TrendingUp} tone="ok" />
+                <StatBox label="Средняя маржа" value={`${Math.round(lensMarginView.avgMarginPct)}%`} icon={Percent} tone="neutral" />
+              </div>
+              <ChartFrame height={380}>
+                <ReactECharts option={optionLensMargin} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
+              </ChartFrame>
+              <div className="mt-4">
+                <GlassTable>
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50/80 text-slate-600">
+                      <tr>
+                        <Th>Вид линзы</Th>
+                        <ThRight>Шт</ThRight>
+                        <ThRight>Выручка</ThRight>
+                        <ThRight>Маржа</ThRight>
+                        <ThRight>Маржа %</ThRight>
+                        <ThRight>Доля в марже</ThRight>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lensMarginView.rows.map((r) => (
+                        <tr key={r.name} className="odd:bg-white even:bg-slate-50/60">
+                          <td className="px-3 py-2 font-medium text-slate-800">
+                            {r.name}
+                            {r.proxy && <span className="text-slate-400" title="Себестоимость оценочная — ближайший аналог в каталоге"> *</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right">{nf(r.units)}</td>
+                          <td className="px-3 py-2 text-right">{nf(r.revenue)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900">{nf(Math.round(r.margin))}</td>
+                          <td className="px-3 py-2 text-right">{Math.round(r.marginPct)}%</td>
+                          <td className="px-3 py-2 text-right">{r.share.toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                      {lensMarginView.rows.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-6 text-center text-slate-500">Нет данных за период</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </GlassTable>
+                {lensMarginView.rows.some((r) => r.proxy) && (
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    * себестоимость взята с ближайшего аналога в каталоге (нет точного совпадения вида).
+                  </div>
+                )}
               </div>
             </Section>
 
@@ -1849,14 +2834,19 @@ export default function AdminStatsPage() {
                   <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.28)]">
                     <LineChart className="h-4 w-4" />
                   </div>
-                  Распределение чеков (сом)
+                  Распределение чеков: оправы и линзы
                 </span>
               }
-              aside={<span className="text-xs text-slate-600/80">Кривая по корзинам</span>}
+              aside={<span className="text-xs text-slate-600/80">Кривые по корзинам сумм (по {revenueMode === 'gross' ? 'выручке' : 'поступлениям'})</span>}
             >
-              <ChartFrame height={340}>
-                <ReactECharts option={optionBins} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
-              </ChartFrame>
+              <div className="grid gap-4 md:grid-cols-2">
+                <ChartFrame height={340} title="Чеки по оправам" icon={BarChart3}>
+                  <ReactECharts option={optionFrameBins} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
+                </ChartFrame>
+                <ChartFrame height={340} title="Чеки по линзам" icon={BarChart3}>
+                  <ReactECharts option={optionLensBins} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
+                </ChartFrame>
+              </div>
             </Section>
 
             <Section
@@ -1967,21 +2957,26 @@ function KPI({
   value,
   icon,
   danger = false,
+  iconTone = 'money',
 }: {
   label: string;
   value: React.ReactNode;
   icon?: React.ElementType;
-  accent?: string;
+  accent?: string; // принимается для совместимости вызовов; визуал задаёт iconTone
   danger?: boolean;
   iconTone?: 'money' | 'danger' | 'violet' | 'neutral';
 }) {
   const Icon = icon;
+  const iconBg =
+    iconTone === 'danger' ? 'bg-rose-500 shadow-[0_4px_16px_rgba(244,63,94,0.28)]' :
+    iconTone === 'violet' ? 'bg-violet-500 shadow-[0_4px_16px_rgba(139,92,246,0.28)]' :
+                            'bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)]';
 
   return (
     <div className="rounded-2xl bg-white p-4 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40">
       <div className="flex items-center gap-3">
         {Icon && (
-          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)]">
+          <div className={`grid h-10 w-10 place-items-center rounded-2xl text-white ${iconBg}`}>
             <Icon className="h-5 w-5" />
           </div>
         )}
@@ -2044,20 +3039,66 @@ function EmptyState({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Label({ children }: { children: React.ReactNode }) {
-  return <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{children}</label>;
+/** Подпись-группа фильтра: маленький заголовок над контролом. */
+function FilterGroup({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      {children}
+    </div>
+  );
 }
 
-function InputDate({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/**
+ * Поле даты с НАДЁЖНЫМ открытием календаря: клик по полю или по иконке вызывает
+ * native showPicker() (Chrome/Edge/Electron). Раньше декоративная иконка с
+ * pointer-events-none перекрывала системный индикатор и календарь не открывался.
+ */
+function DateField({
+  value,
+  onChange,
+  min,
+  max,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  min?: string;
+  max?: string;
+  ariaLabel?: string;
+}) {
+  const ref = React.useRef<HTMLInputElement>(null);
+  const openPicker = () => {
+    const el = ref.current;
+    if (!el) return;
+    try {
+      (el as any).showPicker?.();
+    } catch {
+      el.focus();
+    }
+  };
   return (
     <div className="relative">
       <input
+        ref={ref}
         type="date"
-        className="w-full rounded-xl bg-white px-3 py-2.5 pr-9 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
+        aria-label={ariaLabel}
         value={value}
+        min={min}
+        max={max}
         onChange={(e) => onChange(e.target.value)}
+        onClick={openPicker}
+        className="w-[150px] cursor-pointer rounded-xl bg-white px-3 py-2.5 pr-9 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-y-0 [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
       />
-      <CalendarDays className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        onClick={openPicker}
+        className="absolute right-1 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-slate-400 transition hover:bg-cyan-50 hover:text-cyan-600"
+      >
+        <CalendarDays className="h-4 w-4" />
+      </button>
     </div>
   );
 }
@@ -2092,28 +3133,29 @@ function SoftPrimaryButton({
   disabled,
   onClick,
   icon,
+  loading = false,
   className = '',
 }: {
   children: React.ReactNode;
   disabled?: boolean;
   onClick?: () => void | Promise<void>;
   icon?: React.ElementType;
+  loading?: boolean;
   className?: string;
 }) {
   const Icon = icon;
-  const spin = typeof children === 'string' && (children === 'Обновляю…' || children === 'Загружаю…');
 
   return (
     <button
       type="button"
-      disabled={disabled}
+      disabled={disabled || loading}
       onClick={() => void onClick?.()}
       className={[
         'inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
         className,
       ].join(' ')}
     >
-      {Icon && <Icon className={['h-4 w-4', spin && !disabled ? 'animate-spin' : ''].join(' ')} />}
+      {Icon && <Icon className={['h-4 w-4', loading ? 'animate-spin' : ''].join(' ')} />}
       {children}
     </button>
   );
@@ -2123,16 +3165,19 @@ function SoftGhostButton({
   children,
   onClick,
   icon,
+  title,
 }: {
   children: React.ReactNode;
   onClick?: () => void | Promise<void>;
   icon?: React.ElementType;
+  title?: string;
 }) {
   const Icon = icon;
   return (
     <button
       type="button"
       onClick={() => void onClick?.()}
+      title={title}
       className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
     >
       {Icon && <Icon className="h-4 w-4 text-cyan-600" />}

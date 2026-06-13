@@ -45,6 +45,9 @@ type Cfg = {
   // новое (с 2026-02)
   monthly_turnover_target?: number;
   monthly_bonus_each?: number;
+
+  // сдельная ставка мастера (сом за один заказ)
+  master_piece_rate?: number;
 };
 
 /** Локальный диапазон месяца: [start; end) */
@@ -400,7 +403,13 @@ export function usePayrollMonthly(month: string) {
   const removeEmployee = useCallback(
     async (id: number) => {
       if (!sb) throw new Error("supabase not ready");
-      const { error } = await sb.from("employees").delete().eq("id", id);
+      // Мягкое удаление. Сотрудника с историей (смены, платежи, focus-события,
+      // зарплата) жёстко удалить нельзя — на employees ссылается ~20 таблиц с
+      // ON DELETE NO ACTION/RESTRICT, БД заблокирует DELETE. RPC прячет
+      // сотрудника (is_active=false) и освобождает логин, история сохраняется.
+      const { error } = await sb.rpc("app_archive_employee", {
+        p_employee_id: id,
+      });
       if (error) throw error;
     },
     [sb]

@@ -401,6 +401,9 @@ export default function FinanceOverviewPage() {
   // чтобы “Общие” совпадало с суммой филиалов и не «взрывалось» от закупов/общих расходов.
   const [includeCentralInCommon, setIncludeCentralInCommon] = useState<boolean>(false);
 
+  // Режим расчёта доходов: 'gross' — по выручке (заказы, вкл. долг); 'cash' — по платежам.
+  const [revenueMode, setRevenueMode] = useState<'gross' | 'cash'>('gross');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -576,6 +579,39 @@ export default function FinanceOverviewPage() {
         netLocal = results.flat();
       }
 
+      /* 2.5) Режим 'gross': заменяем income (платежи из RPC) на выручку (orders.total_amount).
+              Долг = разница и попадает в income — маржа и чистая прибыль считаются "как будто оплатят". */
+      if (revenueMode === 'gross') {
+        try {
+          const toExc = dayjs(toDate).add(1, 'day').format('YYYY-MM-DD');
+          let qo = sb
+            .from('orders')
+            .select('created_at, total_amount, branch_id')
+            .gte('created_at', fromDate)
+            .lt('created_at', toExc)
+            .eq('is_deleted', false);
+          if (branchId > 0) qo = qo.eq('branch_id', branchId);
+          const { data: ordersData } = await qo;
+          // Карта day__branch_id -> сумма выручки
+          const grossKey = (d: string, bid: number | null | undefined) =>
+            `${d.slice(0, 10)}__${bid ?? 'null'}`;
+          const grossByKey = new Map<string, number>();
+          for (const r of (ordersData || []) as any[]) {
+            const d = String(r.created_at).slice(0, 10);
+            const k = grossKey(d, r.branch_id);
+            grossByKey.set(k, (grossByKey.get(k) || 0) + (Number(r.total_amount) || 0));
+          }
+          netLocal = netLocal.map((r) => {
+            const bid = r.branch_id ?? (branchId > 0 ? branchId : null);
+            const k = grossKey(r.day, bid);
+            const g = grossByKey.get(k);
+            return g !== undefined ? { ...r, income: g } : r;
+          });
+        } catch (e) {
+          console.warn('gross income override failed (ignored)', e);
+        }
+      }
+
       /* 3) реальные зарплаты по дням:
             - строим payrollMap по ключу day__branch_id
             - патчим net_profit = income - refunds - opex - cogs - payroll
@@ -649,7 +685,12 @@ export default function FinanceOverviewPage() {
         if (branchId === 0) netLocal = aggregateNetRowsByDay(netLocal);
       }
 
-      /* 4) воскресенье исключаем */
+      /* 4) воскресенье исключаем из дневных рядов, но аренду (OPEX) за воскресенье
+            оставляем в общих итогах — она платится и в выходные. */
+      const sundayOpexSum = netLocal
+        .filter((r) => isSunday(r.day))
+        .reduce((s, r) => s + toNum(r.opex_total), 0);
+
       const netNoSunday = netLocal.filter((r) => !isSunday(r.day));
 
       /* 5) сводка для UI: пересчитываем из netRows (без воскресенья),
@@ -661,6 +702,49 @@ export default function FinanceOverviewPage() {
       };
 
       const recomputed = recomputeSummaryFromNetRows(baseForUi, netNoSunday, fromDate, toDate);
+      // Аренда за воскресенья → в общий OPEX и минус из чистой прибыли
+      recomputed.opex_total += sundayOpexSum;
+      recomputed.net_profit -= sundayOpexSum;
+
+      /* В режиме 'gross' пересчитываем средние чеки по ВСЕМ заказам за период
+         (а не только по оплаченным, как делает fn_finance_summary_todate_v2). */
+      if (revenueMode === 'gross') {
+        try {
+          const toExc = dayjs(toDate).add(1, 'day').format('YYYY-MM-DD');
+          let oq = sb
+            .from('orders')
+            .select('id, branch_id')
+            .gte('created_at', fromDate)
+            .lt('created_at', toExc)
+            .eq('is_deleted', false);
+          if (branchId > 0) oq = oq.eq('branch_id', branchId);
+          const { data: ordersIds } = await oq;
+          const ids = (ordersIds || []).map((o: any) => o.id);
+          if (ids.length > 0) {
+            const { data: oiRows } = await sb
+              .from('order_items')
+              .select('order_id, item_type, price, qty')
+              .in('order_id', ids);
+            const byOrder = new Map<number, { frame: number; lens: number }>();
+            for (const r of (oiRows || []) as any[]) {
+              const prev = byOrder.get(r.order_id) ?? { frame: 0, lens: 0 };
+              const amt = (Number(r.price) || 0) * (Number(r.qty) || 1);
+              if (r.item_type === 'frame') prev.frame += amt;
+              else if (r.item_type === 'lens') prev.lens += amt;
+              byOrder.set(r.order_id, prev);
+            }
+            let fs = 0, fc = 0, ls = 0, lc = 0;
+            for (const v of byOrder.values()) {
+              if (v.frame > 0) { fs += v.frame; fc++; }
+              if (v.lens > 0) { ls += v.lens; lc++; }
+            }
+            recomputed.avg_frame_check = fc > 0 ? Math.round(fs / fc) : 0;
+            recomputed.avg_lens_check = lc > 0 ? Math.round(ls / lc) : 0;
+          }
+        } catch (e) {
+          console.warn('gross avg checks failed (ignored)', e);
+        }
+      }
 
       setSummary(recomputed);
       setNetRows(netNoSunday);
@@ -749,7 +833,7 @@ export default function FinanceOverviewPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchId, periodMode, month, year, rangeFrom, rangeTo, includeCentralInCommon]);
+  }, [branchId, periodMode, month, year, rangeFrom, rangeTo, includeCentralInCommon, revenueMode]);
 
   /* ---------- Доп. KPI ---------- */
   const kpis = useMemo(() => {
@@ -1010,6 +1094,40 @@ export default function FinanceOverviewPage() {
               {loading ? 'Обновляю…' : 'Обновить данные'}
             </SoftPrimaryButton>
 
+            {/* Переключатель: По выручке (вкл. долг) / По поступлениям.
+                Влияет на доход, маржу, чистую прибыль и средние чеки оправ/линз. */}
+            <div
+              className="inline-flex items-center rounded-xl bg-white ring-1 ring-slate-200 p-0.5 text-xs font-medium self-end"
+              title="Доходы, маржа и средние чеки считаются от выручки (включая долги) или только от поступивших платежей"
+            >
+              <button
+                type="button"
+                onClick={() => setRevenueMode('gross')}
+                disabled={loading}
+                className={[
+                  'px-3 py-1.5 rounded-lg transition',
+                  revenueMode === 'gross'
+                    ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                    : 'text-slate-600 hover:bg-slate-50',
+                ].join(' ')}
+              >
+                По выручке
+              </button>
+              <button
+                type="button"
+                onClick={() => setRevenueMode('cash')}
+                disabled={loading}
+                className={[
+                  'px-3 py-1.5 rounded-lg transition',
+                  revenueMode === 'cash'
+                    ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                    : 'text-slate-600 hover:bg-slate-50',
+                ].join(' ')}
+              >
+                По поступлениям
+              </button>
+            </div>
+
             <SoftGhostButton
               onClick={() => {
                 setPeriodMode('month');
@@ -1049,6 +1167,18 @@ export default function FinanceOverviewPage() {
                 />
                 Включать общие расходы (branch_id = null) в списки расходов
               </label>
+            )}
+          </div>
+
+          <div className="mt-2 text-xs text-slate-500">
+            {revenueMode === 'gross' ? (
+              <>
+                💡 Доходы, маржа и средние чеки считаются <b>по выручке</b> (включая долг — как будто все долги вернут).
+              </>
+            ) : (
+              <>
+                💡 Доходы, маржа и средние чеки считаются <b>по поступлениям</b> (только оплаченные заказы). Долги в финансы не входят.
+              </>
             )}
           </div>
 

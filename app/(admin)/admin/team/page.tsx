@@ -108,13 +108,17 @@ const LLM_CHOICES: Array<{ id: LlmModel; label: string; hint: string }> = [
 
 /**
  * Вычисление 360°-скоров на клиенте. Все подскоры — 0..10.
- * Все таргеты нормализованы по длине периода — 7/30/90 дней дают сравнимые баллы.
+ * Таргеты дисциплины нормализованы по длине периода — 7/30/90 дней дают сравнимые баллы.
  *
- * @param revenueMaxNetwork — максимальная выручка по сети (не только в филиале).
- *   Раньше сравнивали внутри филиала → одинокий продавец автоматом получал 10/10.
+ * Продажи мерятся в ТЕМПЕ (выручка/час), а не абсолютной суммой: иначе тот, кто отработал
+ * больше часов/дней, всегда выше, даже будучи менее эффективным (соло-продавец vs филиал
+ * с двумя сотрудниками; посменные с разным числом смен). Выручка приходит из RPC уже
+ * распределённой по факту присутствия на смене (миграция team_360_sales_copresence):
+ * на совместной смене сумма заказа делится поровну между присутствующими продавцами.
+ *
  * @param periodDays — длина периода в днях (week=7, month=30, quarter=90).
  */
-function computeScores(r: Row, revenueMaxNetwork: number, periodDays: number) {
+function computeScores(r: Row, periodDays: number) {
   // Service (0..10): аудио 50 / WA 30 / IG 20 с динамическим перераспределением
   const serviceParts: Array<{ weight: number; value: number }> = [];
   if (r.audio_avg_score != null) serviceParts.push({ weight: 50, value: Number(r.audio_avg_score) });
@@ -126,29 +130,37 @@ function computeScores(r: Row, revenueMaxNetwork: number, periodDays: number) {
       ? serviceParts.reduce((s, p) => s + (p.weight * p.value) / serviceWeightTotal, 0)
       : null;
 
-  // Sales (0..10) — все таргеты нормализованы по периоду.
-  // Premium mix (lens/order) убран: на реальных данных у всех 88-100% (продажа линз —
-  // норма для оптики), метрика не дифференцирует продавцов. Веса перераспределены.
-  const revShare = revenueMaxNetwork > 0 ? Math.min(1, r.revenue_total / revenueMaxNetwork) : 0;
-  const revenueScore = revShare * 10;
-  const avgCheckScore = Math.min(10, Math.max(0, (r.avg_check / 4000) * 10)); // 4000 KGS = 10
-  const orderCountTarget = Math.max(1, 30 * periodDays / 7);
-  const orderCountScore = Math.min(10, (r.orders_count / orderCountTarget) * 10);
-  const sales =
-    r.orders_count === 0
-      ? null
-      : revenueScore * 0.6 + avgCheckScore * 0.25 + orderCountScore * 0.15;
+  // Sales (0..10): выручка/час — главный сигнал эффективности (70%), средний чек — апселл (30%).
+  // Отдельный «кол-во заказов» убран намеренно: выручка/час = (заказов/час) × средний чек,
+  // т.е. количество и размер чека уже зашиты в выручку/час и в чек — тройного зачёта нет.
+  // Таргеты = «отлично» по реальным данным сети (квартал KG): сильный продавец ~1100-1350 KGS/час
+  // и ~2700 чек. Планки стояли на 1500/4000 (выше потолка сети) → отличные продавцы выглядели
+  // средними. Поднять обратно — когда команда дорастёт до потолка. Валюта KGS (мультивалюта не заведена).
+  const REV_PER_HOUR_TARGET = 1300; // KGS/час = 10 баллов
+  const AVG_CHECK_TARGET = 3000;    // KGS = 10 баллов
+  // numeric из Postgres приходит строкой → Number() обязателен (иначе тип врёт и возможен тихий NaN).
+  const revPerHour = Number(r.hours_worked) > 0 ? Number(r.revenue_total) / Number(r.hours_worked) : 0;
+  const revPerHourScore = Math.min(10, Math.max(0, (revPerHour / REV_PER_HOUR_TARGET) * 10));
+  const avgCheckScore = Math.min(10, Math.max(0, (Number(r.avg_check) / AVG_CHECK_TARGET) * 10));
+  // Порог достоверности: < ~полусмены часов или < 3 заказов → данных мало (иначе «звезда»
+  // из пары случайных заказов / шум). Было ровно 8ч — роняло полноценную короткую смену.
+  const enoughSalesData = Number(r.hours_worked) >= 4 && r.orders_count >= 3;
+  const sales = !enoughSalesData ? null : revPerHourScore * 0.7 + avgCheckScore * 0.3;
 
-  // Discipline (0..10) — таргеты нормализованы по периоду
-  // #2: hours target = 48ч/неделю → масштабируется
-  const hoursTarget = Math.max(1, 48 * periodDays / 7);
-  const hoursScore = Math.min(10, (r.hours_worked / hoursTarget) * 10);
-  const penaltyScore = Math.max(0, 10 - r.penalty_count * 2);
-  // late: 1 ч опоздания / неделю = -1 балл, на длинных периодах пропорционально
-  const lateNormalizedHours = (r.late_minutes_total / 60) * (7 / periodDays);
-  const lateScore = Math.max(0, 10 - lateNormalizedHours);
+  // Discipline (0..10): опоздания НА СМЕНУ (period-independent — бьёт систематичность, а не
+  // «размазывается» нормировкой по периоду) за вычетом штрафов. Объём часов НЕ учитываем
+  // (посменный работает через день — это график, не нарушение; часы уже в выручке/час).
+  // Штрафы — именно ВЫЧЕТ, а не половина веса: penalty_count перестал генерироваться после
+  // ~9 апреля (в окнах неделя/месяц = 0), но за длинные периоды срабатывает. Когда штрафов
+  // нет — балл держат опоздания, а не «мёртвая» константа 10 (раньше она не давала дисциплине
+  // опуститься ниже 5.0 и завышала итог). Допускаем ~LATE_GRACE_MIN опоздания на смену.
+  const LATE_GRACE_MIN = 10;    // терпимое среднее опоздание на смену, мин
+  const LATE_MIN_PER_POINT = 4; // далее каждые 4 мин/смену сверх грейса = −1 балл
+  const avgLatePerShift = r.sessions_count > 0 ? r.late_minutes_total / r.sessions_count : 0;
+  const lateScore = Math.max(0, 10 - Math.max(0, avgLatePerShift - LATE_GRACE_MIN) / LATE_MIN_PER_POINT);
+  const penaltyPerWeek = r.penalty_count * (7 / periodDays);
   const discipline =
-    r.sessions_count === 0 ? null : hoursScore * 0.4 + penaltyScore * 0.3 + lateScore * 0.3;
+    r.sessions_count === 0 ? null : Math.max(0, lateScore - penaltyPerWeek * 2);
 
   // Voice (только если филиал участвует в voice-пилоте, флаг is_voice_pilot)
   const voice =
@@ -156,15 +168,30 @@ function computeScores(r: Row, revenueMaxNetwork: number, periodDays: number) {
       ? Math.min(10, (Number(r.feedback_avg_mood) / 5) * 10)
       : null;
 
-  // Final 360°: Service 40 / Sales 30 / Discipline 15 / Voice 15
+  // Final 360°: номинально Service 40 / Sales 30 / Discipline 15 / Voice 15.
+  // Сервиса (QA) сейчас нет ни у кого, Voice — только у voice-пилота. Чтобы отсутствие сервиса
+  // НЕ раздувало вес дисциплины (иначе она весит 33%, а не 15%, и завышает итог), «осиротевший»
+  // вес результативных осей (Service+Sales) отдаём имеющейся из них — на практике продажам.
+  // Дисциплина и настроение всегда сохраняют свои номинальные 15%.
+  // Нужен хотя бы один содержательный сигнал (продажи или сервис): иначе показываем «мало
+  // данных» (null) — чтобы не строить балл на одной дисциплине с крошечной выборки.
+  const wDiscipline = discipline != null ? 15 : 0;
+  const wVoice = voice != null ? 15 : 0;
+  const wPerf = 100 - wDiscipline - wVoice; // на результативные оси Service+Sales
+  const perfNominal = (service != null ? 40 : 0) + (sales != null ? 30 : 0);
   const finalParts: Array<{ weight: number; value: number }> = [];
-  if (service != null) finalParts.push({ weight: 40, value: service });
-  if (sales != null) finalParts.push({ weight: 30, value: sales });
-  if (discipline != null) finalParts.push({ weight: 15, value: discipline });
-  if (voice != null) finalParts.push({ weight: 15, value: voice });
+  if (perfNominal > 0) {
+    if (service != null) finalParts.push({ weight: (wPerf * 40) / perfNominal, value: service });
+    if (sales != null) finalParts.push({ weight: (wPerf * 30) / perfNominal, value: sales });
+  }
+  if (discipline != null) finalParts.push({ weight: wDiscipline, value: discipline });
+  if (voice != null) finalParts.push({ weight: wVoice, value: voice });
+  const hasCoreSignal = service != null || sales != null;
   const wTotal = finalParts.reduce((s, p) => s + p.weight, 0);
   const final360 =
-    wTotal > 0 ? finalParts.reduce((s, p) => s + (p.weight * p.value) / wTotal, 0) : null;
+    hasCoreSignal && wTotal > 0
+      ? finalParts.reduce((s, p) => s + (p.weight * p.value) / wTotal, 0)
+      : null;
 
   return { service, sales, discipline, voice, final360 };
 }
@@ -336,27 +363,19 @@ export default function TeamDashboardPage() {
         </div>
       ) : (
         <div className="space-y-10">
-          {(() => null)()}
-          {/* Сетевой максимум выручки — для справедливого сравнения между филиалами.
-              Раньше был внутри-филиальный → одинокий продавец автоматом 10/10. */}
-          {(() => null)()}
-          {(() => null)()}
-          {/* Сетевые ранги (1 = лучший в сети). Раньше были внутри-филиальные —
-              "#1 из 1" для одиноких продавцов было бессмысленно. */}
-          {(() => null)()}
           {grouped.map((group) => {
             const revenueMaxNetwork = Math.max(1, ...rows.map((e) => e.revenue_total));
-            const ordersMaxNetwork = Math.max(1, ...rows.map((e) => e.orders_count));
-            const totalNetwork = rows.length;
             const periodDays = period === 'week' ? 7 : period === 'month' ? 30 : 90;
-            const revenueRanksNetwork = [...rows]
-              .sort((a, b) => b.revenue_total - a.revenue_total)
-              .map((e, i) => [e.employee_id, i + 1] as const);
-            const revenueRankNetworkMap = new Map(revenueRanksNetwork);
-            const ordersRanksNetwork = [...rows]
-              .sort((a, b) => b.orders_count - a.orders_count)
-              .map((e, i) => [e.employee_id, i + 1] as const);
-            const ordersRankNetworkMap = new Map(ordersRanksNetwork);
+            // Ранг по ВЫРАБОТКЕ (выручка/час), а не по абсолютной выручке: соло-продавец
+            // получает 100% выручки филиала, поэтому по абсолюту всегда был бы первым,
+            // а продавцы филиалов с двумя сотрудниками — внизу. Выручка/час честнее.
+            const revPerHourOf = (e: Row) =>
+              Number(e.hours_worked) > 0 ? e.revenue_total / Number(e.hours_worked) : 0;
+            const prodRanked = [...rows]
+              .filter((e) => e.orders_count > 0 && Number(e.hours_worked) > 0)
+              .sort((a, b) => revPerHourOf(b) - revPerHourOf(a));
+            const prodRankNetworkMap = new Map(prodRanked.map((e, i) => [e.employee_id, i + 1] as const));
+            const prodCountNetwork = prodRanked.length;
             return (
               <section key={group.name}>
                 <div className="mb-4 flex items-center gap-2">
@@ -367,15 +386,19 @@ export default function TeamDashboardPage() {
                 </div>
                 <div className="grid gap-5 lg:grid-cols-2">
                   {group.employees.map((r) => {
-                    const s = computeScores(r, revenueMaxNetwork, periodDays);
+                    const s = computeScores(r, periodDays);
                     const color = scoreColor(s.final360);
                     const cmt = commentary[r.employee_id]?.[0];
-                    const revRank = revenueRankNetworkMap.get(r.employee_id) ?? 0;
-                    const ordRank = ordersRankNetworkMap.get(r.employee_id) ?? 0;
-                    const isTopRevenue = revRank === 1 && r.revenue_total > 0 && totalNetwork > 1;
+                    const prodRank = prodRankNetworkMap.get(r.employee_id) ?? 0;
+                    const isTopRevenue = prodRank === 1 && prodCountNetwork > 1;
                     const revShareVsMax = revenueMaxNetwork > 0 ? (r.revenue_total / revenueMaxNetwork) * 100 : 0;
-                    const ordersShareVsMax = ordersMaxNetwork > 0 ? (r.orders_count / ordersMaxNetwork) * 100 : 0;
-                    const ordersPerHour = r.hours_worked > 0 ? r.orders_count / Number(r.hours_worked) : 0;
+                    const revPerHour = Number(r.hours_worked) > 0 ? r.revenue_total / Number(r.hours_worked) : 0;
+                    const avgLatePerShift = r.sessions_count > 0 ? r.late_minutes_total / r.sessions_count : 0;
+                    // На совместных сменах выручка делится по присутствию → revenue_total < заказы×ср.чек.
+                    // Помечаем её как «доля», чтобы перемножение «Заказов × ср.чек» не сбивало с толку.
+                    const revenueIsShared =
+                      r.revenue_total > 0 &&
+                      Math.abs(r.orders_count * r.avg_check - r.revenue_total) / r.revenue_total > 0.02;
                     return (
                       <button
                         key={r.employee_id}
@@ -394,7 +417,10 @@ export default function TeamDashboardPage() {
                                 </span>
                               )}
                               {isTopRevenue && (
-                                <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                                <span
+                                  title="Лучшая выручка в час по сети"
+                                  className="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200"
+                                >
                                   <Trophy className="h-3 w-3" />
                                   Топ сети
                                 </span>
@@ -405,10 +431,10 @@ export default function TeamDashboardPage() {
                                 {color.label}
                                 {s.final360 != null && <span className="ml-1 opacity-70">· {s.final360.toFixed(1)}/10</span>}
                               </span>
-                              {revRank > 0 && r.orders_count > 0 && totalNetwork > 1 && (
+                              {prodRank > 0 && prodCountNetwork > 1 && (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
                                   <TrendingUp className="h-3 w-3" />
-                                  #{revRank} из {totalNetwork} по выручке
+                                  #{prodRank} из {prodCountNetwork} по выручке/час
                                 </span>
                               )}
                             </div>
@@ -428,7 +454,7 @@ export default function TeamDashboardPage() {
                         <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
                           <BigMetric
                             icon={Coins}
-                            label="Выручка"
+                            label={revenueIsShared ? 'Выручка (доля)' : 'Выручка'}
                             value={formatMoney(r.revenue_total)}
                             suffix="KGS"
                             bar={revShareVsMax}
@@ -438,8 +464,7 @@ export default function TeamDashboardPage() {
                             icon={Receipt}
                             label="Заказов"
                             value={String(r.orders_count)}
-                            suffix={r.orders_count > 0 ? `· ${formatMoney(r.avg_check)} ср.чек` : ''}
-                            bar={ordersShareVsMax}
+                            suffix={r.avg_check > 0 ? `· ${formatMoney(r.avg_check)} ср.чек` : ''}
                             tone="sky"
                           />
                           <BigMetric
@@ -451,9 +476,9 @@ export default function TeamDashboardPage() {
                           />
                           <BigMetric
                             icon={TrendingUp}
-                            label="Заказов в час"
-                            value={ordersPerHour > 0 ? ordersPerHour.toFixed(2) : '—'}
-                            suffix={ordersPerHour > 0 ? 'зак/час' : ''}
+                            label="Выручка/час"
+                            value={revPerHour > 0 ? formatMoney(revPerHour) : '—'}
+                            suffix={revPerHour > 0 ? 'KGS/час' : ''}
                             tone="emerald"
                           />
                         </div>
@@ -487,10 +512,12 @@ export default function TeamDashboardPage() {
                         </div>
 
                         {/* Критичные флаги */}
-                        {(r.wa_critical_count > 0 || r.ig_critical_count > 0 || r.audio_rude_count > 0 || r.audio_pushy_count > 0 || r.late_minutes_total > 120 || Number(r.fine_amount) > 0 || r.app_exits_count > 0) && (
+                        {(r.wa_critical_count > 0 || r.ig_critical_count > 0 || r.audio_rude_count > 0 || r.audio_pushy_count > 0 || avgLatePerShift > 15 || Number(r.fine_amount) > 0 || (r.app_exits_count > 0 && r.sessions_count > 0)) && (
                           <div className="mt-4 flex flex-wrap items-center gap-1.5">
-                            {r.app_exits_count > 0 && (
-                              <Flag color="rose" icon={LogOut}>
+                            {/* «Выходы» — информационный флаг (в балл не входит) → amber, не rose.
+                                Показываем только при наличии смен (иначе висит на пустом профиле). */}
+                            {r.app_exits_count > 0 && r.sessions_count > 0 && (
+                              <Flag color="amber" icon={LogOut}>
                                 Выходы ×{r.app_exits_count} · {fmtFocusDuration(r.app_exits_seconds_total)}
                               </Flag>
                             )}
@@ -506,8 +533,8 @@ export default function TeamDashboardPage() {
                             {r.ig_critical_count > 0 && (
                               <Flag color="amber" icon={Instagram}>IG &lt;5 ×{r.ig_critical_count}</Flag>
                             )}
-                            {r.late_minutes_total > 120 && (
-                              <Flag color="amber" icon={Clock}>Опоздания {Math.round(r.late_minutes_total / 60)}ч</Flag>
+                            {avgLatePerShift > 15 && (
+                              <Flag color="amber" icon={Clock}>Опоздания ~{Math.round(avgLatePerShift)} мин/смену</Flag>
                             )}
                             {Number(r.fine_amount) > 0 && (
                               <Flag color="rose" icon={Coins}>Штрафы {formatMoney(Number(r.fine_amount))} KGS</Flag>
@@ -566,7 +593,6 @@ export default function TeamDashboardPage() {
           commentaryCache={commentary[selectedRow.employee_id] || []}
           onRefreshList={load}
           onClose={() => setSelectedId(null)}
-          revenueMaxNetwork={Math.max(1, ...rows.map((x) => x.revenue_total))}
           periodDays={period === 'week' ? 7 : period === 'month' ? 30 : 90}
         />
       )}
@@ -722,7 +748,6 @@ function EmployeeDrawer({
   commentaryCache,
   onRefreshList,
   onClose,
-  revenueMaxNetwork,
   periodDays,
 }: {
   row: Row;
@@ -733,7 +758,6 @@ function EmployeeDrawer({
   commentaryCache: Array<{ model: string; summary: string; created_at: string }>;
   onRefreshList: () => void;
   onClose: () => void;
-  revenueMaxNetwork: number;
   periodDays: number;
 }) {
   const [detail, setDetail] = useState<DetailData | null>(null);
@@ -743,7 +767,7 @@ function EmployeeDrawer({
     commentaryCache[0] ?? null,
   );
 
-  const scores = computeScores(row, revenueMaxNetwork, periodDays);
+  const scores = computeScores(row, periodDays);
 
   async function fetchDetail() {
     setLoading(true);
@@ -913,16 +937,24 @@ function EmployeeDrawer({
             <StatCard label="Заказов" value={String(row.orders_count)} icon={Receipt} />
             <StatCard label="Выручка" value={formatMoney(row.revenue_total)} suffix="KGS" icon={Coins} />
             <StatCard label="Средний чек" value={formatMoney(row.avg_check)} suffix="KGS" icon={TrendingUp} />
+            <StatCard
+              label="Выручка/час"
+              value={Number(row.hours_worked) > 0 ? formatMoney(row.revenue_total / Number(row.hours_worked)) : '—'}
+              suffix={Number(row.hours_worked) > 0 ? 'KGS' : ''}
+              icon={TrendingUp}
+              tone="good"
+            />
             <StatCard label="Оправ" value={String(row.frame_items_count)} />
             <StatCard label="Линз" value={String(row.lens_items_count)} />
             <StatCard label="Часов" value={String(Number(row.hours_worked || 0).toFixed(1))} icon={Clock} />
             <StatCard
               label="Опоздания"
               value={`${row.late_minutes_total} мин`}
-              tone={row.late_minutes_total > 120 ? 'warn' : 'neutral'}
+              suffix={row.sessions_count > 0 ? `~${Math.round(row.late_minutes_total / row.sessions_count)}/смену` : ''}
+              tone={row.sessions_count > 0 && row.late_minutes_total / row.sessions_count > 15 ? 'warn' : 'neutral'}
             />
             <StatCard
-              label="Штрафы"
+              label="Нарушения"
               value={String(row.penalty_count)}
               tone={row.penalty_count > 0 ? 'warn' : 'neutral'}
             />
@@ -1049,9 +1081,11 @@ function EmployeeDrawer({
         {/* Orders preview */}
         {detail && detail.orders.length > 0 && (
           <section className="border-b border-slate-100 p-5">
+            {/* Лично пробитые чеки (по seller_employee_id) — отличается от «Заказов» в метриках,
+                где учитывается участие в совместных сменах (co-presence). */}
             <h3 className="mb-3 text-sm font-bold tracking-tight text-slate-900">
               <Receipt className="mr-1.5 inline h-4 w-4 text-cyan-500" />
-              Последние заказы ({detail.orders.length})
+              Лично пробитые чеки ({detail.orders.length})
             </h3>
             <div className="overflow-hidden rounded-xl ring-1 ring-slate-100">
               <table className="w-full text-sm">

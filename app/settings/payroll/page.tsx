@@ -7,10 +7,11 @@ import {
   uiRoleToDb,
   type RoleT,
 } from "./usePayrollMonthly";
-import { Wallet, Building2, KeyRound, User2, Plus, X, BarChart2 } from "lucide-react";
+import { Wallet, Building2, KeyRound, User2, Plus, X, BarChart2, Copy } from "lucide-react";
 import PenaltiesTab from "./PenaltiesTab";
 import DisciplinesTab from "./DisciplinesTab";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
+import toast from "react-hot-toast";
 
 /* ---------- Supabase клиент (с сессией пользователя — нужен для UPDATE под RLS) ---------- */
 const sb = getBrowserSupabase();
@@ -44,6 +45,34 @@ function fmtHM(hours?: number) {
 function num(x: any): number {
   const n = Number(x);
   return Number.isFinite(n) ? n : 0;
+}
+
+/* ---------- время смены (вход–выход) в таймзоне филиала ---------- */
+const BISHKEK_TZ = "Asia/Bishkek";
+function isoHasTZ(s: string) {
+  return /Z$|[+-]\d{2}:\d{2}$/.test(String(s).trim());
+}
+/** Naive timestamp в этой БД = UTC (так пишется ended_at); started_at идёт с офсетом. */
+function toLocalDate(iso?: string | null): Date | null {
+  if (!iso) return null;
+  let s = String(iso).trim();
+  const tz = isoHasTZ(s);
+  if (s.includes(" ") && !s.includes("T")) s = s.replace(" ", "T");
+  const d = tz ? new Date(s) : new Date(s + "Z");
+  return isNaN(d.getTime()) ? null : d;
+}
+function bishkekHMfromDate(d: Date): string {
+  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: BISHKEK_TZ });
+}
+function bishkekDayAuto(iso?: string | null): string {
+  const d = toLocalDate(iso);
+  if (!d) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: BISHKEK_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
 }
 /* Считаем сотрудника активным, если нет явного false в is_active/active */
 function isEmpActive(e: any) {
@@ -717,11 +746,13 @@ export default function Page() {
 
   async function removeEmpCred(row: CredRow) {
     if (!confirm(`Удалить логин и PIN для «${row.full_name}»?`)) return;
-    const now = new Date().toISOString();
-    const { error: e1 } = await sb.from("employees").update({ login: null, pin_hash: null, updated_at: now } as any).eq("id", row.employee_id);
-    if (e1) { alert(e1.message); return; }
-    const { error: e2 } = await sb.from("employee_credentials").update({ login: null, pin_plain: null, pin_sha256: null, is_active: false, updated_at: now } as any).eq("id", row.cred_id);
-    if (e2) { alert(e2.message); return; }
+    // Прямой UPDATE employee_credentials из браузера молча блокируется RLS
+    // (нет политики для authenticated), а login/pin_* там NOT NULL. Поэтому
+    // снятие доступа делаем через SECURITY DEFINER RPC (удаляет кред целиком).
+    const { error } = await sb.rpc("app_remove_employee_login", {
+      p_employee_id: row.employee_id,
+    });
+    if (error) { alert(error.message); return; }
     await loadCreds();
   }
 
@@ -879,6 +910,7 @@ export default function Page() {
     branchId: number;
     netPeriod: number;
     netMonth: number;
+    role: string;
   }>(null);
   const [dailyRows, setDailyRows] = useState<any[] | null>(null);
   const [dailyBusy, setDailyBusy] = useState(false);
@@ -902,6 +934,7 @@ export default function Page() {
     branchId: number;
     netPeriod: number;
     netMonth: number;
+    role: string;
   }) {
     setDailyMeta({
       id: e.id,
@@ -909,6 +942,7 @@ export default function Page() {
       branchId: e.branchId,
       netPeriod: e.netPeriod,
       netMonth: e.netMonth,
+      role: e.role,
     });
     setDailyRows(null);
     setDailyAdj(0);
@@ -936,6 +970,64 @@ export default function Page() {
           ...r,
           plan_premium: 0,
         }));
+
+      // Время смены (вход–выход) по дням — из attendance_sessions
+      try {
+        const { data: sessRows } = await sb
+          .from("attendance_sessions")
+          .select("started_at, ended_at")
+          .eq("employee_id", e.id)
+          .eq("branch_id", e.branchId)
+          .gte("started_at", `${shiftYmd(rangeStart, -1)}T00:00:00`)
+          .lte("started_at", `${shiftYmd(rangeEndInclusive, 1)}T23:59:59`)
+          .order("started_at", { ascending: true });
+
+        const shiftByDay = new Map<string, { inAt: Date | null; outAt: Date | null }>();
+        for (const s of (sessRows ?? []) as any[]) {
+          if (!s.started_at) continue;
+          const dayKey = bishkekDayAuto(s.ended_at ?? s.started_at);
+          if (!dayKey) continue;
+          const inAt = toLocalDate(s.started_at);
+          const outAt = s.ended_at ? toLocalDate(s.ended_at) : null;
+          const cur = shiftByDay.get(dayKey) ?? { inAt: null, outAt: null };
+          if (inAt && (!cur.inAt || inAt < cur.inAt)) cur.inAt = inAt;
+          if (outAt && (!cur.outAt || outAt > cur.outAt)) cur.outAt = outAt;
+          shiftByDay.set(dayKey, cur);
+        }
+        for (const r of daily) {
+          const sh = shiftByDay.get(String((r as any).day));
+          (r as any).shift_in = sh?.inAt ? bishkekHMfromDate(sh.inAt) : null;
+          (r as any).shift_out = sh?.outAt ? bishkekHMfromDate(sh.outAt) : null;
+        }
+      } catch {
+        // время смены не критично — пропускаем
+      }
+
+      // Мастер: подтягиваем «собрал / в системе» по дням для сверки.
+      if (e.role === "master") {
+        try {
+          const { data: logRows } = await sb
+            .from("v_master_shift_log")
+            .select("work_date, pairs_made, system_count")
+            .eq("employee_id", e.id)
+            .gte("work_date", rangeStart)
+            .lte("work_date", rangeEndInclusive);
+          const byDay = new Map<string, { pairs: number; sys: number | null }>();
+          for (const lr of (logRows ?? []) as any[]) {
+            byDay.set(String(lr.work_date), {
+              pairs: Number(lr.pairs_made ?? 0),
+              sys: lr.system_count == null ? null : Number(lr.system_count),
+            });
+          }
+          for (const r of daily as any[]) {
+            const lg = byDay.get(String((r as any).day));
+            (r as any).pairs_made = lg ? lg.pairs : null;
+            (r as any).system_count = lg ? lg.sys : null;
+          }
+        } catch {
+          // сверка не критична — пропускаем
+        }
+      }
 
       const { data: adjRow, error: errAdj } = await sb
         .from("v_payroll_adjustments_monthly_with_plan")
@@ -971,6 +1063,220 @@ export default function Page() {
     setDailyRows(null);
     setDailyAdj(0);
     setDailyBusy(false);
+  }
+
+  /* ===== Расчётный листок картинкой (минималистичная детализация для продавца) ===== */
+  function buildDailyImage(): { canvas: HTMLCanvasElement; fileName: string } | null {
+    if (!dailyMeta || !dailyRows || dailyRows.length === 0) return null;
+
+    const isPromoter = dailyMeta.role === "promoter";
+    const period = periodLabel;
+    const branchName = branches.find((b) => b.id === dailyMeta.branchId)?.name ?? "";
+
+    const fmtHMshort = (hours?: number) => {
+      const totalMin = Math.max(0, Math.round((hours ?? 0) * 60));
+      const h = Math.trunc(totalMin / 60);
+      const m = totalMin % 60;
+      return `${h}ч ${String(m).padStart(2, "0")}м`;
+    };
+    const fmtDay = (d: string) => {
+      const p = String(d).split("-");
+      return p.length === 3 ? `${p[2]}.${p[1]}` : String(d);
+    };
+
+    const COL_SLATE = "#1e293b";
+    const COL_ROSE = "#e11d48";
+    const COL_CYAN = "#0e7490";
+
+    type Col = {
+      title: string;
+      w: number;
+      align: "left" | "right";
+      get: (r: any) => string;
+      color?: (r: any) => string;
+    };
+    const cols: Col[] = [
+      { title: "Дата", w: 78, align: "left", get: (r) => fmtDay(r.day) },
+      {
+        title: "Смена",
+        w: 110,
+        align: "left",
+        get: (r) => (r.shift_in ? `${r.shift_in} – ${r.shift_out ?? "…"}` : "—"),
+      },
+      { title: "Часы", w: 82, align: "right", get: (r) => fmtHMshort(r.hours) },
+      { title: "Часовка", w: 86, align: "right", get: (r) => fmt(r.hour_pay) },
+      { title: "Бонус", w: 80, align: "right", get: (r) => fmt(r.bonus) },
+      {
+        title: "Штраф",
+        w: 84,
+        align: "right",
+        get: (r) => (isPromoter ? "—" : num(r.penalties) > 0 ? fmt(r.penalties) : "—"),
+        color: (r) => (!isPromoter && num(r.penalties) > 0 ? COL_ROSE : COL_SLATE),
+      },
+      {
+        title: "Налоги",
+        w: 74,
+        align: "right",
+        get: (r) => (isPromoter ? "—" : fmt(num(r.social_fund_day) + num(r.income_tax_day))),
+      },
+      {
+        title: "Итог",
+        w: 96,
+        align: "right",
+        get: (r) => fmt(r.net_day),
+        color: (r) => (num(r.net_day) < 0 ? COL_ROSE : COL_CYAN),
+      },
+    ];
+
+    const padX = 28;
+    const tableW = cols.reduce((s, c) => s + c.w, 0);
+    const W = tableW + padX * 2;
+
+    const foot: { label: string; value: string; strong?: boolean }[] = [];
+    foot.push({
+      label: activeWeek ? "Итого по дням за неделю" : "Итого по дням",
+      value: `${fmt(dailyNetSum)} сом`,
+    });
+    if (!activeWeek && Math.round(dailyAdj) !== 0) {
+      foot.push({ label: "Корректировки (премия за план)", value: `${fmt(dailyAdj)} сом` });
+    }
+    foot.push({ label: `К выплате за ${period}`, value: `${fmt(dailyMeta.netPeriod)} сом`, strong: true });
+
+    const yTop = 22;
+    const titleH = 62;
+    const headH = 34;
+    const rowH = 30;
+    const divGap = 18;
+    const H = yTop + titleH + headH + dailyRows.length * rowH + divGap + foot.length * 26 + 30;
+
+    const scale = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(W * scale);
+    canvas.height = Math.round(H * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.scale(scale, scale);
+    ctx.textBaseline = "middle";
+
+    const FONT = "'Segoe UI', Roboto, Arial, sans-serif";
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+
+    let y = yTop;
+
+    // Заголовок
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#0f172a";
+    ctx.font = `700 22px ${FONT}`;
+    ctx.fillText(dailyMeta.name, padX, y + 16);
+    ctx.fillStyle = "#64748b";
+    ctx.font = `400 13px ${FONT}`;
+    ctx.fillText([branchName, period].filter(Boolean).join(" · "), padX, y + 42);
+    y += titleH;
+
+    // Шапка таблицы
+    const colX: number[] = [];
+    {
+      let x = padX;
+      for (const c of cols) {
+        colX.push(x);
+        x += c.w;
+      }
+    }
+    ctx.fillStyle = "#f1f5f9";
+    ctx.fillRect(padX, y, tableW, headH);
+    ctx.fillStyle = "#64748b";
+    ctx.font = `600 12px ${FONT}`;
+    cols.forEach((c, i) => {
+      ctx.textAlign = c.align;
+      ctx.fillText(c.title, c.align === "left" ? colX[i] + 10 : colX[i] + c.w - 10, y + headH / 2);
+    });
+    y += headH;
+
+    // Строки
+    ctx.font = `400 13px ${FONT}`;
+    dailyRows.forEach((r: any, idx: number) => {
+      if (idx % 2 === 1) {
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(padX, y, tableW, rowH);
+      }
+      cols.forEach((c, i) => {
+        ctx.fillStyle = c.color ? c.color(r) : COL_SLATE;
+        ctx.textAlign = c.align;
+        ctx.fillText(c.get(r), c.align === "left" ? colX[i] + 10 : colX[i] + c.w - 10, y + rowH / 2);
+      });
+      y += rowH;
+    });
+
+    // Разделитель
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padX, Math.round(y) + 0.5);
+    ctx.lineTo(padX + tableW, Math.round(y) + 0.5);
+    ctx.stroke();
+    y += divGap;
+
+    // Итоги
+    foot.forEach((f) => {
+      ctx.textAlign = "left";
+      ctx.fillStyle = f.strong ? "#0f172a" : "#475569";
+      ctx.font = `${f.strong ? 700 : 400} ${f.strong ? 15 : 13}px ${FONT}`;
+      ctx.fillText(f.label + ":", padX, y + 12);
+      ctx.textAlign = "right";
+      ctx.fillStyle = f.strong ? "#0e7490" : "#0f172a";
+      ctx.font = `700 ${f.strong ? 16 : 13}px ${FONT}`;
+      ctx.fillText(f.value, padX + tableW, y + 12);
+      y += 26;
+    });
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = `400 10px ${FONT}`;
+    ctx.fillText("Refocus", padX + tableW, H - 12);
+
+    const fileName = `Зарплата ${dailyMeta.name} — ${period}.png`.replace(/[\\/:*?"<>|]+/g, "_");
+    return { canvas, fileName };
+  }
+
+  async function copyDailyImage() {
+    const built = buildDailyImage();
+    if (!built) return;
+    const { canvas, fileName } = built;
+
+    const canCopy =
+      typeof window !== "undefined" &&
+      typeof (window as any).ClipboardItem !== "undefined" &&
+      !!navigator.clipboard?.write;
+
+    if (canCopy) {
+      try {
+        const blobPromise = new Promise<Blob>((resolve, reject) =>
+          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png")
+        );
+        await navigator.clipboard.write([
+          new (window as any).ClipboardItem({ "image/png": blobPromise }),
+        ]);
+        toast.success("Скопировано — вставьте в чат (Ctrl+V)");
+        return;
+      } catch {
+        // не удалось скопировать — упадём в скачивание ниже
+      }
+    }
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+    toast("Копирование не поддерживается — файл скачан");
   }
 
   /* ===== Сохранение профиля сотрудника (employee_payroll_profiles) через UPSERT ===== */
@@ -1988,7 +2294,13 @@ export default function Page() {
                                   await updateEmployee(e.id, { role: uiRoleToDb(val) });
                                   await mutate();
                                 }}
-                                className={cx(selectCls, "h-9 w-[112px]")}
+                                className={cx(
+                                  selectCls,
+                                  "h-9 w-[112px]",
+                                  roleUi === "promoter"
+                                    ? "bg-emerald-50 ring-emerald-200 text-emerald-700 font-semibold"
+                                    : ""
+                                )}
                               >
                                 <option value="seller">Продавец</option>
                                 <option value="promoter">Промоутер</option>
@@ -1997,27 +2309,53 @@ export default function Page() {
                             </td>
 
                             <td className={cx(rowTdBase, "text-right")}>
-                              <NumberCell
-                                value={e.hourlyRate ?? 0}
-                                onCommit={async (v) => {
-                                  await updateEmployee(e.id, { hourlyRate: v });
-                                  await persistProfileChange({
-                                    employeeId: e.id,
-                                    branchId: b.id,
-                                    hourlyRate: v,
-                                    hasBonus: e.hasBonus ?? false,
-                                    bonusPercent: e.bonusPercent ?? 0,
-                                  });
-                                  await mutate();
-                                }}
-                                className="w-[88px]"
-                                step={5}
-                                suffix="сом"
-                              />
+                              {roleUi === "master" ? (
+                                <div className="flex flex-col items-end">
+                                  <NumberCell
+                                    value={cfgLocal?.master_piece_rate ?? 150}
+                                    onCommit={async (v) => {
+                                      const vv = Math.max(0, Math.trunc(v));
+                                      setCfgLocal((c) => (c ? ({ ...c, master_piece_rate: vv } as any) : c));
+                                      await updateConfig({ master_piece_rate: vv } as any);
+                                      await mutate();
+                                    }}
+                                    className="w-[88px]"
+                                    step={10}
+                                    suffix="сом"
+                                  />
+                                  <span className="mt-0.5 text-[10px] text-slate-400">за заказ</span>
+                                </div>
+                              ) : (
+                                <NumberCell
+                                  value={e.hourlyRate ?? 0}
+                                  onCommit={async (v) => {
+                                    await updateEmployee(e.id, { hourlyRate: v });
+                                    await persistProfileChange({
+                                      employeeId: e.id,
+                                      branchId: b.id,
+                                      hourlyRate: v,
+                                      hasBonus: e.hasBonus ?? false,
+                                      bonusPercent: e.bonusPercent ?? 0,
+                                    });
+                                    await mutate();
+                                  }}
+                                  className="w-[88px]"
+                                  step={5}
+                                  suffix="сом"
+                                />
+                              )}
                             </td>
 
-                            {/* Бонус: toggle + % в одной ячейке */}
+                            {/* Бонус: toggle + % (у мастера — сделка, бонуса от оборота нет) */}
                             <td className={cx(rowTdBase, "text-center")}>
+                              {roleUi === "master" ? (
+                                <span
+                                  className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-600 ring-1 ring-indigo-200"
+                                  title="Сдельная оплата: бонус от оборота не применяется"
+                                >
+                                  сделка
+                                </span>
+                              ) : (
                               <div className="flex items-center justify-center gap-2">
                                 <Switch
                                   checked={!!e.hasBonus}
@@ -2051,6 +2389,7 @@ export default function Page() {
                                   suffix="%"
                                 />
                               </div>
+                              )}
                             </td>
 
                             <td
@@ -2066,7 +2405,7 @@ export default function Page() {
                               <div className="flex justify-end items-center gap-1.5">
                                 <button
                                   title="Детали по дням"
-                                  onClick={() => openDaily({ id: e.id, fullName: e.fullName, branchId: b.id, netPeriod, netMonth })}
+                                  onClick={() => openDaily({ id: e.id, fullName: e.fullName, branchId: b.id, netPeriod, netMonth, role: e.role })}
                                   className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-medium text-slate-700 bg-white ring-1 ring-slate-200 hover:bg-slate-50 transition"
                                 >
                                   <BarChart2 className="h-3.5 w-3.5" />
@@ -2128,6 +2467,15 @@ export default function Page() {
                   {dailyBusy || dailyRows === null ? (
                     <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-cyan-400" />
                   ) : null}
+                  <button
+                    onClick={() => void copyDailyImage()}
+                    disabled={!hasDailyRows}
+                    title="Скопировать картинку — потом вставьте в чат (Ctrl+V)"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-3.5 py-2 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:opacity-50"
+                  >
+                    <Copy className="h-4 w-4" />
+                    Копировать
+                  </button>
                   <GhostBtn onClick={closeDaily}>Закрыть</GhostBtn>
                 </div>
               </div>
@@ -2145,68 +2493,105 @@ export default function Page() {
                     ) : null}
                   </div>
                 ) : (
-                  <table className="min-w-full table-fixed border-separate border-spacing-y-3">
+                  dailyMeta?.role === "master" ? (
+                  <table className="min-w-full table-fixed text-sm">
                     <colgroup>
                       <col className="w-[110px]" />
-                      <col className="w-[110px]" />
-                      <col className="w-[110px]" />
-                      <col className="w-[110px]" />
-                      <col className="w-[110px]" />
-                      <col className="w-[110px]" />
-                      <col className="w-[110px]" />
-                      <col className="w-[110px]" />
+                      <col className="w-[150px]" />
+                      <col className="w-[130px]" />
+                      <col className="w-[130px]" />
+                      <col className="w-[120px]" />
                     </colgroup>
 
-                    <thead>
-                      <tr className="text-[11px] uppercase tracking-wide text-slate-500">
-                        <th className="text-left px-2">День</th>
-                        <th className="text-right px-2">Часы</th>
-                        <th className="text-right px-2">Часовка</th>
-                        <th className="text-right px-2">Оплачено</th>
-                        <th className="text-right px-2">Бонус</th>
-                        <th className="text-right px-2">Штрафы</th>
-                        <th className="text-right px-2">Налоги</th>
-                        <th className="text-right px-2">Итог дня</th>
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
+                        <th className="rounded-l-lg px-3 py-2 text-left">День</th>
+                        <th className="px-3 py-2 text-left">Смена</th>
+                        <th className="px-3 py-2 text-right">Собрал</th>
+                        <th className="px-3 py-2 text-right">В системе</th>
+                        <th className="rounded-r-lg px-3 py-2 text-right">К оплате</th>
                       </tr>
                     </thead>
 
-                    <tbody>
-                      {dailyRows.map((r: any) => (
-                        <tr key={r.day}>
-                          <td className={rowTdFirst}>
-                            <span className="text-sm text-slate-800">{r.day}</span>
+                    <tbody className="divide-y divide-slate-100">
+                      {dailyRows.map((r: any, idx: number) => {
+                        const pairs = r.pairs_made == null ? null : Number(r.pairs_made);
+                        const sys = r.system_count == null ? null : Number(r.system_count);
+                        const diverges = pairs != null && sys != null && pairs !== sys;
+                        return (
+                        <tr key={r.day} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
+                          <td className="px-3 py-2 text-slate-800">{r.day}</td>
+                          <td className={cx("px-3 py-2 tabular-nums", r.shift_in ? "text-slate-700" : "text-slate-300")}>
+                            {r.shift_in ? `${r.shift_in} – ${r.shift_out ?? "…"}` : "—"}
                           </td>
-                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmtHM(r.hours)}
+                          <td className={cx("px-3 py-2 text-right font-semibold tabular-nums", diverges ? "text-amber-600" : "text-slate-800")}>
+                            {pairs == null ? "—" : pairs}
                           </td>
-                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmt(r.hour_pay)}
+                          <td className={cx("px-3 py-2 text-right tabular-nums", diverges ? "text-amber-600" : "text-slate-400")} title="Заказов с линзами в системе за этот день (партия 13:00→13:00)">
+                            {sys == null ? "—" : sys}
                           </td>
-                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmt(r.paid_sum)}
-                          </td>
-                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmt(r.bonus)}
-                          </td>
-                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmt(r.penalties)}
-                          </td>
-                          <td className={cx(rowTdBase, "text-right text-sm text-slate-800")}>
-                            {fmt(num(r.social_fund_day) + num(r.income_tax_day))}
-                          </td>
-                          <td
-                            className={cx(
-                              rowTdLast,
-                              "text-right text-sm font-semibold tabular-nums",
-                              r.net_day < 0 ? "text-rose-600" : "text-cyan-700"
-                            )}
-                          >
+                          <td className={cx("px-3 py-2 text-right font-semibold tabular-nums", r.net_day < 0 ? "text-rose-600" : "text-cyan-700")}>
                             {fmt(r.net_day)}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
+                  ) : (
+                  <table className="min-w-full table-fixed text-sm">
+                    <colgroup>
+                      <col className="w-[92px]" />
+                      <col className="w-[140px]" />
+                      <col className="w-[96px]" />
+                      <col className="w-[104px]" />
+                      <col className="w-[96px]" />
+                      <col className="w-[96px]" />
+                      <col className="w-[96px]" />
+                      <col className="w-[110px]" />
+                    </colgroup>
+
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
+                        <th className="rounded-l-lg px-3 py-2 text-left">День</th>
+                        <th className="px-3 py-2 text-left">Смена</th>
+                        <th className="px-3 py-2 text-right">Часы</th>
+                        <th className="px-3 py-2 text-right">Часовка</th>
+                        <th className="px-3 py-2 text-right">Бонус</th>
+                        <th className="px-3 py-2 text-right">Штрафы</th>
+                        <th className="px-3 py-2 text-right">Налоги</th>
+                        <th className="rounded-r-lg px-3 py-2 text-right">Итог дня</th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-100">
+                      {dailyRows.map((r: any, idx: number) => {
+                        const isPromoter = dailyMeta?.role === "promoter";
+                        const hasPenalty = !isPromoter && num(r.penalties) > 0;
+                        return (
+                        <tr key={r.day} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
+                          <td className="px-3 py-2 text-slate-800">{r.day}</td>
+                          <td className={cx("px-3 py-2 tabular-nums", r.shift_in ? "text-slate-700" : "text-slate-300")}>
+                            {r.shift_in ? `${r.shift_in} – ${r.shift_out ?? "…"}` : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-800">{fmtHM(r.hours)}</td>
+                          <td className="px-3 py-2 text-right text-slate-800">{fmt(r.hour_pay)}</td>
+                          <td className="px-3 py-2 text-right text-slate-800">{fmt(r.bonus)}</td>
+                          <td className={cx("px-3 py-2 text-right", isPromoter ? "text-slate-300" : hasPenalty ? "text-rose-600 font-medium" : "text-slate-800")}>
+                            {isPromoter ? "—" : fmt(r.penalties)}
+                          </td>
+                          <td className={cx("px-3 py-2 text-right", isPromoter ? "text-slate-300" : "text-slate-800")}>
+                            {isPromoter ? "—" : fmt(num(r.social_fund_day) + num(r.income_tax_day))}
+                          </td>
+                          <td className={cx("px-3 py-2 text-right font-semibold tabular-nums", r.net_day < 0 ? "text-rose-600" : "text-cyan-700")}>
+                            {fmt(r.net_day)}
+                          </td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  )
                 )}
               </div>
 

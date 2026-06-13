@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import getSupabase from '@/lib/supabaseClient';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -21,6 +22,8 @@ import {
   Pencil,
   AlertTriangle,
   Sparkles,
+  Users,
+  ArrowRight,
 } from 'lucide-react';
 
 /* ---------- Types ---------- */
@@ -69,8 +72,10 @@ type Row = {
   discount_amount: number;
   discount_ru: string | null;
 
-  // NEW: штрихкоды оправы (если есть)
-  frame_barcodes?: string[] | null;
+  // Детализация позиций заказа (строится в loadOne)
+  lens_lines?: LensLine[] | null;
+  frame_lines?: FrameLine[] | null;
+  other_lines?: OtherLine[] | null;
 };
 
 type PaymentRow = {
@@ -138,6 +143,134 @@ function fmtDate(s?: string | null): string | null {
   });
   const parts = Object.fromEntries(dtf.formatToParts(d).map((p) => [p.type, p.value]));
   return `${parts.day}.${parts.month}.${parts.year} ${parts.hour}:${parts.minute}`;
+}
+
+/* ---------- Детализация позиций заказа ---------- */
+type EyeReading = { eye: string; sph: string | null; extra: string | null };
+type LensLine = { name: string; code: string | null; eyes: EyeReading[]; amount: number };
+type FrameLine = { kind: string | null; barcode: string | null; amount: number };
+type OtherLine = { label: string; amount: number };
+
+type LensGroupAccum = {
+  code: string | null;
+  type: string | null;
+  amount: number;
+  eyes: Record<string, { sph: number | null; cyl: number | null; ax: number | null }>;
+};
+
+// Глаз: OD — правый, OS — левый, NA — без привязки (контактные/растворы)
+const EYE_LABEL: Record<string, string> = {
+  OD: 'Правый (OD)',
+  OS: 'Левый (OS)',
+  NA: '',
+};
+
+// Виды оправ — те же коды, что и на странице штрихкодов (frame_barcodes.type_code)
+const FRAME_TYPE_LABEL: Record<string, string> = {
+  RP: 'Чтение · пластик',
+  RM: 'Чтение · металл',
+  KD: 'Детские',
+  PA: 'Взрослый пластик',
+  MA: 'Взрослый металл',
+  RL: 'Безоправные',
+};
+const FRAME_GENDER_LABEL: Record<string, string> = { M: 'Мужские', F: 'Женские' };
+
+function frameKindLabel(typeCode?: string | null, gender?: string | null): string | null {
+  const t = String(typeCode ?? '').toUpperCase().trim();
+  if (!t) return null;
+  const g = String(gender ?? '').toUpperCase().trim();
+
+  // Детские — пол отображаем как «Девочки/Мальчики»
+  if (t === 'KD') {
+    if (g === 'F') return 'Детские · Девочки';
+    if (g === 'M') return 'Детские · Мальчики';
+    return 'Детские';
+  }
+  // Безоправные — унисекс
+  if (t === 'RL') return 'Безоправные';
+
+  const base = FRAME_TYPE_LABEL[t] ?? t;
+  const gLabel = FRAME_GENDER_LABEL[g];
+  return gLabel ? `${base} · ${gLabel}` : base;
+}
+
+// Виды линз: lens_code приходит в «кодовом» виде (AR, BB, CHAME_BLACK, AST_CHAME_BROWN…)
+const LENS_BASE_LABEL: Record<string, string> = {
+  WHITE: 'Белый',
+  AR: 'Антибликовый',
+  BB: 'Защита от синего',
+  BBX: 'Защита от синего',
+  CHAME: 'Хамелеон',
+};
+const LENS_COLOR_LABEL: Record<string, string> = {
+  BLACK: 'чёрный',
+  BROWN: 'коричневый',
+  GREY: 'серый',
+  GRAY: 'серый',
+};
+
+function lensKindLabel(lensType?: string | null, lensCode?: string | null): string {
+  // lens_type вида "AR [0–2.75]" — отрезаем диапазон в скобках
+  const cleanedType = String(lensType ?? '')
+    .replace(/\s*\[[^\]]*\]\s*$/, '')
+    .trim();
+  // Если название уже на русском (контактные линзы, раствор) — берём как есть
+  if (/[А-Яа-яЁё]/.test(cleanedType)) return cleanedType;
+
+  const code = String(lensCode ?? cleanedType ?? '').toUpperCase().trim();
+  if (!code) return '—';
+
+  const tokens = code.split(/[_\s-]+/).filter(Boolean);
+  let astig = false;
+  let base = '';
+  let color = '';
+  let index = '';
+  let sign = '';
+
+  for (const t of tokens) {
+    if (t === 'AST' || t === 'ASTIG' || t === 'ASTIGMA') {
+      astig = true;
+    } else if (LENS_BASE_LABEL[t] && !base) {
+      base = LENS_BASE_LABEL[t];
+    } else if (LENS_COLOR_LABEL[t]) {
+      color = LENS_COLOR_LABEL[t];
+    } else if (t === '161' || t === '167' || t === '174') {
+      index = `1.${t.slice(1)}`;
+    } else if (t === 'PLUS') {
+      sign = '(+)';
+    } else if (t === 'MINUS') {
+      sign = '(−)';
+    } else if (!base) {
+      base = t; // неизвестный код — оставляем как есть
+    }
+  }
+
+  let label = base || code;
+  if (color) label += ` ${color}`;
+  if (index) label = `${index} ${label}`;
+  if (astig) label = `Астигм. ${label}`;
+  if (sign) label += ` ${sign}`;
+  return label;
+}
+
+// Диоптрий со знаком: -7 → «−7.00», 1 → «+1.00», 0 → «0.00»
+function fmtSph(v: number | null | undefined): string | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const sign = n > 0 ? '+' : n < 0 ? '−' : '';
+  return `${sign}${Math.abs(n).toFixed(2)}`;
+}
+
+// Цилиндр + ось (астигматика). Показываем только если цилиндр задан.
+function fmtCylAx(cyl?: number | null, ax?: number | null): string | null {
+  const c = Number(cyl);
+  if (cyl === null || cyl === undefined || !Number.isFinite(c) || c === 0) return null;
+  let s = `cyl ${fmtSph(cyl)}`;
+  const a = Number(ax);
+  if (ax !== null && ax !== undefined && Number.isFinite(a)) s += ` · ax ${a}°`;
+  return s;
 }
 
 /* ---------- UI helpers (Refocus style) ---------- */
@@ -436,8 +569,6 @@ function normalize(raw: RawRow): Row {
     discount_percent: dperc,
     discount_amount: damt,
     discount_ru,
-
-    frame_barcodes: null,
   };
 }
 
@@ -787,7 +918,7 @@ export default function OrdersPage() {
 
     let base = normalize(data as RawRow);
 
-    // Берём * чтобы не гадать по колонкам (нужны потенциальные barcode_id / meta и т.п.)
+    // Детализация позиций: вид линз + диоптрии по глазам, вид оправы + штрихкод.
     const { data: items, error: itemsError } = await sb
       .from('order_items')
       .select('*')
@@ -799,116 +930,94 @@ export default function OrdersPage() {
       let frame = 0;
       let lenses = 0;
 
-      const directBarcodes = new Set<string>();
-      const barcodeIds = new Set<string>();
-
-      const tryAddBarcodeStr = (v: any) => {
-        if (typeof v === 'string') {
-          const s = v.trim();
-          if (s) directBarcodes.add(s);
-        }
-      };
-
-      const tryAddBarcodeId = (v: any) => {
-        if (v === null || v === undefined) return;
-        if (typeof v === 'string') {
-          const s = v.trim();
-          if (s) barcodeIds.add(s);
-          return;
-        }
-        // на всякий случай, если id не строка
-        if (typeof v === 'number') barcodeIds.add(String(v));
-      };
+      const frameRows: any[] = [];
+      const frameBcIds = new Set<string>();
+      const lensGroups = new Map<string, LensGroupAccum>();
+      const otherLines: OtherLine[] = [];
 
       (items as any[]).forEach((it) => {
-        const itemType = (it.item_type ?? '').toString().toLowerCase();
-        const hasLensType =
-          it.lens_type !== null &&
-          it.lens_type !== undefined &&
-          String(it.lens_type).trim() !== '';
-
+        const type = String(it.item_type ?? '').toLowerCase();
         const qty = Number(it.qty ?? 1);
         const price = Number(it.price ?? 0);
         const amount = qty * price;
 
-        if (hasLensType || itemType.includes('lens') || itemType.includes('линз')) {
-          lenses += amount;
-        } else if (itemType.includes('frame') || itemType.includes('оправ')) {
+        const hasLensType =
+          it.lens_type !== null && it.lens_type !== undefined && String(it.lens_type).trim() !== '';
+        const isFrame = type === 'frame' || type.includes('оправ');
+        const isLensish = type === 'lens' || type === 'contact' || (!isFrame && hasLensType);
+
+        if (isFrame) {
           frame += amount;
-        }
-
-        // Баркод имеет смысл искать только у "оправных" позиций
-        const isFrameLike =
-          !hasLensType &&
-          (itemType.includes('frame') ||
-            itemType.includes('оправ') ||
-            Object.keys(it || {}).some((k) => {
-              const lk = k.toLowerCase();
-              return lk.includes('frame') && lk.includes('barcode');
-            }));
-
-        if (!isFrameLike) return;
-
-        // 1) Если баркод хранится строкой прямо в order_items
-        for (const k of Object.keys(it || {})) {
-          const lk = k.toLowerCase();
-          const v = (it as any)[k];
-
-          // прямой баркод
-          if (
-            lk === 'barcode' ||
-            lk === 'frame_barcode' ||
-            lk === 'framebarcode' ||
-            lk.endsWith('_barcode')
-          ) {
-            tryAddBarcodeStr(v);
+          frameRows.push(it);
+          if (it.frame_barcode_id) frameBcIds.add(String(it.frame_barcode_id));
+        } else if (isLensish) {
+          lenses += amount;
+          const key = String(it.lens_code ?? it.lens_type ?? type ?? 'lens');
+          let g = lensGroups.get(key);
+          if (!g) {
+            g = { code: it.lens_code ?? null, type: it.lens_type ?? null, amount: 0, eyes: {} };
+            lensGroups.set(key, g);
           }
-
-          // id на frame_barcodes
-          if (
-            lk === 'barcode_id' ||
-            lk === 'frame_barcode_id' ||
-            (lk.includes('barcode') && lk.endsWith('_id'))
-          ) {
-            tryAddBarcodeId(v);
-          }
-
-          // json/meta варианты
-          if (lk === 'meta' && v && typeof v === 'object') {
-            const mv: any = v;
-            if (mv?.barcode) tryAddBarcodeStr(mv.barcode);
-            if (mv?.frame_barcode) tryAddBarcodeStr(mv.frame_barcode);
-            if (mv?.frameBarcode) tryAddBarcodeStr(mv.frameBarcode);
-            if (mv?.barcode_id) tryAddBarcodeId(mv.barcode_id);
-            if (mv?.frame_barcode_id) tryAddBarcodeId(mv.frame_barcode_id);
-          }
+          g.amount += amount;
+          const eye = String(it.eye ?? 'NA').toUpperCase();
+          g.eyes[eye] = { sph: it.sph ?? null, cyl: it.cyl ?? null, ax: it.ax ?? null };
+        } else {
+          otherLines.push({ label: String(it.lens_type ?? type ?? '—') || '—', amount });
         }
       });
 
-      let frameBarcodes = Array.from(directBarcodes).filter(Boolean);
-
-      // 2) Если есть только barcode_id — добираем из frame_barcodes
-      if (!frameBarcodes.length && barcodeIds.size) {
-        const ids = Array.from(barcodeIds);
+      // Виды оправ берём из frame_barcodes (type_code + gender), join по frame_barcode_id.
+      const bcMap = new Map<
+        string,
+        { barcode: string | null; type_code: string | null; gender: string | null }
+      >();
+      if (frameBcIds.size) {
         const { data: fb, error: fbErr } = await sb
           .from('frame_barcodes')
-          .select('id,barcode')
-          .in('id', ids);
+          .select('id,barcode,type_code,gender')
+          .in('id', Array.from(frameBcIds));
 
         if (fbErr) {
           console.error(fbErr.message);
-        } else if (fb && Array.isArray(fb)) {
-          frameBarcodes = (fb as any[])
-            .map((x) => (x?.barcode ? String(x.barcode).trim() : ''))
-            .filter(Boolean);
+        } else if (fb) {
+          (fb as any[]).forEach((x) =>
+            bcMap.set(String(x.id), {
+              barcode: x.barcode ?? null,
+              type_code: x.type_code ?? null,
+              gender: x.gender ?? null,
+            }),
+          );
         }
       }
+
+      const frame_lines: FrameLine[] = frameRows.map((it) => {
+        const bc = it.frame_barcode_id ? bcMap.get(String(it.frame_barcode_id)) : null;
+        return {
+          kind: frameKindLabel(bc?.type_code, bc?.gender),
+          barcode: bc?.barcode ?? null,
+          amount: Number(it.qty ?? 1) * Number(it.price ?? 0),
+        };
+      });
+
+      const EYE_ORDER = ['OD', 'OS', 'NA'];
+      const lens_lines: LensLine[] = Array.from(lensGroups.values()).map((g) => ({
+        name: lensKindLabel(g.type, g.code),
+        code: g.code,
+        eyes: EYE_ORDER.filter((e) => g.eyes[e]).map((e) => ({
+          eye: e,
+          sph: fmtSph(g.eyes[e].sph),
+          extra: fmtCylAx(g.eyes[e].cyl, g.eyes[e].ax),
+        })),
+        amount: g.amount,
+      }));
 
       base = {
         ...base,
         frame_amount: frame,
         lenses_amount: lenses,
-        frame_barcodes: frameBarcodes.length ? frameBarcodes : null,
+        lens_lines: lens_lines.length ? lens_lines : null,
+        frame_lines: frame_lines.length ? frame_lines : null,
+        other_lines: otherLines.length ? otherLines : null,
       };
     }
 
@@ -1059,6 +1168,15 @@ export default function OrdersPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/customers"
+              className="group inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
+            >
+              <Users className="h-4 w-4" />
+              Клиенты
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+            <div className="hidden sm:block h-6 w-px bg-slate-700/40 mx-1" />
             <GBtn variant="soft" onClick={load}>
               <RefreshCw className="h-4 w-4" />
               Обновить
@@ -1375,9 +1493,6 @@ function DetailsDrawer({
     detail &&
     `ORD-${new Date().getFullYear().toString().slice(2)}-${String(detail.order_no).padStart(5, '0')}`;
 
-  const frameBarcodeText =
-    detail?.frame_barcodes && detail.frame_barcodes.length ? detail.frame_barcodes.join(', ') : null;
-
   return (
     <Portal>
       <div className="fixed inset-0 z-[70]">
@@ -1426,18 +1541,6 @@ function DetailsDrawer({
                       Создан:{' '}
                       <span className="font-medium text-slate-900">{detail.created_at ?? '—'}</span>
                     </div>
-
-                    {/* NEW: barcode */}
-                    {frameBarcodeText && (
-                      <div className="mt-3 rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
-                        <div className="text-[11px] text-slate-500 uppercase tracking-wide">
-                          Штрихкод оправы
-                        </div>
-                        <div className="mt-0.5 font-semibold text-slate-900 tabular-nums font-mono">
-                          {frameBarcodeText}
-                        </div>
-                      </div>
-                    )}
                   </GlassCard>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -1503,12 +1606,13 @@ function DetailsDrawer({
                     </div>
                   </GlassCard>
 
-                  {/* Состав суммы: оправа / линзы */}
+                  {/* Состав заказа: вид линз + диоптрии, вид оправы + штрихкод */}
                   <GlassCard className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="text-sm font-semibold text-slate-800">Состав заказа</div>
                       <div className="text-[11px] text-slate-500">оправа / линзы</div>
                     </div>
+
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <div className="rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-3">
                         <div className="text-[11px] text-slate-500 uppercase tracking-wide">Оправа</div>
@@ -1523,6 +1627,115 @@ function DetailsDrawer({
                         </div>
                       </div>
                     </div>
+
+                    {/* Линзы — вид + диоптрии по глазам */}
+                    {detail.lens_lines && detail.lens_lines.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Линзы
+                        </div>
+                        <div className="mt-1.5 space-y-2">
+                          {detail.lens_lines.map((l, i) => (
+                            <div
+                              key={`lens-${i}`}
+                              className="rounded-xl bg-white ring-1 ring-sky-100 p-3"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-900">
+                                    {l.name}
+                                    {l.code && (
+                                      <span className="ml-1.5 text-[11px] font-medium text-slate-400">
+                                        {l.code}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {l.eyes.length > 0 && (
+                                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                                      {l.eyes.map((e) => (
+                                        <div key={e.eye} className="text-[12px] text-slate-600">
+                                          {EYE_LABEL[e.eye] !== '' && (
+                                            <span className="text-slate-500">
+                                              {EYE_LABEL[e.eye] ?? e.eye}:{' '}
+                                            </span>
+                                          )}
+                                          <span className="font-semibold text-slate-900 tabular-nums">
+                                            {e.sph ?? '—'}
+                                          </span>
+                                          {e.extra && (
+                                            <span className="ml-1 text-slate-500">{e.extra}</span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="shrink-0 text-sm font-semibold text-slate-900 tabular-nums">
+                                  {fmtNum(l.amount)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Оправа — вид + штрихкод */}
+                    {detail.frame_lines && detail.frame_lines.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Оправа
+                        </div>
+                        <div className="mt-1.5 space-y-2">
+                          {detail.frame_lines.map((f, i) => (
+                            <div
+                              key={`frame-${i}`}
+                              className="rounded-xl bg-white ring-1 ring-sky-100 p-3"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-900">
+                                    {f.kind ?? 'Оправа'}
+                                  </div>
+                                  {f.barcode && (
+                                    <div className="mt-0.5 font-mono text-[12px] text-slate-500">
+                                      {f.barcode}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="shrink-0 text-sm font-semibold text-slate-900 tabular-nums">
+                                  {fmtNum(f.amount)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Прочие позиции (добавки, растворы) */}
+                    {detail.other_lines && detail.other_lines.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Прочее
+                        </div>
+                        <div className="mt-1.5 space-y-2">
+                          {detail.other_lines.map((o, i) => (
+                            <div
+                              key={`other-${i}`}
+                              className="flex items-center justify-between gap-2 rounded-xl bg-white ring-1 ring-sky-100 p-3"
+                            >
+                              <div className="min-w-0 truncate text-sm font-medium text-slate-900">
+                                {o.label}
+                              </div>
+                              <div className="shrink-0 text-sm font-semibold text-slate-900 tabular-nums">
+                                {fmtNum(o.amount)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </GlassCard>
 
                   <GlassCard className="p-4">

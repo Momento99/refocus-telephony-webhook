@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import getSupabase from '@/lib/supabaseClient';
-import { ArrowLeft, Barcode, Printer } from 'lucide-react';
+import { ArrowLeft, Barcode, LayoutGrid, Printer, Hourglass } from 'lucide-react';
 import {
   BRANCHES_WITHOUT_AUTO_REPLENISH,
   BUCKET_STEP,
@@ -55,7 +55,7 @@ const FRAME_TYPES: { code: FrameTypeCode; label: string; description: string }[]
   { code: 'RP', label: 'Чтение · пластик', description: 'Женские, пластик, 800–2200' },
   { code: 'RM', label: 'Чтение · металл', description: 'Женские, металл, 1000–2400' },
   { code: 'KD', label: 'Детские', description: 'М/Ж, 800–3500' },
-  { code: 'PA', label: 'Пластик (взрослый)', description: 'М/Ж, 1000–3200' },
+  { code: 'PA', label: 'Пластик (взрослый)', description: 'М/Ж, 1000–7000 (premium до 7000с)' },
   { code: 'MA', label: 'Металл (взрослый)', description: 'М/Ж, 1200–10000' },
   { code: 'RL', label: 'Безоправные', description: 'М/Ж, премиум, плоская ~6000с' },
 ];
@@ -63,11 +63,11 @@ const FRAME_TYPES: { code: FrameTypeCode; label: string; description: string }[]
 /** Жёсткие границы цен по каждому типу */
 const FRAME_TYPE_PRICE_RULES: Record<FrameTypeCode, { min: number; max: number }> = {
   RP: { min: 800, max: 2200 },
-  RM: { min: 1000, max: 2400 },
-  KD: { min: 800, max: 3500 },
-  PA: { min: 1000, max: 3200 },
-  MA: { min: 1200, max: 10000 },
-  RL: { min: 5500, max: 6500 }, // плоский диапазон ±500с от базы 6000
+  RM: { min: 1000, max: 4500 },   // верх 4500с — место под premium-якорь (~4000с)
+  KD: { min: 800, max: 5000 },   // верх 5000с — место под 1 премиум-якорь (~4500с)
+  PA: { min: 1000, max: 7000 },   // верх 7000с — место под premium-якоря (4500/5500/7000)
+  MA: { min: 1200, max: 15000 }, // верх 15000с — место под декой-якорь b10 = 13000с
+  RL: { min: 6000, max: 17000 }, // премиум-пирамида от entry 6000с до anchor ladder (16000/16500/17000)
 };
 
 /** Границы цен с учётом типа И пола (одна точка правды) */
@@ -83,39 +83,34 @@ function getTypePriceBounds(type: FrameTypeCode, gender: GenderCode): { min: num
   }
   if (type === 'RM') {
     min = 1000;
-    max = 2400;
+    max = 4500;
   }
   if (type === 'KD') {
     min = 800;
-    max = 3500;
+    max = 5000;
   }
   if (type === 'PA') {
     if (gender === 'F') {
       min = 1000;
-      max = 3000;
+      max = 7000;
     } else {
       min = 1200;
-      max = 3200;
+      max = 7000;
     }
   }
   if (type === 'MA') {
     if (gender === 'F') {
       min = 1200;
-      max = 9000;
+      max = 15000;
     } else {
       min = 1400;
-      max = 10000;
+      max = 15000;
     }
   }
   if (type === 'RL') {
-    // Безоправные — плоский диапазон ±500с от 6000, без сильной разницы по полу
-    if (gender === 'F') {
-      min = 5500;
-      max = 6500;
-    } else {
-      min = 5500;
-      max = 6500;
-    }
+    // Безоправные RL — премиум-пирамида 6000-17000с (включая anchor ladder 16000/16500/17000)
+    min = 6000;
+    max = 17000;
   }
 
   return { min, max };
@@ -339,19 +334,26 @@ async function ensureCanvasFonts() {
   try {
     await (document as any).fonts?.ready?.catch?.(() => undefined);
 
-    // Явно подгружаем Onest 400 через FontFace API с jsDelivr —
+    // Явно подгружаем Onest 400 + 700 через FontFace API с jsDelivr —
     // надёжнее любых @import / @fontsource, т.к. минует CSS-кэш браузера.
+    // 400 — для регулярных ценников, 700 (Bold) — для премиум (≥4000с).
     if (!(window as any).__priceFontForCanvasLoaded) {
       try {
-        const ff = new FontFace(
+        const ff400 = new FontFace(
           'Onest',
           "url('https://cdn.jsdelivr.net/npm/@fontsource/onest@5/files/onest-cyrillic-400-normal.woff2') format('woff2'),url('https://cdn.jsdelivr.net/npm/@fontsource/onest@5/files/onest-latin-400-normal.woff2') format('woff2')",
           { weight: '400', style: 'normal' },
         );
-        await ff.load();
-        (document as any).fonts.add(ff);
+        const ff700 = new FontFace(
+          'Onest',
+          "url('https://cdn.jsdelivr.net/npm/@fontsource/onest@5/files/onest-cyrillic-700-normal.woff2') format('woff2'),url('https://cdn.jsdelivr.net/npm/@fontsource/onest@5/files/onest-latin-700-normal.woff2') format('woff2')",
+          { weight: '700', style: 'normal' },
+        );
+        await Promise.all([ff400.load(), ff700.load()]);
+        (document as any).fonts.add(ff400);
+        (document as any).fonts.add(ff700);
         (window as any).__priceFontForCanvasLoaded = true;
-        console.log('[pricelabel] Onest 400 loaded via FontFace API');
+        console.log('[pricelabel] Onest 400 + 700 loaded via FontFace API');
       } catch (e) {
         console.warn('[pricelabel] Onest FontFace load failed:', e);
       }
@@ -360,11 +362,13 @@ async function ensureCanvasFonts() {
     await Promise.all([
       (document as any).fonts.load('24px "pavelt-jrjpm"'),
       (document as any).fonts.load('400 46px "Onest"'),
+      (document as any).fonts.load('700 46px "Onest"'),
     ]);
 
     // Диагностика: реально ли шрифт доступен canvas
-    const ok = (document as any).fonts.check('400 46px "Onest"');
-    console.log('[pricelabel] document.fonts.check("400 46px Onest") =', ok);
+    const ok400 = (document as any).fonts.check('400 46px "Onest"');
+    const ok700 = (document as any).fonts.check('700 46px "Onest"');
+    console.log('[pricelabel] document.fonts.check Onest 400 =', ok400, '700 =', ok700);
   } catch {
     /* ignore */
   }
@@ -442,7 +446,12 @@ async function fetchDbNextSerial(
 
 /* ────────── bitmap этикетки ────────── */
 
-function buildBitmapJobBase64(priceText: string, barcode: string, currencySymbol: string = ''): string {
+function buildBitmapJobBase64(
+  priceText: string,
+  barcode: string,
+  currencySymbol: string = '',
+  isPremium: boolean = false,
+): string {
   const labelWmm = LABEL_W_MM;
   const labelHmm = LABEL_H_MM;
   const labelW = mmToDots(labelWmm);
@@ -468,14 +477,25 @@ function buildBitmapJobBase64(priceText: string, barcode: string, currencySymbol
   ctx.fillText('Refocus', LOGO_X, 0);
   const logoCenterX = LOGO_X + logoWidth / 2;
 
-  // Цена — Onest 400 Regular. Центрируется ПОД логотипом «Refocus».
-  const PRICE_FONT = '400 46px "Onest"';
+  // PREMIUM marker (≥ 4000с): тонкая горизонтальная линия под логотипом
+  // (editorial-cue, signals "premium tier" tier per Coulter & Choi 2010 +
+  // Walker et al. 2008 на bold price). Линия видна на ч/б термопринте.
+  if (isPremium) {
+    const PREMIUM_LINE_Y = 23;
+    const PREMIUM_LINE_H = 2;
+    ctx.fillRect(LOGO_X, PREMIUM_LINE_Y, logoWidth, PREMIUM_LINE_H);
+  }
+
+  // Цена — Onest. ПРЕМИУМ → 700 Bold (визуально тяжелее = «уверенно, продумано»).
+  // РЕГУЛЯР → 400 Regular (стандартный вес).
+  const PRICE_WEIGHT = isPremium ? 700 : 400;
+  const PRICE_FONT = `${PRICE_WEIGHT} 46px "Onest"`;
   ctx.font = PRICE_FONT;
   const priceWidth = ctx.measureText(priceText).width;
 
-  // Валюта — маленькими буквами справа от цены, того же шрифта.
+  // Валюта — того же веса.
   const CURRENCY_GAP = 4;
-  const CURRENCY_FONT = '400 22px "Onest"';
+  const CURRENCY_FONT = `${PRICE_WEIGHT} 22px "Onest"`;
   ctx.font = CURRENCY_FONT;
   const currWidth = currencySymbol ? ctx.measureText(currencySymbol).width : 0;
 
@@ -590,8 +610,9 @@ const TYPE_SECTIONS = [
   { id: 'PA_M', title: 'Взрослый пластик · Мужские', typeCode: 'PA' as FrameTypeCode, gender: 'M' as GenderCode },
   { id: 'MA_F', title: 'Взрослый металл · Женские', typeCode: 'MA' as FrameTypeCode, gender: 'F' as GenderCode },
   { id: 'MA_M', title: 'Взрослый металл · Мужские', typeCode: 'MA' as FrameTypeCode, gender: 'M' as GenderCode },
-  { id: 'RL_F', title: 'Безоправные · Женские', typeCode: 'RL' as FrameTypeCode, gender: 'F' as GenderCode },
-  { id: 'RL_M', title: 'Безоправные · Мужские', typeCode: 'RL' as FrameTypeCode, gender: 'M' as GenderCode },
+  // Безоправные — УНИСЕКС: одна секция, печать как gender='F' (формула RL_F=35, RL_M=0).
+  // RL_M была удалена потому что физически безоправные не имеют гендера-лица.
+  { id: 'RL_F', title: 'Безоправные (унисекс)', typeCode: 'RL' as FrameTypeCode, gender: 'F' as GenderCode },
 ] as const;
 
 type TypeSection = (typeof TYPE_SECTIONS)[number];
@@ -611,7 +632,6 @@ const TYPE_SLOT_SHARE: Record<TypeSectionId, number> = {
   MA_F: 35 / 168,
   MA_M: 28 / 168,
   RL_F: 0,
-  RL_M: 0,
 };
 
 type SectionVariant = 'default' | 'female' | 'male';
@@ -678,6 +698,11 @@ export default function BranchBarcodesPage() {
   const [serial, setSerial] = useState<number>(DEFAULT_SERIAL);
 
   const [totalSlots, setTotalSlots] = useState<number>(0);
+  // Последнее значение, реально подтверждённое БД (или localStorage для legacy).
+  // SAVE-effect отправляет POST только если totalSlots отличается от него.
+  // Без этого: stale localStorage=340 пишется в DB до того, как DB-load успеет
+  // вернуть актуальные 380 (race между LOAD и SAVE при первом приходе branch?.name).
+  const lastPersistedSlotsRef = useRef<number | null>(null);
 
   const [counts, setCounts] = useState<BucketCounts>(() => ({
     totalByBucket: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
@@ -743,6 +768,7 @@ export default function BranchBarcodesPage() {
           const r = await fetch(`/api/frame-config?branch_id=${branchId}`, { cache: 'no-store' });
           const j = await r.json();
           if (!cancelled && j?.ok && Number.isFinite(j.frame_total_slots) && j.frame_total_slots > 0) {
+            lastPersistedSlotsRef.current = j.frame_total_slots;
             setTotalSlots(j.frame_total_slots);
             setBranchTotalSlots(branch.name, j.frame_total_slots);
             return;
@@ -750,9 +776,13 @@ export default function BranchBarcodesPage() {
         } catch {
           /* падаем на fallback ниже */
         }
-        // Fallback: константа из формулы
+        // Fallback: константа из формулы (НЕ помечаем как persisted,
+        // чтобы при первом изменении пользователь явно сохранил в БД).
         const fallback = getBranchTotalSlots(branch.name);
-        if (!cancelled && fallback > 0) setTotalSlots(fallback);
+        if (!cancelled && fallback > 0) {
+          lastPersistedSlotsRef.current = fallback;
+          setTotalSlots(fallback);
+        }
         return;
       }
 
@@ -762,13 +792,19 @@ export default function BranchBarcodesPage() {
         if (saved != null) {
           const parsed = Number(JSON.parse(saved));
           if (Number.isFinite(parsed) && parsed > 0) {
-            if (!cancelled) setTotalSlots(parsed);
+            if (!cancelled) {
+              lastPersistedSlotsRef.current = parsed;
+              setTotalSlots(parsed);
+            }
             return;
           }
         }
         if (branch?.name) {
           const def = LEGACY_BRANCH_CAPACITY[branch.name] ?? 0;
-          if (!cancelled && def > 0) setTotalSlots(def);
+          if (!cancelled && def > 0) {
+            lastPersistedSlotsRef.current = def;
+            setTotalSlots(def);
+          }
         }
       } catch {
         /* ignore */
@@ -787,26 +823,50 @@ export default function BranchBarcodesPage() {
 
     const isFormula = !!(branch?.name && isBranchUsingFormula(branch.name));
 
+    // Не отправлять обратно то, что только что прочитали из БД/localStorage —
+    // иначе stale legacy-значение (читается до того, как branch?.name приходит)
+    // успевает перезаписать реальные настройки в DB.
+    if (lastPersistedSlotsRef.current === totalSlots) return;
+
     if (isFormula && branch?.name) {
       // обновляем формулу сразу, чтобы UI не прыгал
       setBranchTotalSlots(branch.name, totalSlots);
-      // debounce на запись в БД — чтобы не дёргать API на каждый тап
+      // Сохранение в БД (debounced). Map уже обновлён синхронно
+      // в handleSlotsChange — здесь только персистентность.
       const h = window.setTimeout(() => {
         fetch('/api/frame-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ branch_id: branchId, frame_total_slots: totalSlots }),
-        }).catch((e) => console.warn('save frame-config failed:', e));
+        })
+          .then(() => { lastPersistedSlotsRef.current = totalSlots; })
+          .catch((e) => console.warn('save frame-config failed:', e));
       }, 600);
       return () => window.clearTimeout(h);
     }
 
     try {
       localStorage.setItem(`ui.branchSlots.${branchId}`, JSON.stringify(totalSlots));
+      lastPersistedSlotsRef.current = totalSlots;
     } catch {
       /* ignore */
     }
   }, [branchId, totalSlots, branch?.name]);
+
+  // Синхронный обработчик смены ёмкости витрины.
+  // Карту RUNTIME_TOTAL_SLOTS обновляем ДО setState — чтобы первый
+  // же ререндер увидел новое значение в computeSectionSlotCount /
+  // computeSectionPrices. Иначе план/цены секций «отстают на один
+  // тик» и пересчитываются только после следующего ре-рендера.
+  const handleSlotsChange = useCallback(
+    (n: number) => {
+      if (branch?.name && isBranchUsingFormula(branch.name)) {
+        setBranchTotalSlots(branch.name, n);
+      }
+      setTotalSlots(n);
+    },
+    [branch?.name],
+  );
 
   // next serial — ТОЛЬКО по текущему году
   useEffect(() => {
@@ -904,6 +964,12 @@ export default function BranchBarcodesPage() {
 
   const bucketOfPriceLocal = (p: number): BucketId | null => {
     for (const b of BUCKETS) if (p >= b.min && p <= b.max) return b.id;
+    // Премиум-корзина без верхнего потолка: оправа дороже самой верхней корзины
+    // (BUCKETS[4].max = 10000) — тоже премиум. Иначе она выпадала из подсчёта
+    // «На витрине» и создавала фантомную «нехватку» (напр. Беловодск: 5 оправ
+    // по 10900–14100 не считались → 115 вместо 120, «не хватает 5»).
+    const top = BUCKETS[BUCKETS.length - 1];
+    if (p >= top.min) return top.id;
     return null;
   };
 
@@ -1232,34 +1298,37 @@ export default function BranchBarcodesPage() {
       }
       if (actualType === 'RM') {
         if (actualGender !== 'F') throw new Error('«Чтение · металл» доступно только в женском варианте.');
-        if (p < 1000 || p > 2400) throw new Error('Для «Чтение · металл» допустимы цены от 1000 до 2400 сом.');
+        if (p < 1000 || p > 4500) throw new Error('Для «Чтение · металл» допустимы цены от 1000 до 4500 сом.');
       }
       if (actualType === 'KD') {
-        if (p < 800 || p > 3500) throw new Error('Для детских оправ допустимы цены от 800 до 3500 сом.');
+        if (p < 800 || p > 5000) throw new Error('Для детских оправ допустимы цены от 800 до 5000 сом.');
       }
       if (actualType === 'PA') {
         if (actualGender === 'F') {
-          if (p < 1000 || p > 3000) throw new Error('Для женских пластиковых оправ допустимы цены от 1000 до 3000 сом.');
+          if (p < 1000 || p > 7000) throw new Error('Для женских пластиковых оправ допустимы цены от 1000 до 7000 сом.');
         } else {
-          if (p < 1200 || p > 3200) throw new Error('Для мужских пластиковых оправ допустимы цены от 1200 до 3200 сом.');
+          if (p < 1200 || p > 7000) throw new Error('Для мужских пластиковых оправ допустимы цены от 1200 до 7000 сом.');
         }
       }
       if (actualType === 'MA') {
         if (actualGender === 'F') {
-          if (p < 1200 || p > 9000) throw new Error('Для женских металлических оправ допустимы цены от 1200 до 9000 сом.');
+          if (p < 1200 || p > 15000) throw new Error('Для женских металлических оправ допустимы цены от 1200 до 15000 сом.');
         } else {
-          if (p < 1400 || p > 10000) throw new Error('Для мужских металлических оправ допустимы цены от 1400 до 10000 сом.');
+          if (p < 1400 || p > 15000) throw new Error('Для мужских металлических оправ допустимы цены от 1400 до 15000 сом.');
         }
       }
       if (actualType === 'RL') {
-        // Безоправные — премиум-фикс ~6000с, диапазон ±500с от базы
-        if (p < 5500 || p > 6500) throw new Error('Для безоправных оправ допустимы цены от 5500 до 6500 сом.');
+        // Безоправные RL — премиум-пирамида 6000-17000с (включая anchor ladder 16000/16500/17000)
+        if (p < 6000 || p > 17000) throw new Error('Для безоправных оправ допустимы цены от 6000 до 17000 сом.');
       }
 
       const sb = getSupabase();
 
-      /* ===================== NEW: жесткое правило 1 цена = 1 ценник (на витрине) ===================== */
-      {
+      /* ===================== Правило 1 цена = 1 ценник (на витрине) ===================== */
+      // ВАЖНО: для RL (безоправных) правило НЕ применяется — это supplier-flat
+      // категория, все RL у поставщика идут одной ценой ~6000с, поэтому
+      // несколько физических оправ могут иметь одинаковый ценник.
+      if (actualType !== 'RL') {
         const { data: existing, error: exErr } = await sb
           .from('frame_barcodes')
           .select('barcode, year, serial')
@@ -1337,10 +1406,12 @@ export default function BranchBarcodesPage() {
       });
 
       await ensureCanvasFonts();
-      const b64 = buildBitmapJobBase64(String(p), usedBarcode);
+      // Премиум-маркер: ≥4000с → жирный шрифт + горизонтальная линия под логотипом
+      const isPremium = p >= 4000;
+      const b64 = buildBitmapJobBase64(String(p), usedBarcode, '', isPremium);
       const cfg = qz.configs.create(printer, { legacy: true, altPrinting: true, rasterize: false, scaleContent: false });
       await qz.print(cfg, [{ type: 'raw', format: 'base64', data: b64 }]);
-      log(`Отпечатано: ${usedBarcode}`);
+      log(`Отпечатано: ${usedBarcode}${isPremium ? ' [PREMIUM]' : ''}`);
 
       const b = bucketOfPriceLocal(p);
       if (b) {
@@ -1467,17 +1538,21 @@ export default function BranchBarcodesPage() {
       if (!qz?.version) throw new Error('QZ не загружен');
 
       await ensureCanvasFonts();
-      const testPrice = '2580';
-      const testBarcode = 'TEST2580MA';
-      const b64 = buildBitmapJobBase64(testPrice, testBarcode);
+      // Печатаем 2 тестовых ценника подряд: regular 2580 и premium 13000
+      // — чтобы наглядно увидеть разницу между обычным и premium-стилем.
       const cfg = qz.configs.create(printer, {
         legacy: true,
         altPrinting: true,
         rasterize: false,
         scaleContent: false,
       });
-      await qz.print(cfg, [{ type: 'raw', format: 'base64', data: b64 }]);
-      log(`Тестовый ценник отпечатан (цена ${testPrice}, штрихкод ${testBarcode}) — в БД НЕ записан`);
+      const b64Regular = buildBitmapJobBase64('2580', 'TEST2580MA', '', false);
+      const b64Premium = buildBitmapJobBase64('13000', 'TEST13000MA', '', true);
+      await qz.print(cfg, [
+        { type: 'raw', format: 'base64', data: b64Regular },
+        { type: 'raw', format: 'base64', data: b64Premium },
+      ]);
+      log('Тестовые ценники отпечатаны: 2580 (regular) + 13000 (premium с bold + линией) — в БД НЕ записаны');
     } catch (e: any) {
       log(`Тестовая печать: ${e?.message || String(e)}`);
     }
@@ -1544,6 +1619,24 @@ export default function BranchBarcodesPage() {
             {status === 'connected' ? 'QZ подключён' : status === 'connecting' ? 'подключение…' : 'QZ не подключён'}
           </span>
 
+          <Link
+            href={`/settings/barcodes/${branchId}/layout`}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 active:scale-[.98] transition"
+            title="Схема раскладки витрины — где какие оправы стоят"
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            Раскладка
+          </Link>
+
+          <Link
+            href={`/settings/barcodes/${branchId}/slow-movers`}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-400 active:scale-[.98] transition"
+            title="Неходовые оправы — что давно висит на витрине без продажи"
+          >
+            <Hourglass className="h-3.5 w-3.5" />
+            Неходовые
+          </Link>
+
           <button
             onClick={connectQZ}
             className="rounded-xl bg-cyan-500 px-3 py-2 text-xs font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.30)] hover:bg-cyan-400 active:scale-[.98] transition"
@@ -1565,7 +1658,7 @@ export default function BranchBarcodesPage() {
       <div className="mb-5">
         <Section title={branch ? `Филиал «${branch.name}»` : 'Филиал'}>
           <div className="grid gap-3 md:grid-cols-4">
-            <PlanSlotsInput value={totalSlots} onChange={setTotalSlots} />
+            <PlanSlotsInput value={totalSlots} onChange={handleSlotsChange} />
             <Stat label="На витрине" value={counts.totalOverall} />
             <Stat label="Не хватает" value={shortagesTotal} />
             <Stat label="Принтер" value={<span className="block truncate">{printer || 'не выбран'}</span>} />
@@ -2125,8 +2218,8 @@ function TypeShortageGrid({
 
       <div className="flex items-center gap-2">
         <div className="flex flex-wrap gap-2 flex-1">
-          {visiblePrices.map((p) => (
-            <PriceChip key={p} p={p} warn={soldSet.has(p)} disabled={!printingAvailable || bulk.running} onClick={handleChipClick} />
+          {visiblePrices.map((p, i) => (
+            <PriceChip key={`${i}-${p}`} p={p} warn={soldSet.has(p)} disabled={!printingAvailable || bulk.running} onClick={handleChipClick} />
           ))}
         </div>
         <button

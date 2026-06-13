@@ -390,6 +390,11 @@ export default function NewOrderPage(): JSX.Element {
   const [framePrice, setFramePrice] = useState<number>(0);
   const [frameId, setFrameId] = useState<string>('');
   const [frameBarcode, setFrameBarcode] = useState<string>('');
+  // UUID из frame_barcodes.id отсканированного ценника.
+  // Обязателен в STRICT-режиме branch_barcode_policy (Кара-Балта, Токмок и др.):
+  // DB trigger tg_order_items_frame_barcode_enforce требует frame_barcode_id
+  // в order_items для item_type='frame', иначе exception при INSERT.
+  const [frameBarcodeId, setFrameBarcodeId] = useState<string | null>(null);
 
   // линзы
   const [lensId, setLensId] = useState<string>('');
@@ -585,45 +590,60 @@ export default function NewOrderPage(): JSX.Element {
         setFrameBarcode('');
         setFrameId('');
         setFramePrice(0);
+        setFrameBarcodeId(null);
 
         if (!code) return;
 
-        // штрих-код серии RF...
-        if (/^RF/i.test(code)) {
+        // 1. Сначала — лукап в frame_barcodes (печатные ценники).
+        //    Формат: {branchCode}{typeCode}{gender}{yy}{serial}, например:
+        //    TKRLF260468 (Токмок · безоправные · Ж · 26-й год · serial 0468),
+        //    KBPAM260134 (Кара-Балта · пластик · М · 26 · 0134).
+        //    Старый префикс /^RF/ оставляем для совместимости.
+        const looksLikeFrameBarcode = /^[A-Z]{2,4}[FM]?\d{4,}$/.test(code);
+        if (looksLikeFrameBarcode) {
           const { data: bc, error: eBc } = await sb
             .from('frame_barcodes')
-            .select('frame_id, barcode, price, created_at')
+            .select('id, frame_id, barcode, price, type_code, gender, sold_at, voided_at, created_at')
             .eq('barcode', code)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
           if (eBc) throw eBc;
-          if (!bc) {
-            toast.error('Штрих-код не найден в базе');
+
+          if (bc) {
+            if (bc.voided_at) {
+              toast.error('Штрих-код отменён — нельзя использовать в заказе');
+              return;
+            }
+            if (bc.sold_at) {
+              toast.error('Штрих-код уже использован в другом заказе');
+              return;
+            }
+
+            setFrameBarcode(bc.barcode);
+            setFrameBarcodeId(String((bc as any).id));
+            setFramePrice(Number(bc.price) || 0);
+
+            if (bc.frame_id) {
+              const { data: f } = await sb
+                .from('frames')
+                .select('id, sku')
+                .eq('id', bc.frame_id)
+                .maybeSingle();
+              if (f?.sku) {
+                setFrameSku(f.sku);
+                setFrameId(f.id as string);
+              }
+            }
+
+            toast.success(`Распознан · ${bc.type_code}${bc.gender} · ${Number(bc.price).toLocaleString('ru-RU')} сом`);
             return;
           }
-
-          setFrameBarcode(bc.barcode);
-          setFramePrice(Number(bc.price) || 0);
-
-          if (bc.frame_id) {
-            const { data: f } = await sb
-              .from('frames')
-              .select('id, sku')
-              .eq('id', bc.frame_id)
-              .maybeSingle();
-            if (f?.sku) {
-              setFrameSku(f.sku);
-              setFrameId(f.id as string);
-            }
-          }
-
-          toast.success('Штрих-код распознан');
-          return;
+          // Если не нашли в frame_barcodes — продолжаем как SKU (через fallback ниже).
         }
 
-        // FR-артикул
+        // 2. Fallback — поиск по SKU/barcode в каталоге оправ (v_frame_labels).
         const codeLower = code.toLowerCase();
         const f = frames.find(
           (x) => x.sku.toLowerCase() === codeLower || x.barcode === code,
@@ -634,7 +654,7 @@ export default function NewOrderPage(): JSX.Element {
           setFrameBarcode(f.barcode || '');
           toast.success(`Найдено: ${f.sku}`);
         } else {
-          toast.error('Оправа не найдена');
+          toast.error('Штрих-код / артикул не найден');
         }
       } catch (e: any) {
         console.warn('pickFrameBySku:', e?.message || e);
@@ -901,6 +921,11 @@ export default function NewOrderPage(): JSX.Element {
           item_type: 'frame',
           product_id: frameProductId,
           frame_id: frameId || null,
+          // STRICT branches (все кроме branch_id=4) требуют frame_barcode_id.
+          // DB триггер tg_order_items_frame_link автоматически проставит sold_at
+          // в frame_barcodes, и tg_order_items_frame_barcode_enforce проверит
+          // что штрихкод не использован повторно и принадлежит этому филиалу.
+          frame_barcode_id: frameBarcodeId || null,
           eye: 'NA',
           lens_type: null,
           sph: null,
@@ -1008,6 +1033,7 @@ export default function NewOrderPage(): JSX.Element {
     odRangeIdx,
     osRangeIdx,
     frameId,
+    frameBarcodeId,
     framePrice,
     subtotal,
     prepaidNum,
@@ -1030,6 +1056,7 @@ export default function NewOrderPage(): JSX.Element {
     setFramePrice(0);
     setFrameId('');
     setFrameBarcode('');
+    setFrameBarcodeId(null);
     setLensId('');
     setOdRangeIdx('');
     setOsRangeIdx('');

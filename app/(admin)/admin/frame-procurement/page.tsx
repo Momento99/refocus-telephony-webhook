@@ -28,6 +28,7 @@ import type {
   CatalogGender,
   SectionKey,
   OrderPlan,
+  PlanMode,
 } from '@/lib/frameProcurementTypes';
 import type { FrameTypeCode } from '@/lib/framePricingFormula';
 
@@ -49,6 +50,7 @@ type CatalogItem = {
   needs_review: boolean;
   manually_corrected: boolean;
   notes: string | null;
+  estimated_price: number | null;
   created_at: string;
   signed_url: string | null;
 };
@@ -59,10 +61,10 @@ type OrderRow = {
   id: string;
   branch_id: number | null;
   status: 'draft' | 'sent' | 'received' | 'cancelled';
-  cold_start: boolean;
   total_qty: number;
   recognized_by: string | null;
   qty_by_section: Record<string, number>;
+  sales_window_days: number | null;
   created_at: string;
   sent_at: string | null;
 };
@@ -100,6 +102,24 @@ const SECTION_LABEL: Record<SectionKey, string> = {
   RL_F: 'Безоправные · Ж',
   RL_M: 'Безоправные · М',
 };
+
+/** Минималка поставщика — фиксированная, обсуждали в чате 2026-05-29. */
+const SUPPLIER_MIN = 500;
+
+/** Себестоимость одной оправы у поставщика в Китае (KGS). Едина для всех типов. */
+const SUPPLIER_COST_PER_FRAME = 170;
+
+/** Филиалы, по которым делается общий заказ оправ.
+ *  Имена ДОЛЖНЫ совпадать ровно с public.branches.name (кириллица, дефис
+ *  в «Кара-Балта», без латинских символов). Discovery 2026-06-01 подтвердил
+ *  ids [1..5] и точные написания. Порядок здесь = порядок чекбоксов в UI. */
+const GROUP_BRANCH_NAMES = [
+  'Токмок',
+  'Кант',
+  'Сокулук',
+  'Беловодск',
+  'Кара-Балта',
+] as const;
 
 /* ────────── Утилы ────────── */
 
@@ -145,25 +165,13 @@ function TypeChip({ code, gender }: { code: FrameTypeCode | null; gender: Catalo
   );
 }
 
-/* ────────── StatCard ────────── */
-
-function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
-  return (
-    <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
-      {hint ? <div className="mt-1 text-[11px] text-slate-500">{hint}</div> : null}
-    </div>
-  );
-}
-
 /* ────────── Главный компонент ────────── */
 
 export default function FrameProcurementPage() {
   /* Branches */
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchId, setBranchId] = useState<number>(0);
-  const [proxyBranchId, setProxyBranchId] = useState<number>(0);
+  const [branchIds, setBranchIds] = useState<number[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(true);
 
   /* Catalog */
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -183,10 +191,9 @@ export default function FrameProcurementPage() {
   const [editing, setEditing] = useState<CatalogItem | null>(null);
 
   /* Procurement params */
-  const [windowDays, setWindowDays] = useState(60);
-  const [targetQty, setTargetQty] = useState(1000);
-  const [supplierMin, setSupplierMin] = useState(500);
-  const [forceProxy, setForceProxy] = useState(false);
+  const [mode, setMode] = useState<PlanMode>('sold');
+  const [customTarget, setCustomTarget] = useState(500);
+  const [excludedSections, setExcludedSections] = useState<SectionKey[]>([]);
   const [planLoading, setPlanLoading] = useState(false);
   const [plan, setPlan] = useState<OrderPlan | null>(null);
 
@@ -197,18 +204,23 @@ export default function FrameProcurementPage() {
   /* ──────── Загрузка филиалов ──────── */
   useEffect(() => {
     (async () => {
-      const sb = getBrowserSupabase();
-      const { data, error } = await sb.from('branches').select('id, name').order('name');
-      if (error) {
-        toast.error('Не загрузил филиалы: ' + error.message);
-        return;
+      try {
+        const sb = getBrowserSupabase();
+        const { data, error } = await sb.from('branches').select('id, name').order('name');
+        if (error) {
+          toast.error('Не загрузил филиалы: ' + error.message);
+          return;
+        }
+        const list = (data || []) as Branch[];
+        setBranches(list);
+        // По умолчанию включаем все 5 филиалов из GROUP_BRANCH_NAMES.
+        const groupIds = list
+          .filter((b) => (GROUP_BRANCH_NAMES as readonly string[]).includes(b.name))
+          .map((b) => b.id);
+        setBranchIds(groupIds);
+      } finally {
+        setBranchesLoading(false);
       }
-      const list = (data || []) as Branch[];
-      setBranches(list);
-      const tokmok = list.find((b) => b.name === 'Токмок');
-      const karaBalta = list.find((b) => b.name === 'Кара-Балта');
-      if (tokmok) setBranchId(tokmok.id);
-      if (karaBalta) setProxyBranchId(karaBalta.id);
     })();
   }, []);
 
@@ -272,17 +284,21 @@ export default function FrameProcurementPage() {
   }, [loadCatalog]);
 
   /* ──────── Загрузка заказов ──────── */
+  /* Заказы общие на группу (см. GROUP_BRANCH_NAMES — 5 филиалов):
+     берём первый branchId из выбранных — в БД у заказа в branch_ids[] лежат
+     все выбранные филиалы, так что и через один филиал вытащим всё. */
   const loadOrders = useCallback(async () => {
-    if (!branchId) return;
+    if (branchIds.length === 0) { setOrders([]); return; }
+    const firstId = branchIds[0];
     try {
-      const res = await fetch(`/api/admin/frame-procurement/orders?branchId=${branchId}`);
+      const res = await fetch(`/api/admin/frame-procurement/orders?branchId=${firstId}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Ошибка загрузки заказов');
       setOrders(json.items || []);
     } catch (e: any) {
       console.warn('orders:', e.message);
     }
-  }, [branchId]);
+  }, [branchIds]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 
@@ -418,48 +434,68 @@ export default function FrameProcurementPage() {
 
   /* ──────── Построение плана ──────── */
   const buildPlan = useCallback(async () => {
-    if (!branchId || !proxyBranchId) {
-      toast.error('Выберите оба филиала');
+    if (branchIds.length === 0) {
+      toast.error('Выберите филиал');
       return;
     }
+    // Снимок branchIds на момент вызова — чтобы план соответствовал
+    // именно тому набору филиалов, под который мы его строили,
+    // даже если пользователь успеет переключить чекбоксы во время fetch.
+    const snapshotBranchIds = [...branchIds];
     setPlanLoading(true);
     try {
       const res = await fetch('/api/admin/frame-procurement/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          branchId, proxyBranchId,
-          windowDays, targetQty, supplierMin,
-          forceProxyOnly: forceProxy,
+          branchIds: snapshotBranchIds,
+          mode,
+          supplierMin: SUPPLIER_MIN,
+          customTarget,
+          excludedSections,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Ошибка плана');
-      setPlan(json.plan);
-      toast.success(`План готов: ${json.plan.totalQty} шт, ${json.plan.modelsUsed} моделей`);
+      // Гарантируем, что в плане лежит именно тот snapshot, с которым считали,
+      // даже если сервер по какой-то причине вернул другой набор.
+      const planWithSnapshot: OrderPlan = { ...json.plan, branchIds: snapshotBranchIds };
+      setPlan(planWithSnapshot);
+      toast.success(`План готов: ${planWithSnapshot.totalQty} шт, ${planWithSnapshot.modelsUsed} моделей`);
     } catch (e: any) {
       toast.error(e.message || 'Ошибка плана');
     } finally {
       setPlanLoading(false);
     }
-  }, [branchId, proxyBranchId, windowDays, targetQty, supplierMin, forceProxy]);
+  }, [branchIds, mode, customTarget, excludedSections]);
 
   /* ──────── Сохранение заказа + ZIP ──────── */
+  // Синхронный лок против двойных кликов: useState обновляется асинхронно,
+  // а ref флипается до первого await — это гарантирует, что вторая
+  // параллельная инвокация увидит lock=true и сделает early return.
+  const createOrderLockRef = useRef(false);
   const createOrderAndDownload = useCallback(async () => {
-    if (!plan || !branchId || !proxyBranchId) {
+    if (createOrderLockRef.current) return;
+    if (!plan || plan.branchIds.length === 0) {
       toast.error('Сначала постройте план');
       return;
     }
+    if (!plan.meetsSupplierMin) {
+      toast.error(`До минималки поставщика (${SUPPLIER_MIN}) не хватает ${SUPPLIER_MIN - plan.totalQty} шт`);
+      return;
+    }
+    createOrderLockRef.current = true;
     setCreatingOrder(true);
     const t = toast.loading('Создаю заказ и собираю ZIP…');
     try {
-      // 1) Сохраняем заказ
+      // 1) Сохраняем заказ — branchIds берём из плана (снимок),
+      // а не из живого state, чтобы заказ соответствовал плану.
       const res = await fetch('/api/admin/frame-procurement/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           plan,
-          input: { branchId, proxyBranchId, windowDays, targetQty, supplierMin },
+          input: { branchIds: plan.branchIds, mode: plan.mode, supplierMin: SUPPLIER_MIN, customTarget },
           recognizedBy: 'mixed',
         }),
       });
@@ -467,30 +503,46 @@ export default function FrameProcurementPage() {
       if (!res.ok) throw new Error(json.error || 'Не сохранился заказ');
       const orderId = json.order.id;
 
-      // 2) Качаем ZIP
-      const zipRes = await fetch(`/api/admin/frame-procurement/orders/${orderId}/zip`);
-      if (!zipRes.ok) {
-        const errJson = await zipRes.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Не собрался ZIP');
-      }
-      const blob = await zipRes.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `refocus-frames-order-${orderId.slice(0, 8)}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      // С этого момента заказ уже сохранён в БД. Если ZIP-шаг упадёт,
+      // план оставляем как есть — чтобы можно было повторно скачать
+      // ZIP по orderId из списка заказов, не теряя контекст.
+      try {
+        // 2) Качаем ZIP
+        const zipRes = await fetch(`/api/admin/frame-procurement/orders/${orderId}/zip`);
+        if (!zipRes.ok) {
+          const errJson = await zipRes.json().catch(() => ({}));
+          throw new Error(errJson.error || 'Не собрался ZIP');
+        }
+        const blob = await zipRes.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `refocus-frames-order-${orderId.slice(0, 8)}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
 
-      toast.success('Заказ создан и ZIP скачан', { id: t });
+        toast.success('Заказ создан и ZIP скачан', { id: t });
+        // Сбрасываем план — после отправки окно начинается заново,
+        // и старый план показывать нельзя (он считал «с прошлого sent»).
+        setPlan(null);
+      } catch (zipErr: any) {
+        // Заказ создан, но ZIP не собрался — план не трогаем, юзер
+        // сможет повторно скачать ZIP из списка заказов по orderId.
+        toast.error(
+          `Заказ создан, но ZIP не собрался: ${zipErr?.message || 'ошибка'}. Скачайте ZIP из списка заказов.`,
+          { id: t, duration: 6000 },
+        );
+      }
       await loadOrders();
     } catch (e: any) {
       toast.error(e.message || 'Ошибка', { id: t });
     } finally {
       setCreatingOrder(false);
+      createOrderLockRef.current = false;
     }
-  }, [plan, branchId, proxyBranchId, windowDays, targetQty, supplierMin, loadOrders]);
+  }, [plan, mode, customTarget, loadOrders]);
 
   /* ──────── Скачать ZIP существующего заказа ──────── */
   const downloadExistingZip = useCallback(async (orderId: string) => {
@@ -516,6 +568,36 @@ export default function FrameProcurementPage() {
     }
   }, []);
 
+  /* ──────── Отмена заказа ────────
+     PATCH /orders/[id] с { status: 'cancelled' } — endpoint допускает
+     отмену только из 'draft'/'sent'. Кнопка показывается только для них.
+     После отмены сбрасываем текущий план: он считал окно «от последнего
+     sent», а после отмены окно расширяется обратно — план нужно пересчитать. */
+  const cancelOrder = useCallback(async (order: OrderRow) => {
+    const msg = `Отменить заказ от ${fmtDate(order.created_at)}? Это восстановит окно продаж до предыдущего заказа.`;
+    if (!confirm(msg)) return;
+    const t = toast.loading('Отменяю заказ…');
+    try {
+      const res = await fetch(`/api/admin/frame-procurement/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Ошибка');
+      toast.success('Заказ отменён', { id: t });
+      await loadOrders();
+      // Если на экране был построенный план — он считал окно от прежнего
+      // последнего sent. После отмены окно расширилось, цифры неактуальны.
+      setPlan((prev) => {
+        if (prev) toast('Окно продаж изменилось — пересчитайте план');
+        return null;
+      });
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка', { id: t });
+    }
+  }, [loadOrders]);
+
   /* ──────── Memo: статистика каталога ──────── */
   const catalogStats = useMemo(() => {
     const total = catalog.length;
@@ -535,45 +617,13 @@ export default function FrameProcurementPage() {
   return (
     <div className="min-h-screen p-6">
       {/* ─────── Шапка ─────── */}
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
-            <Glasses className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <div className="text-2xl font-bold tracking-tight text-slate-50">
-              Закупка оправ
-            </div>
-            <div className="mt-0.5 text-[12px] text-cyan-300/50">
-              Каталог поставщика → автоматическое распределение → ZIP в WeChat
-            </div>
-          </div>
+      <div className="mb-6 flex items-start gap-3">
+        <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+          <Glasses className="h-5 w-5 text-white" />
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={branchId}
-            onChange={(e) => setBranchId(Number(e.target.value))}
-            className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70"
-          >
-            <option value={0}>— Куда везём —</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
+        <div className="text-2xl font-bold tracking-tight text-slate-50">
+          Закупка оправ
         </div>
-      </div>
-
-      {/* ─────── Метрики ─────── */}
-      <div className="mb-6 grid gap-4 md:grid-cols-4">
-        <StatCard label="Всего фото" value={catalogStats.total} />
-        <StatCard label="Распознано" value={catalogStats.recognized} hint={catalogStats.recognized < catalogStats.total ? `${catalogStats.unrecognized} ждёт LLM` : 'все готовы'} />
-        <StatCard label="На проверку" value={catalogStats.review} hint={catalogStats.review > 0 ? 'требуется ручная правка' : 'всё ок'} />
-        <StatCard
-          label="Готовых заказов"
-          value={orders.length}
-          hint={plan ? `текущий план: ${plan.totalQty} шт` : 'плана пока нет'}
-        />
       </div>
 
       {/* ─────── Каталог ─────── */}
@@ -671,91 +721,40 @@ export default function FrameProcurementPage() {
           />
         </div>
 
-        {/* Drag & drop зона */}
+        {/* Drag & drop зона — компактная */}
         <div
           onDrop={onDrop}
           onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
           onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
-          className="mb-4 rounded-xl border-2 border-dashed border-sky-200 bg-sky-50/30 p-5 text-sm text-slate-600"
+          className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-dashed border-sky-200 bg-sky-50/30 px-4 py-3 text-[12px] text-slate-600"
         >
-          <div className="mb-3 flex items-center justify-center gap-2">
-            <ClipboardPaste className="h-5 w-5 text-cyan-500" />
-            <span className="font-semibold text-slate-700">Как загрузить фото каталога</span>
+          <div className="flex items-center gap-2">
+            <ClipboardPaste className="h-4 w-4 text-cyan-500" />
+            <span>Перетащи файлы или нажми <kbd className="rounded bg-white px-1.5 py-0.5 font-mono ring-1 ring-slate-200">Ctrl+V</kbd></span>
           </div>
-
-          <div className="mx-auto max-w-3xl space-y-3 text-[12px]">
-            <div className="rounded-lg bg-emerald-50 p-3 ring-1 ring-emerald-200">
-              <div className="mb-2 font-semibold text-emerald-800">⭐ Рекомендую: фоновый watcher (без переключения окон)</div>
-              <ol className="list-decimal space-y-1 pl-5 text-emerald-900">
-                <li>
-                  <a
-                    href="/refocus-watcher.bat"
-                    download="refocus-watcher.bat"
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition hover:bg-emerald-500"
-                  >
-                    <Download className="h-3.5 w-3.5" /> Скачать запускалку (.bat)
-                  </a>
-                  &nbsp; — сохрани на рабочий стол. Двойной клик — watcher запущен. Закрыл окно — остановился.
-                </li>
-                <li>
-                  В WeChat открой фото на полный экран → <kbd className="rounded bg-white px-1.5 py-0.5 font-mono ring-1 ring-emerald-200">Alt+PrtScn</kbd>
-                  → стрелка вправо → <kbd className="rounded bg-white px-1.5 py-0.5 font-mono ring-1 ring-emerald-200">Alt+PrtScn</kbd> → ...
-                </li>
-                <li>Скрипт ловит фото из буфера и грузит в БД, минуя браузер. Переключать окна не нужно.</li>
-                <li>Эта страница сама обновляется каждые 5 сек — новые фото появятся в сетке.</li>
-              </ol>
-            </div>
-
-            <div className="text-slate-600">
-              Альтернативы (если watcher не запущен):
-              <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                <li><b>Drag &amp; drop:</b> перетащи папку или файлы прямо сюда.</li>
-                <li><b>Ctrl+V:</b> кликни сюда после <kbd className="rounded bg-slate-200 px-1 py-0.5 font-mono">Alt+PrtScn</kbd>.</li>
-              </ul>
-            </div>
-          </div>
+          <a
+            href="/refocus-watcher.bat"
+            download="refocus-watcher.bat"
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-cyan-600"
+          >
+            <Download className="h-3.5 w-3.5" /> watcher.bat для Alt+PrtScn
+          </a>
         </div>
 
-        {/* Распознавание — одна большая кнопка GPT-5 */}
-        <div className="mb-4">
-          {(() => {
-            // GPT-5 ≈ $0.0075/фото ≈ 0.7 сом/фото (с учётом нашего длинного промпта)
-            const n = catalogStats.unrecognized;
-            const cost = Math.max(1, Math.round(n * 0.7));
-            return (
-              <button
-                onClick={() => recognize('gpt-5')}
-                disabled={!!recognizingProgress || n === 0}
-                className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 text-white shadow-[0_6px_24px_rgba(20,184,166,0.35)] transition hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/20 backdrop-blur">
-                    <Sparkles className="h-6 w-6" />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-base font-bold">
-                      {n > 0 ? `Распознать ${n} нераспознанных фото` : 'Все фото уже распознаны'}
-                    </div>
-                    <div className="text-[12px] opacity-85">
-                      {n > 0
-                        ? `Через GPT-5 · ~${cost} сом`
-                        : 'Если хочешь переразпознать — открой карточку и жми «Распознать заново»'}
-                    </div>
-                  </div>
-                </div>
-                <Wand2 className="h-6 w-6 opacity-60 transition group-hover:opacity-100" />
-              </button>
-            );
-          })()}
-        </div>
-
-        {/* Прогресс-бар */}
+        {/* Распознавание GPT-5 — компактная кнопка */}
+        {catalogStats.unrecognized > 0 && !recognizingProgress && (
+          <button
+            onClick={() => recognize('gpt-5')}
+            className="mb-3 inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(16,185,129,0.28)] transition hover:bg-emerald-400"
+          >
+            <Sparkles className="h-4 w-4" />
+            Распознать {catalogStats.unrecognized} фото
+          </button>
+        )}
         {recognizingProgress && (
-          <div className="mb-4 rounded-xl bg-cyan-50 p-3 text-[12px] text-cyan-700 ring-1 ring-cyan-200">
-            <div className="flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Распознаю через {recognizingProgress.engine}: {recognizingProgress.done}/{recognizingProgress.total}
-            </div>
+          <div className="mb-3 inline-flex items-center gap-2 rounded-xl bg-cyan-50 px-3 py-2 text-[12px] text-cyan-700 ring-1 ring-cyan-200">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {recognizingProgress.done}/{recognizingProgress.total}
           </div>
         )}
 
@@ -838,6 +837,11 @@ export default function FrameProcurementPage() {
 
                 <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex flex-wrap items-center gap-1 bg-gradient-to-t from-black/70 to-transparent p-1.5">
                   <TypeChip code={item.type_code} gender={item.gender} />
+                  {item.estimated_price != null && item.estimated_price > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-cyan-500/85 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      ~{Math.round(item.estimated_price).toLocaleString('ru-RU')} с
+                    </span>
+                  )}
                   {item.needs_review && <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />}
                   {item.manually_corrected && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
                 </div>
@@ -854,80 +858,147 @@ export default function FrameProcurementPage() {
           <h2 className="text-lg font-bold tracking-tight text-slate-900">План заказа</h2>
         </div>
 
-        <div className="mb-4 grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Куда</span>
-            <select
-              value={branchId}
-              onChange={(e) => setBranchId(Number(e.target.value))}
-              className="w-full rounded-xl bg-white px-3 py-2 text-sm font-medium text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
-            >
-              <option value={0}>—</option>
-              {branches.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Прокси (для холодного старта)</span>
-            <select
-              value={proxyBranchId}
-              onChange={(e) => setProxyBranchId(Number(e.target.value))}
-              className="w-full rounded-xl bg-white px-3 py-2 text-sm font-medium text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
-            >
-              <option value={0}>—</option>
-              {branches.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Окно продаж (дн)</span>
-            <input
-              type="number"
-              value={windowDays}
-              onChange={(e) => setWindowDays(Number(e.target.value) || 60)}
-              min={7}
-              max={365}
-              className="w-full rounded-xl bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Цель, шт</span>
-            <input
-              type="number"
-              value={targetQty}
-              onChange={(e) => setTargetQty(Number(e.target.value) || 1000)}
-              min={1}
-              className="w-full rounded-xl bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Минималка поставщика</span>
-            <input
-              type="number"
-              value={supplierMin}
-              onChange={(e) => setSupplierMin(Number(e.target.value) || 500)}
-              min={0}
-              className="w-full rounded-xl bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
-            />
-          </label>
-        </div>
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="block">
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Филиалы (общий заказ)</span>
+            <div className="flex flex-wrap gap-2">
+              {/* Порядок чекбоксов = порядок в GROUP_BRANCH_NAMES
+                  (Токмок, Кант — исторические; затем Сокулук, Беловодск,
+                  Кара-Балта). На узких экранах оборачиваются на 2 ряда. */}
+              {branchesLoading
+                ? GROUP_BRANCH_NAMES.map((name) => (
+                    <div
+                      key={name}
+                      className="inline-flex h-9 w-28 animate-pulse items-center rounded-xl bg-slate-200/70 ring-1 ring-sky-200"
+                    />
+                  ))
+                : branches
+                .filter((b) => (GROUP_BRANCH_NAMES as readonly string[]).includes(b.name))
+                .slice()
+                .sort(
+                  (a, b) =>
+                    (GROUP_BRANCH_NAMES as readonly string[]).indexOf(a.name) -
+                    (GROUP_BRANCH_NAMES as readonly string[]).indexOf(b.name),
+                )
+                .map((b) => {
+                  const active = branchIds.includes(b.id);
+                  // Блокируем переключение филиалов, пока считается план
+                  // или создаётся заказ — иначе план/заказ могут разъехаться
+                  // с текущим выбором (race condition).
+                  const disabled = planLoading || creatingOrder;
+                  return (
+                    <label
+                      key={b.id}
+                      className={classNames(
+                        'inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition',
+                        disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+                        active
+                          ? 'bg-cyan-500 text-white ring-1 ring-cyan-400 shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                          : 'bg-white text-slate-600 ring-1 ring-sky-200 hover:bg-sky-50',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={active}
+                        disabled={disabled}
+                        onChange={(e) => {
+                          setBranchIds((prev) =>
+                            e.target.checked
+                              ? Array.from(new Set([...prev, b.id]))
+                              : prev.filter((id) => id !== b.id),
+                          );
+                        }}
+                        className="h-4 w-4 accent-cyan-500"
+                      />
+                      {b.name}
+                    </label>
+                  );
+                })}
+            </div>
+          </div>
 
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <label className="inline-flex items-center gap-2 text-[12px] text-slate-600">
+          <div className="w-full">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Исключить из плана
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {SECTION_ORDER.map((k) => {
+                const excluded = excludedSections.includes(k);
+                const disabled = planLoading || creatingOrder;
+                return (
+                  <label
+                    key={k}
+                    className={classNames(
+                      'inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-medium transition',
+                      disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+                      excluded
+                        ? 'bg-rose-500 text-white ring-1 ring-rose-400 line-through'
+                        : 'bg-white text-slate-600 ring-1 ring-sky-200 hover:bg-sky-50',
+                    )}
+                    title={excluded
+                      ? `Секция ${SECTION_LABEL[k]} исключена из плана`
+                      : `Снять галку чтобы исключить ${SECTION_LABEL[k]} из плана`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={excluded}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        setExcludedSections((prev) =>
+                          e.target.checked
+                            ? Array.from(new Set([...prev, k]))
+                            : prev.filter((s) => s !== k),
+                        );
+                      }}
+                      className="h-3.5 w-3.5 accent-rose-500"
+                    />
+                    {SECTION_LABEL[k]}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {([
+              { key: 'sold' as const, label: 'Покрыть продажи' },
+              { key: 'scaled' as const, label: `До ${SUPPLIER_MIN}` },
+              { key: 'custom' as const, label: 'Своя цель' },
+            ]).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setMode(opt.key)}
+                className={classNames(
+                  'rounded-xl px-3 py-2 text-sm font-semibold transition',
+                  mode === opt.key
+                    ? 'bg-cyan-500 text-white ring-1 ring-cyan-400 shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
+                    : 'bg-white text-slate-600 ring-1 ring-sky-200 hover:bg-sky-50',
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {mode === 'custom' && (
             <input
-              type="checkbox"
-              checked={forceProxy}
-              onChange={(e) => setForceProxy(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-400"
+              type="number"
+              value={customTarget}
+              onChange={(e) => setCustomTarget(Number(e.target.value) || 0)}
+              min={0}
+              placeholder="шт"
+              className="w-24 rounded-xl bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
             />
-            Принудительно холодный старт (игнорировать продажи целевого филиала)
-          </label>
+          )}
 
           <button
             onClick={buildPlan}
-            disabled={planLoading || !branchId || !proxyBranchId}
-            className="ml-auto inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:opacity-50"
+            disabled={planLoading || branchIds.length === 0}
+            className="ml-auto inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:opacity-50"
           >
             {planLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-            Пересчитать план
+            Пересчитать
           </button>
         </div>
 
@@ -935,55 +1006,180 @@ export default function FrameProcurementPage() {
           <>
             <div className="mb-3 grid gap-3 md:grid-cols-4">
               <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                <div className="text-[11px] text-slate-500">Холодный старт</div>
-                <div className="text-base font-bold text-slate-900">{plan.coldStart ? 'Да (Кара-Балта)' : 'Нет (свои продажи)'}</div>
+                <div className="text-[11px] text-slate-500">Окно продаж</div>
+                <div className="text-base font-bold text-slate-900">
+                  {(() => {
+                    const ids = plan.branchIds || [];
+                    const names = ids
+                      .map((id) => branches.find((b) => b.id === id)?.name)
+                      .filter((n): n is string => Boolean(n));
+                    const prefix =
+                      names.length === 2
+                        ? `${names.join('+')} `
+                        : names.length === 1
+                          ? `${names[0]} `
+                          : '';
+                    return plan.windowSince
+                      ? `${prefix}с ${fmtDate(plan.windowSince)}`
+                      : `${prefix}за всё время`;
+                  })()}
+                </div>
               </div>
               <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                <div className="text-[11px] text-slate-500">Своих продаж за окно</div>
-                <div className="text-base font-bold text-slate-900">{plan.ownSalesTotal}</div>
+                <div className="text-[11px] text-slate-500">Продано</div>
+                <div className="text-base font-bold text-slate-900">{plan.totalSoldQty} шт</div>
+                <div className="text-[11px] text-slate-500">{Math.round(plan.totalSoldRevenue).toLocaleString('ru-RU')} с</div>
+              </div>
+              <div className={classNames(
+                'rounded-xl p-3 ring-1',
+                plan.meetsSupplierMin
+                  ? 'bg-cyan-50 ring-cyan-200'
+                  : 'bg-amber-50 ring-amber-200',
+              )}>
+                <div className={classNames('text-[11px]', plan.meetsSupplierMin ? 'text-cyan-700' : 'text-amber-700')}>
+                  К заказу
+                </div>
+                <div className={classNames('text-base font-bold', plan.meetsSupplierMin ? 'text-cyan-900' : 'text-amber-900')}>
+                  {plan.totalQty} шт
+                  {plan.totalQty !== plan.totalQtyTarget && (
+                    <span className="ml-1 text-[11px] font-medium opacity-60">из {plan.totalQtyTarget}</span>
+                  )}
+                </div>
+                {!plan.meetsSupplierMin && (
+                  <div className="text-[11px] text-amber-700">
+                    до минималки {SUPPLIER_MIN} не хватает {SUPPLIER_MIN - plan.totalQty}
+                  </div>
+                )}
               </div>
               <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                <div className="text-[11px] text-slate-500">Моделей в каталоге</div>
-                <div className="text-base font-bold text-slate-900">{plan.modelsUsed}</div>
-              </div>
-              <div className="rounded-xl bg-cyan-50 p-3 ring-1 ring-cyan-200">
-                <div className="text-[11px] text-cyan-700">Итого штук</div>
-                <div className="text-base font-bold text-cyan-900">{plan.totalQty}</div>
+                <div className="text-[11px] text-slate-500">К оплате поставщику</div>
+                <div className="text-base font-bold text-slate-900">
+                  {plan.totalQty === 0
+                    ? '—'
+                    : `${(plan.totalQty * SUPPLIER_COST_PER_FRAME).toLocaleString('ru-RU')} с`}
+                </div>
+                <div className="text-[11px] text-slate-500">{plan.totalQty} × 170 с</div>
               </div>
             </div>
+
+            {plan.totalSoldQty === 0 && (
+              <div className="mb-3 rounded-xl bg-amber-50 p-3 text-[12px] text-amber-800 ring-1 ring-amber-200">
+                <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+                За это окно продаж ещё не было.
+              </div>
+            )}
 
             {plan.uncoveredSections.length > 0 && (
               <div className="mb-3 rounded-xl bg-amber-50 p-3 text-[12px] text-amber-800 ring-1 ring-amber-200">
                 <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
-                Не нашлось моделей в каталоге для секций: {plan.uncoveredSections.map((k) => SECTION_LABEL[k]).join(', ')}
+                Нет моделей в каталоге для: <b>{plan.uncoveredSections.map((k) => SECTION_LABEL[k]).join(', ')}</b>
               </div>
             )}
+
+            {(() => {
+              // Секции где плана много, а моделей в каталоге мало —
+              // подсказываем пользователю догрузить скрины.
+              const deficits = SECTION_ORDER
+                .filter((k) => !(plan.excludedSections || []).includes(k))
+                .map((k) => ({
+                  k,
+                  planned: plan.qtyBySection[k] || 0,
+                  models: plan.catalogModelsBySection?.[k] || 0,
+                }))
+                .filter((s) => s.planned >= 20 && (s.models === 0 || s.planned / Math.max(s.models, 1) >= 15));
+
+              if (deficits.length === 0) return null;
+              return (
+                <div className="mb-3 rounded-xl bg-amber-50 p-3 text-[12px] text-amber-800 ring-1 ring-amber-200">
+                  <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+                  Мало моделей в каталоге для разнообразия — загрузи ещё скрины из WeChat для:{' '}
+                  <b>
+                    {deficits.map((d) => `${SECTION_LABEL[d.k]} (${d.models} на ${d.planned} шт)`).join(', ')}
+                  </b>
+                </div>
+              );
+            })()}
 
             <div className="overflow-hidden rounded-xl ring-1 ring-sky-100">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50/80">
                   <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     <th className="px-4 py-2.5">Секция</th>
-                    <th className="px-4 py-2.5 text-right">Доля</th>
+                    <th className="px-4 py-2.5 text-right">Продано</th>
+                    <th className="px-4 py-2.5 text-right">Сумма</th>
+                    <th className="px-4 py-2.5 text-right">План</th>
+                    <th className="px-4 py-2.5 text-right">Моделей</th>
                     <th className="px-4 py-2.5 text-right">К заказу</th>
+                    <th className="px-4 py-2.5 text-right">Себестоимость</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-900">
                   {SECTION_ORDER.map((k) => {
-                    const qty = plan.qtyBySection[k] || 0;
-                    const share = plan.sharesBySection[k] || 0;
+                    const sales = plan.salesBySection[k] || { soldQty: 0, revenue: 0, avgPrice: 0 };
+                    const planned = plan.qtyBySection[k] || 0;
+                    const distributed = plan.distributedBySection?.[k] || 0;
+                    const models = plan.catalogModelsBySection?.[k] || 0;
+                    const isShort = planned > 0 && distributed < planned;
+                    const isExcluded = (plan.excludedSections || []).includes(k);
+                    // Дефицит моделей: планируется >= 20 шт, но в каталоге <= 5 моделей
+                    // или соотношение план/моделей >= 15 (одной модели достанется >=15 шт).
+                    const modelsDeficit = !isExcluded && planned >= 20 && (models === 0 || planned / Math.max(models, 1) >= 15);
                     return (
-                      <tr key={k} className="transition hover:bg-sky-50/40">
-                        <td className="px-4 py-2.5">{SECTION_LABEL[k]}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-slate-600">{(share * 100).toFixed(1)}%</td>
-                        <td className="px-4 py-2.5 text-right font-bold">{qty}</td>
+                      <tr key={k} className={classNames(
+                        'transition hover:bg-sky-50/40',
+                        isExcluded && 'bg-slate-100/60 text-slate-400 line-through',
+                      )}>
+                        <td className="px-4 py-2.5">
+                          {SECTION_LABEL[k]}
+                          {isExcluded && <span className="ml-2 text-[10px] font-semibold not-italic no-underline text-rose-500">исключено</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-slate-700">{sales.soldQty}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-slate-600">{Math.round(sales.revenue).toLocaleString('ru-RU')}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-slate-600">{planned}</td>
+                        <td
+                          className={classNames(
+                            'px-4 py-2.5 text-right font-mono text-[13px]',
+                            modelsDeficit ? 'bg-amber-50 text-amber-700 font-semibold' : 'text-slate-600',
+                          )}
+                          title={modelsDeficit
+                            ? `Мало моделей: ${models} на ${planned} шт. Загрузи ещё скрины из WeChat-каталога.`
+                            : undefined}
+                        >
+                          {models}
+                          {modelsDeficit && <span className="ml-1 text-[10px] not-italic">⚠</span>}
+                        </td>
+                        <td className={classNames(
+                          'px-4 py-2.5 text-right font-bold',
+                          isShort ? 'bg-amber-50 text-amber-700' : '',
+                        )}>
+                          {distributed}
+                          {isShort && (
+                            <span className="ml-1 text-[11px] font-normal opacity-70">−{planned - distributed}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-slate-600">
+                          {distributed === 0
+                            ? '—'
+                            : `${(distributed * SUPPLIER_COST_PER_FRAME).toLocaleString('ru-RU')} с`}
+                        </td>
                       </tr>
                     );
                   })}
                   <tr className="bg-slate-50 font-bold">
                     <td className="px-4 py-2.5">Итого</td>
-                    <td className="px-4 py-2.5 text-right">100%</td>
-                    <td className="px-4 py-2.5 text-right">{plan.totalQty}</td>
+                    <td className="px-4 py-2.5 text-right">{plan.totalSoldQty}</td>
+                    <td className="px-4 py-2.5 text-right">{Math.round(plan.totalSoldRevenue).toLocaleString('ru-RU')}</td>
+                    <td className="px-4 py-2.5 text-right">{plan.totalQtyTarget}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500">—</td>
+                    <td className={classNames(
+                      'px-4 py-2.5 text-right',
+                      plan.totalQty < plan.totalQtyTarget ? 'bg-amber-100 text-amber-800' : '',
+                    )}>
+                      {plan.totalQty}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold">
+                      {(plan.totalQty * SUPPLIER_COST_PER_FRAME).toLocaleString('ru-RU')} с
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -992,11 +1188,12 @@ export default function FrameProcurementPage() {
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
               <button
                 onClick={createOrderAndDownload}
-                disabled={creatingOrder}
-                className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:opacity-50"
+                disabled={creatingOrder || !plan.meetsSupplierMin || plan.totalQty === 0}
+                title={!plan.meetsSupplierMin ? `До минималки ${SUPPLIER_MIN} не хватает ${SUPPLIER_MIN - plan.totalQty} шт` : ''}
+                className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creatingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                Сохранить заказ и скачать ZIP
+                Создать заказ и скачать ZIP
               </button>
             </div>
           </>
@@ -1019,8 +1216,7 @@ export default function FrameProcurementPage() {
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-2.5">Создан</th>
                   <th className="px-4 py-2.5">Статус</th>
-                  <th className="px-4 py-2.5">Холодный старт</th>
-                  <th className="px-4 py-2.5">Распознавал</th>
+                  <th className="px-4 py-2.5">Окно, дн</th>
                   <th className="px-4 py-2.5 text-right">Штук</th>
                   <th className="px-4 py-2.5 text-right">Действия</th>
                 </tr>
@@ -1040,17 +1236,27 @@ export default function FrameProcurementPage() {
                         {o.status}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-[13px]">{o.cold_start ? '🧊 да' : 'нет'}</td>
-                    <td className="px-4 py-2.5 text-[13px] text-slate-600">{o.recognized_by || '—'}</td>
+                    <td className="px-4 py-2.5 text-[13px] text-slate-600">{o.sales_window_days || '—'}</td>
                     <td className="px-4 py-2.5 text-right font-bold">{o.total_qty}</td>
                     <td className="px-4 py-2.5 text-right">
-                      <button
-                        onClick={() => downloadExistingZip(o.id)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-200 transition hover:bg-cyan-50 hover:text-cyan-600 hover:ring-cyan-200"
-                        title="Скачать ZIP"
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
+                      <div className="inline-flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => downloadExistingZip(o.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-200 transition hover:bg-cyan-50 hover:text-cyan-600 hover:ring-cyan-200"
+                          title="Скачать ZIP"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+                        {(o.status === 'draft' || o.status === 'sent') && (
+                          <button
+                            onClick={() => cancelOrder(o)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-200 transition hover:bg-rose-50 hover:text-rose-600 hover:ring-rose-200"
+                            title="Отменить заказ"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1094,6 +1300,7 @@ function ItemEditorModal({
   const [typeCode, setTypeCode] = useState<FrameTypeCode | ''>(item.type_code || '');
   const [gender, setGender] = useState<CatalogGender | ''>(item.gender || '');
   const [colors, setColors] = useState<CatalogColor[]>(item.colors || []);
+  const [estimatedPrice, setEstimatedPrice] = useState<string>(item.estimated_price?.toString() || '');
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reRecognizing, setReRecognizing] = useState<RecognitionEngine | null>(null);
@@ -1118,6 +1325,7 @@ function ItemEditorModal({
         setTypeCode((updated.type_code as FrameTypeCode | null) || '');
         setGender((updated.gender as CatalogGender | null) || '');
         setColors(updated.colors || []);
+        setEstimatedPrice(updated.estimated_price?.toString() || '');
       }
       toast.success(`Распознано через ${engine}`, { id: t });
     } catch (e: any) {
@@ -1132,6 +1340,16 @@ function ItemEditorModal({
       toast.error('Тип и пол обязательны');
       return;
     }
+    const trimmedPrice = estimatedPrice.trim();
+    let parsedPrice: number | null = null;
+    if (trimmedPrice !== '') {
+      const n = Number(trimmedPrice);
+      if (!Number.isFinite(n) || n <= 0) {
+        toast.error('Цена должна быть положительным числом');
+        return;
+      }
+      parsedPrice = n;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/admin/frame-procurement/catalog/${item.id}`, {
@@ -1142,6 +1360,7 @@ function ItemEditorModal({
           type_code: typeCode,
           gender,
           colors,
+          estimated_price: parsedPrice,
           needs_review: false,
         }),
       });
@@ -1153,7 +1372,7 @@ function ItemEditorModal({
     } finally {
       setSaving(false);
     }
-  }, [item, supplierModel, typeCode, gender, colors, onSaved]);
+  }, [item, supplierModel, typeCode, gender, colors, estimatedPrice, onSaved]);
 
   return (
     <div
@@ -1184,12 +1403,26 @@ function ItemEditorModal({
           </button>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-2">
-          {/* Фото */}
-          <div className="overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200">
+        <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+          {/* Фото — sticky на больших экранах, чтобы при скролле полей оставалось видно.
+              min-h гарантирует читаемый размер даже для маленьких/широких фото.
+              Клик открывает полное фото в новой вкладке. */}
+          <div className="overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200 lg:sticky lg:top-2 self-start flex items-center justify-center min-h-[480px]">
             {item.signed_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.signed_url} alt="" className="w-full" />
+              <a
+                href={item.signed_url}
+                target="_blank"
+                rel="noreferrer"
+                title="Открыть в полном размере"
+                className="block w-full h-full flex items-center justify-center cursor-zoom-in"
+              >
+                <img
+                  src={item.signed_url}
+                  alt=""
+                  className="block max-w-full max-h-[75vh] w-auto h-auto object-contain"
+                />
+              </a>
             ) : (
               <div className="aspect-[3/4] w-full" />
             )}
@@ -1203,6 +1436,19 @@ function ItemEditorModal({
                 value={supplierModel}
                 onChange={(e) => setSupplierModel(e.target.value)}
                 placeholder="38007-53-16-147"
+                className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Оценочная цена (KGS)</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={estimatedPrice}
+                onChange={(e) => setEstimatedPrice(e.target.value)}
+                placeholder="напр., 3500"
                 className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
               />
             </label>
