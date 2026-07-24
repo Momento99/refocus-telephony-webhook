@@ -24,7 +24,9 @@ type Terminal = {
 type Branch = { id: number; name: string; country_id: string; country_name: string; terminals: Terminal[] };
 type Channel = { id: string; country_id: string; version: string; update_url: string; is_active: boolean; force_update_at: string | null; app_type: string };
 type Country = { id: string; name: string; currency_symbol: string };
-type TermVer = { terminal_code: string; branch_id: number; branch_name: string; country_id: string; app_version: string | null; last_seen: string };
+type TermVer = { terminal_code: string; branch_id: number; branch_name: string; country_id: string; kind?: string; app_version: string | null; last_seen: string; meta?: any };
+
+const isKioskTerm = (t: TermVer) => t.kind ? t.kind === 'kiosk' : t.terminal_code.toUpperCase().includes('KIOSK');
 type BuildStatus = { state: 'idle' | 'building' | 'done' | 'error'; version: string; currentVersion: string; log: string; exeReady: boolean; exeName: string | null; exeSize: number | null };
 type AllBranch = { id: number; name: string; country_id: string; terminalCount: number };
 type AppType = 'pos' | 'kiosk';
@@ -191,6 +193,10 @@ export default function DeviceHubPage() {
   const allTerminals = branches.flatMap(b => b.terminals);
   const activeCount = allTerminals.filter(t => t.is_enabled).length;
   const disabledCount = allTerminals.length - activeCount;
+  const verByCode: Record<string, TermVer> = {};
+  for (const v of termVers) verByCode[v.terminal_code] = v;
+  const channelVersion = (countryId: string, kind: TerminalKind) =>
+    (kind === 'kiosk' ? kioskChannels : posChannels).find(c => c.country_id === countryId)?.version ?? null;
   const posBranches = branches.map(b => ({ ...b, terminals: b.terminals.filter(t => t.kind === 'pos') })).filter(b => b.terminals.length > 0);
   const kioskBranches = branches.map(b => ({ ...b, terminals: b.terminals.filter(t => t.kind === 'kiosk') })).filter(b => b.terminals.length > 0);
 
@@ -274,8 +280,8 @@ export default function DeviceHubPage() {
             ]).map(c => {
               const posCh = posChannels.find(ch => ch.country_id === c.id);
               const kioskCh = kioskChannels.find(ch => ch.country_id === c.id);
-              const posTerms = termVers.filter(t => t.country_id === c.id && !t.terminal_code.toUpperCase().includes('KIOSK'));
-              const kioskTerms = termVers.filter(t => t.country_id === c.id && t.terminal_code.toUpperCase().includes('KIOSK'));
+              const posTerms = termVers.filter(t => t.country_id === c.id && !isKioskTerm(t));
+              const kioskTerms = termVers.filter(t => t.country_id === c.id && isKioskTerm(t));
               const isExpanded = expandedCountries.has(c.id);
 
               return (
@@ -315,7 +321,7 @@ export default function DeviceHubPage() {
                   {isExpanded && (
                     <div className="border-t border-slate-100 px-4 py-3 space-y-1.5">
                       {[...posTerms, ...kioskTerms].map(t => {
-                        const ch = t.terminal_code.toUpperCase().includes('KIOSK') ? kioskCh : posCh;
+                        const ch = isKioskTerm(t) ? kioskCh : posCh;
                         const upToDate = ch && t.app_version === ch.version;
                         const age = t.last_seen ? Math.round((Date.now() - new Date(t.last_seen).getTime()) / 60000) : null;
                         const ageText = age === null ? 'нет данных' : age < 60 ? `${age} мин` : age < 1440 ? `${Math.round(age / 60)} ч` : `${Math.round(age / 1440)} дн`;
@@ -358,10 +364,12 @@ export default function DeviceHubPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
           <DeviceColumn title="Кассовые аппараты (POS)" color="sky" icon={Monitor}
             branches={posBranches} toggling={toggling} confirm={confirm}
-            setConfirm={setConfirm} toggleTerminal={toggleTerminal} loading={loading} />
+            setConfirm={setConfirm} toggleTerminal={toggleTerminal} loading={loading}
+            verByCode={verByCode} channelVersion={channelVersion} />
           <DeviceColumn title="Тач-экраны (Киоск)" color="purple" icon={Tablet}
             branches={kioskBranches} toggling={toggling} confirm={confirm}
-            setConfirm={setConfirm} toggleTerminal={toggleTerminal} loading={loading} />
+            setConfirm={setConfirm} toggleTerminal={toggleTerminal} loading={loading}
+            verByCode={verByCode} channelVersion={channelVersion} />
         </div>
       </div>
 
@@ -388,13 +396,15 @@ export default function DeviceHubPage() {
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── Device Column (POS or Kiosk) ── */
-function DeviceColumn({ title, color, icon: Icon, branches, toggling, confirm, setConfirm, toggleTerminal, loading }: {
+function DeviceColumn({ title, color, icon: Icon, branches, toggling, confirm, setConfirm, toggleTerminal, loading, verByCode, channelVersion }: {
   title: string; color: 'sky' | 'purple'; icon: any;
   branches: Branch[]; toggling: number | null;
   confirm: { terminalId: number; enable: boolean } | null;
   setConfirm: (v: any) => void;
   toggleTerminal: (id: number, enable: boolean) => void;
   loading: boolean;
+  verByCode: Record<string, TermVer>;
+  channelVersion: (countryId: string, kind: TerminalKind) => string | null;
 }) {
   const accent = color === 'sky' ? { bg: 'bg-sky-50', ring: 'ring-sky-200', text: 'text-sky-700', spin: 'border-t-sky-400' }
     : { bg: 'bg-purple-50', ring: 'ring-purple-200', text: 'text-purple-700', spin: 'border-t-purple-400' };
@@ -438,6 +448,33 @@ function DeviceColumn({ title, color, icon: Icon, branches, toggling, confirm, s
                         <div className={`text-[11px] font-mono ${t.is_enabled ? 'text-slate-400' : 'text-slate-300'}`}>
                           {t.terminal_code}
                         </div>
+                        {(() => {
+                          const ver = verByCode[t.terminal_code];
+                          const chanV = channelVersion(t.country_id, t.kind);
+                          const upToDate = !!(ver?.app_version && chanV && ver.app_version === chanV);
+                          const age = ver?.last_seen ? Math.round((Date.now() - new Date(ver.last_seen).getTime()) / 60000) : null;
+                          const ageText = age === null ? null : age < 60 ? `${age} мин` : age < 1440 ? `${Math.round(age / 60)} ч` : `${Math.round(age / 1440)} дн`;
+                          const doctorFails: string[] = Array.isArray(ver?.meta?.doctor?.failures) ? ver!.meta.doctor.failures : [];
+                          return (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className={`text-[10px] font-bold font-mono rounded-full px-2 py-0.5 ring-1 ${
+                                ver?.app_version
+                                  ? upToDate
+                                    ? 'text-emerald-700 bg-emerald-50 ring-emerald-200'
+                                    : 'text-amber-700 bg-amber-50 ring-amber-200'
+                                  : 'text-slate-400 bg-slate-50 ring-slate-200'
+                              }`}>
+                                {ver?.app_version ? `v${ver.app_version}` : 'версия ?'}
+                              </span>
+                              {ageText && <span className="text-[10px] text-slate-400">был на связи {ageText} назад</span>}
+                              {doctorFails.length > 0 && (
+                                <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 text-rose-600 bg-rose-50 ring-1 ring-rose-200" title={doctorFails.join('; ')}>
+                                  ⚠ вторая копия
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                     {pending ? (
