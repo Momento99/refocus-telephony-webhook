@@ -60,10 +60,8 @@ export function getBrowserSupabase(): SupabaseClient {
     throw new Error("Нет ENV: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
   }
 
-  browserClient = createBrowserClient(url, anon, {
-    auth: { detectSessionInUrl: false },
-    global: { fetch: crmFetch },
-  });
+  // /auth/callback captures and clears auth URL parameters before client initialization.
+  browserClient = createBrowserClient(url, anon, { global: { fetch: crmFetch } });
   return browserClient;
 }
 

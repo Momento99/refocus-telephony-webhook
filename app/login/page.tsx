@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { getSupabaseBrowser } from '@/lib/supabaseBrowser';
@@ -18,13 +18,11 @@ export default function LoginPage() {
   const params = useSearchParams?.() as URLSearchParams | null;
   const redirectTo = params?.get('redirect') || '/orders';
 
-  const sb = useMemo(() => getSupabaseBrowser(), []);
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'password' | 'email'>('password');
+  const [mode, setMode] = useState<'password' | 'email'>(() => params?.get('mode') === 'email' ? 'email' : 'password');
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -36,6 +34,7 @@ export default function LoginPage() {
       window.location.replace('/auth/callback' + window.location.search + window.location.hash);
       return;
     }
+    const sb = getSupabaseBrowser();
     let ignore = false;
     (async () => {
       try {
@@ -50,7 +49,7 @@ export default function LoginPage() {
     return () => {
       ignore = true;
     };
-  }, [sb, redirectTo]);
+  }, [redirectTo]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -58,6 +57,7 @@ export default function LoginPage() {
     setSent(false);
     setLoading(true);
     try {
+      const sb = getSupabaseBrowser();
       if (mode === 'email') {
         const callback = new URL('/auth/callback', window.location.origin);
         if (redirectTo.startsWith('/') && !redirectTo.startsWith('//')) callback.searchParams.set('redirect', redirectTo);
