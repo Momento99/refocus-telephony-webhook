@@ -1,40 +1,63 @@
-// app/auth/callback/page.tsx
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import type { EmailOtpType } from '@supabase/supabase-js';
+import { getBrowserSupabase } from '@/lib/supabaseBrowser';
+import { normalizeCrmRole, safeCrmRedirect } from '@/lib/crmAccess';
 
 export default function AuthCallback() {
-  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const completion = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
-    const hash = window.location.hash;
-    const params = new URLSearchParams(hash.replace('#', ''));
-    const access_token = params.get('access_token');
-    const refresh_token = params.get('refresh_token');
-
-    if (access_token && refresh_token) {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-
-      supabase.auth.setSession({
-        access_token,
-        refresh_token,
-      }).then(() => {
-        // после успешного входа → перекидываем на главную
-        router.push('/');
-      });
-    } else {
-      router.push('/login'); // если токенов нет
+    let active = true;
+    async function completeLogin() {
+      const search = new URLSearchParams(window.location.search);
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      if (search.get('error') || hash.get('error')) {
+        throw new Error('Ссылка недействительна или срок её действия истёк. Запросите новую ссылку для входа.');
+      }
+      const supabase = getBrowserSupabase();
+      const code = search.get('code');
+      const tokenHash = search.get('token_hash');
+      const type = search.get('type');
+      const accessToken = hash.get('access_token');
+      const refreshToken = hash.get('refresh_token');
+      if (code) {
+        const result = await supabase.auth.exchangeCodeForSession(code);
+        if (result.error) throw result.error;
+      } else if (tokenHash && type && ['invite', 'magiclink', 'recovery', 'email', 'signup'].includes(type)) {
+        const result = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as EmailOtpType });
+        if (result.error) throw result.error;
+      } else if (accessToken && refreshToken) {
+        const result = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        if (result.error) throw result.error;
+      }
+      const { data, error: userError } = await supabase.auth.getUser();
+      if (userError || !data.user) throw new Error('Не удалось подтвердить вход. Запросите новую ссылку.');
+      const role = normalizeCrmRole(data.user.app_metadata?.role) || 'seller';
+      return safeCrmRedirect(search.get('redirect'), role);
     }
-  }, [router]);
+    completion.current ??= completeLogin();
+    completion.current.then(target => {
+      if (!active) return;
+      window.history.replaceState(null, '', '/auth/callback');
+      window.location.replace(target);
+    }).catch(reason => {
+      if (active) setError(reason instanceof Error ? reason.message : 'Не удалось войти.');
+    });
+    return () => { active = false; };
+  }, []);
 
   return (
-    <div className="flex items-center justify-center h-screen">
-      <p>Авторизация...</p>
+    <div className="flex min-h-[70vh] items-center justify-center">
+      <div className="max-w-md rounded-2xl bg-white p-6 text-slate-900 ring-1 ring-sky-100">
+        {error ? <>
+          <p className="mb-4 text-sm text-rose-600">{error}</p>
+          <Link href="/login" className="text-sm font-semibold text-cyan-700">Вернуться ко входу</Link>
+        </> : <p>Подтверждаем вход…</p>}
+      </div>
     </div>
   );
 }

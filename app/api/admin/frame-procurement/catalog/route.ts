@@ -40,7 +40,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   let q = admin
     .from('frame_supplier_catalog')
     .select(
-      'id, image_hash, storage_path, width_px, height_px, recognized_by, recognized_at, confidence, supplier_model, type_code, gender, colors, needs_review, manually_corrected, notes, created_at',
+      'id, image_hash, storage_path, width_px, height_px, recognized_by, recognized_at, confidence, supplier_model, type_code, gender, colors, estimated_price, needs_review, manually_corrected, notes, created_at, recognition_usage:raw_response->usage',
     )
     .order('created_at', { ascending: false })
     .limit(limit);

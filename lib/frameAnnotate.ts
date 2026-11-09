@@ -7,6 +7,7 @@
  */
 
 import sharp from 'sharp';
+import { frameMarkFontSize } from './frameAnnotationLayout';
 
 export interface AnnotationMark {
   /** [x_ratio, y_ratio, w_ratio, h_ratio] в долях [0..1] */
@@ -89,7 +90,7 @@ export async function annotateImage(
     }
 
     svgParts.push(
-      `<text class="qty-text" x="${cx.toFixed(1)}" y="${cy.toFixed(1)}">${escapeXml(String(m.qty))}</text>`,
+      `<text class="qty-text" style="font-size:${frameMarkFontSize(W, H, m.bbox, m.qty)}px;stroke-width:${Math.max(2, Math.round(frameMarkFontSize(W, H, m.bbox, m.qty) * .12))}px" x="${cx.toFixed(1)}" y="${cy.toFixed(1)}">${escapeXml(String(m.qty))}</text>`,
     );
   }
 

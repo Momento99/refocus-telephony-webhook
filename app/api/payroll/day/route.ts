@@ -1,6 +1,7 @@
 // app/api/payroll/day/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { requireOwner } from "@/app/api/admin/_requireOwner";
 
 // YYYY-MM-DD в таймзоне Asia/Bishkek по умолчанию «сегодня»
 function todayBishkek(): string {
@@ -16,6 +17,9 @@ function todayBishkek(): string {
 }
 
 export async function GET(req: Request) {
+  const auth = await requireOwner();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   const { searchParams } = new URL(req.url);
   const employeeId = Number(searchParams.get("employeeId"));
   const branchId = Number(searchParams.get("branchId") || 0);

@@ -1,15 +1,17 @@
 // app/finance/reconciliation/page.tsx
 'use client';
 
-import Link from 'next/link';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import getSupabase from '@/lib/supabaseClient';
+import { hasCrmPermission } from '@/lib/crmAccess';
 import {
   fetchOverview,
   fetchOnlineOverview,
   upsertManualAmount,
   upsertOnlineManual,
-  getWeekStartMonday,
+  getReconciliationPeriodStart,
+  getReconciliationPeriodEnd,
+  shiftReconciliationPeriodISO,
   type RecoRow,
   type OnlineRecoRow,
 } from '@/lib/reconciliation';
@@ -17,13 +19,12 @@ import {
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
   CheckCircle2,
   AlertTriangle,
   Clock,
   History,
   RefreshCw,
-  Search,
-  Building2,
   PiggyBank,
   X,
 } from 'lucide-react';
@@ -55,18 +56,17 @@ const fmtKGS = (n: number) =>
     maximumFractionDigits: 0,
   }).format(Math.round(n || 0));
 
-const addDays = (d: Date, n: number) => {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
+const parseISODateUTC = (iso: string) => {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
 };
-const shiftWeeks = (d: Date, w: number) => addDays(d, w * 7);
 
-const formatRangeRu = (start: Date) => {
-  const end = addDays(start, 6);
-  return `${start.getDate()} ${MONTHS_RU[start.getMonth()]} — ${end.getDate()} ${
-    MONTHS_RU[end.getMonth()]
-  } ${end.getFullYear()}`;
+const formatRangeRu = (startISO: string, endISO: string) => {
+  const start = parseISODateUTC(startISO);
+  const end = parseISODateUTC(endISO);
+  return `${start.getUTCDate()} ${MONTHS_RU[start.getUTCMonth()]} — ${end.getUTCDate()} ${
+    MONTHS_RU[end.getUTCMonth()]
+  } ${end.getUTCFullYear()}`;
 };
 
 const parseMoney = (input: string): number => {
@@ -83,7 +83,50 @@ const parsePercent = (input: string): number => {
 
 const round2 = (n: number) => Math.round((n || 0) * 100) / 100;
 
+const getOnlineFormValues = (online: OnlineRecoRow) => {
+  const posTotal = Number(online.expected_amount || 0);
+
+  // A saved zero is a real value. Only a pending row should receive the
+  // suggested acquiring commission.
+  if (online.status !== 'pending') {
+    const commission = Number(online.commission || 0);
+    const ratePct = posTotal > 0 ? round2((commission / posTotal) * 100) : 0;
+    return {
+      amount: String(round2(Number(online.manual_amount || 0))),
+      commission: String(round2(commission)),
+      ratePct: String(ratePct),
+    };
+  }
+
+  const computedCommission =
+    posTotal > 0 ? Math.round((posTotal * DEFAULT_ACQUIRING_RATE_PCT) / 100) : 0;
+  return {
+    amount: '',
+    commission: computedCommission > 0 ? String(computedCommission) : '',
+    ratePct: String(DEFAULT_ACQUIRING_RATE_PCT),
+  };
+};
+
+const cashStatusFromDiff = (hasManual: boolean, diff: number): RecoRow['status'] => {
+  if (!hasManual) return 'pending';
+  if (Math.abs(diff) <= TOLERANCE) return 'match';
+  return diff < 0 ? 'shortage' : 'overpay';
+};
+
 const DELAY_REFETCH_MS = 350;
+
+const loadFailureMessage = (section: string, reason: unknown) => {
+  const message =
+    typeof reason === 'object' && reason !== null && 'message' in reason
+      ? String((reason as { message?: unknown }).message || 'неизвестная ошибка')
+      : String(reason || 'неизвестная ошибка');
+
+  if (message.includes('Неделя должна начинаться в понедельник')) {
+    return `${section}: календарь сверки в базе ещё не обновлён до периода воскресенье–суббота.`;
+  }
+
+  return `${section}: ${message}`;
+};
 
 /* ====================== rpc wrappers ====================== */
 
@@ -100,18 +143,11 @@ type FixRow = {
   fixed_at: string;
 };
 
-type ExpenseRow = {
-  branch_id: number;
-  branch_name: string;
-  cash_expenses: number;
-};
-
-async function checkIsOwner(): Promise<boolean> {
+async function checkCanManageReconciliation(): Promise<boolean> {
   const sb = getSupabase();
-  const { data: u } = await sb.auth.getUser();
-  if (!u?.user) return false;
-  const { data } = await sb.from('profiles').select('role').eq('id', u.user.id).single();
-  return data?.role === 'owner';
+  const { data, error } = await sb.auth.getUser();
+  if (error || !data.user) return false;
+  return hasCrmPermission(data.user.app_metadata?.role, 'reconciliation');
 }
 
 async function fixTransferRPC(weekStartISO: string, branchId: number, comment?: string | null) {
@@ -134,81 +170,24 @@ async function fetchFixHistoryRPC(weekStartISO: string, branchId?: number): Prom
   return (data as any[]) as FixRow[];
 }
 
-async function fetchWeeklyExpenses(weekStartISO: string): Promise<ExpenseRow[]> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from('v_reconciliation_weekly_branch_income')
-    .select('branch_id, branch_name, week_start, cash_expenses')
-    .eq('week_start', weekStartISO);
-
-  if (error) throw error;
-  if (!data) return [];
-
-  return (data as any[]).map((r) => ({
-    branch_id: r.branch_id,
-    branch_name: r.branch_name,
-    cash_expenses: Number(r.cash_expenses || 0),
-  }));
-}
-
-/* ===== POS (онлайн) по филиалам ===== */
-
-type OnlinePosBranchRow = {
-  branch_id: number;
-  branch_name: string;
-  pos_amount: number;
-};
-
-async function fetchWeeklyOnlinePosByBranch(weekStartISO: string): Promise<OnlinePosBranchRow[]> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from('v_reconciliation_weekly_branch_income')
-    .select('branch_id, branch_name, week_start, non_cash_payments')
-    .eq('week_start', weekStartISO);
-
-  if (error) throw error;
-  if (!data) return [];
-
-  return (data as any[])
-    .filter((r) => r.branch_name !== 'Новый филиал')
-    .map((r) => ({
-      branch_id: Number(r.branch_id),
-      branch_name: String(r.branch_name || ''),
-      pos_amount: Number(r.non_cash_payments || 0),
-    }));
-}
-
-/* ====================== extra types (онлайн) ====================== */
-
-type OnlineSummary = {
-  posTotal: number;
-  bankIncoming: number;
-  bankCommission: number;
-  bankNet: number;
-  delta: number;
-};
-
-type ExpensesSummary = {
-  total: number;
-  list: ExpenseRow[];
-};
-
 /* ====================== page ====================== */
 
 export default function Page() {
-  const [weekStartDate, setWeekStartDate] = useState<Date>(
-    () => new Date(getWeekStartMonday(new Date())),
+  const currentWeekStartISO = getReconciliationPeriodStart(new Date());
+  const [weekStartISO, setWeekStartISO] = useState<string>(() => currentWeekStartISO);
+  const activeWeekRef = useRef(weekStartISO);
+  const weekEndISO = getReconciliationPeriodEnd(weekStartISO);
+  const weekLabel = useMemo(
+    () => formatRangeRu(weekStartISO, weekEndISO),
+    [weekStartISO, weekEndISO],
   );
-  const weekStartISO = getWeekStartMonday(weekStartDate);
-  const weekLabel = useMemo(() => formatRangeRu(weekStartDate), [weekStartDate]);
+  const isCurrentWeek = weekStartISO === currentWeekStartISO;
 
   const [rows, setRows] = useState<RecoRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [q, setQ] = useState('');
-  const qDeferred = useDeferredValue(q);
+  const [onlineErr, setOnlineErr] = useState<string | null>(null);
   const [owner, setOwner] = useState<boolean>(false);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
 
   const [onlineRow, setOnlineRow] = useState<OnlineRecoRow | null>(null);
   const [onlineInput, setOnlineInput] = useState('');
@@ -219,8 +198,6 @@ export default function Page() {
   const [onlineComment, setOnlineComment] = useState('');
   const [onlineSaving, setOnlineSaving] = useState(false);
 
-  const [onlinePosRows, setOnlinePosRows] = useState<OnlinePosBranchRow[] | null>(null);
-
   const [lastFixedAt, setLastFixedAt] = useState<Record<number, string>>({});
 
   const [histOpen, setHistOpen] = useState<{ open: boolean; branchId?: number; branchName?: string }>(
@@ -229,252 +206,228 @@ export default function Page() {
   const [histLoading, setHistLoading] = useState(false);
   const [history, setHistory] = useState<FixRow[] | null>(null);
 
-  const [expensesRows, setExpensesRows] = useState<ExpenseRow[] | null>(null);
+  const selectWeek = (nextWeekStartISO: string) => {
+    const latestCurrentWeekStartISO = getReconciliationPeriodStart(new Date());
+    if (
+      nextWeekStartISO === activeWeekRef.current ||
+      nextWeekStartISO > latestCurrentWeekStartISO
+    ) {
+      return;
+    }
+
+    // Clear period-bound facts before changing the key. This prevents a stale
+    // cash/bank card from being saved into the newly selected period while its
+    // RPCs are still loading.
+    activeWeekRef.current = nextWeekStartISO;
+    setLoading(true);
+    setRows(null);
+    setOnlineRow(null);
+    setOnlineErr(null);
+    setOnlineInput('');
+    setOnlineCommissionInput('');
+    setOnlineCommissionRateInput(String(DEFAULT_ACQUIRING_RATE_PCT));
+    setOnlineComment('');
+    setWeekStartISO(nextWeekStartISO);
+  };
 
   useEffect(() => {
-    (async () => setOwner(await checkIsOwner()))();
+    activeWeekRef.current = weekStartISO;
+  }, [weekStartISO]);
+
+  useEffect(() => {
+    (async () => setOwner(await checkCanManageReconciliation()))();
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
         setLoading(true);
         setErr(null);
+        setOnlineErr(null);
+        setLastFixedAt({});
+        setHistOpen({ open: false });
+        setHistory(null);
 
-        const [data, online, expenses, posByBranch] = await Promise.all([
+        const [cashResult, onlineResult] = await Promise.allSettled([
           fetchOverview(weekStartISO),
           fetchOnlineOverview(weekStartISO),
-          fetchWeeklyExpenses(weekStartISO),
-          fetchWeeklyOnlinePosByBranch(weekStartISO),
         ]);
+        if (cancelled) return;
 
-        const cleaned = (data || []).filter((r) => r.branch_name !== 'Новый филиал');
-        setRows(cleaned);
+        if (cashResult.status === 'fulfilled') {
+          const cleaned = (cashResult.value || []).filter(
+            (r) => r.branch_name !== 'Новый филиал',
+          );
+          setRows(cleaned);
+        } else {
+          setRows(null);
+          setErr(loadFailureMessage('Наличные', cashResult.reason));
+        }
 
-        setOnlineRow(online);
-        setOnlineInput(online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '');
-        setOnlineComment('');
+        if (onlineResult.status === 'fulfilled') {
+          const online = onlineResult.value;
+          setOnlineRow(online);
+          const onlineForm = getOnlineFormValues(online);
+          setOnlineInput(onlineForm.amount);
+          setOnlineComment('');
+          setOnlineCommissionRateInput(onlineForm.ratePct);
+          setOnlineCommissionInput(onlineForm.commission);
+        } else {
+          setOnlineRow(null);
+          setOnlineErr(loadFailureMessage('Банковская сверка', onlineResult.reason));
+        }
 
-        // комиссия: ставка (по умолчанию 1.95%) + сумма (авто от POS)
-        const posTotal = Number(online.expected_amount || 0);
-        const savedComm = Number(online.commission || 0);
-
-        let ratePct = DEFAULT_ACQUIRING_RATE_PCT;
-        if (posTotal > 0 && savedComm > 0) ratePct = round2((savedComm / posTotal) * 100);
-        setOnlineCommissionRateInput(String(ratePct));
-
-        const computedComm = posTotal > 0 ? Math.round((posTotal * ratePct) / 100) : 0;
-        const initialComm = savedComm > 0 ? Math.round(savedComm) : computedComm;
-        setOnlineCommissionInput(initialComm > 0 ? String(initialComm) : '');
-
-        setExpensesRows(expenses || []);
-        setOnlinePosRows(posByBranch || []);
-
-        setLastUpdatedAt(new Date());
       } catch (e: any) {
+        if (cancelled) return;
         setErr(e?.message || 'Ошибка загрузки');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [weekStartISO]);
-
-  const filtered = useMemo(() => {
-    const s = qDeferred.trim().toLowerCase();
-    return (rows || []).filter((r) => r.branch_name.toLowerCase().includes(s));
-  }, [rows, qDeferred]);
-
-  /* ===== сводка по НАЛИЧНЫМ ===== */
-  const cashSummary = useMemo(() => {
-    const src = rows || [];
-    let should = 0,
-      fact = 0,
-      match = 0,
-      shortage = 0,
-      overpay = 0,
-      overpayTotal = 0;
-    const overList: { id: number; name: string; delta: number }[] = [];
-
-    for (const r of src) {
-      const s = r.expected_amount || 0;
-      const m = r.manual_amount || 0;
-      const d = m - s;
-      should += s;
-      fact += m;
-
-      if (Math.abs(d) <= TOLERANCE) match++;
-      else if (d < -TOLERANCE) shortage++;
-      else {
-        overpay++;
-        overpayTotal += d;
-        overList.push({ id: r.branch_id, name: r.branch_name, delta: d });
-      }
-    }
-
-    const percent = should > 0 ? Math.min(100, Math.max(0, (fact / should) * 100)) : 0;
-    const delta = fact - should;
-
-    overList.sort((a, b) => b.delta - a.delta);
-
-    return { should, fact, delta, percent, match, shortage, overpay, overpayTotal, overList };
-  }, [rows]);
-
-  /* ===== сводка по РАСХОДАМ (наличные) ===== */
-  const expensesSummary: ExpensesSummary = useMemo(() => {
-    const list = (expensesRows || []).filter((r) => (r.cash_expenses || 0) > 0);
-    const total = list.reduce((acc, r) => acc + (r.cash_expenses || 0), 0);
-    const sorted = [...list].sort((a, b) => b.cash_expenses - a.cash_expenses);
-    return { total, list: sorted };
-  }, [expensesRows]);
-
-  /* ===== сводка по ОНЛАЙН-оплатам (вся сеть) ===== */
-  const onlineSummary: OnlineSummary = useMemo(() => {
-    if (!onlineRow) return { posTotal: 0, bankIncoming: 0, bankCommission: 0, bankNet: 0, delta: 0 };
-
-    const posTotal = Number(onlineRow.expected_amount || 0);
-
-    // показываем "живые" значения с формы (чтобы комиссия считалась сразу на странице)
-    const bankIncoming =
-      onlineInput.trim() !== '' ? parseMoney(onlineInput) : Number(onlineRow.manual_amount || 0);
-
-    const ratePct =
-      onlineCommissionRateInput.trim() !== ''
-        ? parsePercent(onlineCommissionRateInput)
-        : DEFAULT_ACQUIRING_RATE_PCT;
-
-    const bankCommission =
-      onlineCommissionInput.trim() !== ''
-        ? parseMoney(onlineCommissionInput)
-        : Math.round((posTotal * ratePct) / 100);
-
-    const bankNet = Math.max(0, bankIncoming - bankCommission);
-    const delta = bankIncoming - posTotal;
-
-    return { posTotal, bankIncoming, bankCommission, bankNet, delta };
-  }, [onlineRow, onlineInput, onlineCommissionInput, onlineCommissionRateInput]);
-
-  /* ===== POS (онлайн) по филиалам — подготовка списка ===== */
-  const onlinePosByBranch = useMemo(() => {
-    const list = (onlinePosRows || [])
-      .filter((r) => (r.pos_amount || 0) > 0)
-      .sort((a, b) => b.pos_amount - a.pos_amount);
-    const total = list.reduce((acc, r) => acc + (r.pos_amount || 0), 0);
-    return { list, total };
-  }, [onlinePosRows]);
-
-  /* ---- мягкий merge ---- */
-  function softMergeRows(prev: RecoRow[], fresh: RecoRow[]) {
-    const normalized = (fresh || []).filter((r) => r.branch_name !== 'Новый филиал');
-    const byId = new Map(normalized.map((r) => [r.branch_id, r]));
-    return prev.map((p) => {
-      const f = byId.get(p.branch_id);
-      if (!f) return p;
-      const manual = p.manual_amount > 0 && f.manual_amount === 0 ? p.manual_amount : f.manual_amount;
-      const expected = f.expected_amount;
-      const diff = manual - expected;
-      const status: RecoRow['status'] = Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
-      return { ...f, manual_amount: manual, diff, status };
-    });
-  }
 
   /* ====================== actions ====================== */
 
   async function manualRefresh() {
+    const requestedWeek = weekStartISO;
     setLoading(true);
     try {
-      const [fresh, online, expenses, posByBranch] = await Promise.all([
-        fetchOverview(weekStartISO),
-        fetchOnlineOverview(weekStartISO),
-        fetchWeeklyExpenses(weekStartISO),
-        fetchWeeklyOnlinePosByBranch(weekStartISO),
+      setErr(null);
+      setOnlineErr(null);
+      const [cashResult, onlineResult] = await Promise.allSettled([
+        fetchOverview(requestedWeek),
+        fetchOnlineOverview(requestedWeek),
       ]);
+      if (activeWeekRef.current !== requestedWeek) return;
 
-      const cleaned = (fresh || []).filter((r) => r.branch_name !== 'Новый филиал');
-      setRows((prev) => (prev ? softMergeRows(prev, cleaned) : cleaned));
+      if (cashResult.status === 'fulfilled') {
+        const cleaned = (cashResult.value || []).filter(
+          (r) => r.branch_name !== 'Новый филиал',
+        );
+        setRows(cleaned);
+      } else {
+        setErr(loadFailureMessage('Наличные', cashResult.reason));
+      }
 
-      setOnlineRow(online);
-      setOnlineInput(online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '');
-
-      const posTotal = Number(online.expected_amount || 0);
-      const savedComm = Number(online.commission || 0);
-
-      let ratePct = DEFAULT_ACQUIRING_RATE_PCT;
-      if (posTotal > 0 && savedComm > 0) ratePct = round2((savedComm / posTotal) * 100);
-      setOnlineCommissionRateInput(String(ratePct));
-
-      const computedComm = posTotal > 0 ? Math.round((posTotal * ratePct) / 100) : 0;
-      const initialComm = savedComm > 0 ? Math.round(savedComm) : computedComm;
-      setOnlineCommissionInput(initialComm > 0 ? String(initialComm) : '');
-
-      setExpensesRows(expenses || []);
-      setOnlinePosRows(posByBranch || []);
-
-      setLastUpdatedAt(new Date());
+      if (onlineResult.status === 'fulfilled') {
+        const online = onlineResult.value;
+        setOnlineRow(online);
+        const onlineForm = getOnlineFormValues(online);
+        setOnlineInput(onlineForm.amount);
+        setOnlineCommissionRateInput(onlineForm.ratePct);
+        setOnlineCommissionInput(onlineForm.commission);
+      } else {
+        setOnlineErr(loadFailureMessage('Банковская сверка', onlineResult.reason));
+      }
     } finally {
-      setLoading(false);
+      if (activeWeekRef.current === requestedWeek) setLoading(false);
     }
   }
 
-  async function saveManual(branchId: number, amountInput: string, comment?: string) {
+  async function saveManual(
+    branchId: number,
+    amountInput: string,
+    depositFeeInput: string,
+    comment?: string,
+  ) {
+    if (!owner) return;
+    if (!amountInput.trim()) {
+      alert('Введите сумму, которая фактически поступила на счёт. Если поступлений не было, введите 0.');
+      return;
+    }
     const amount = parseMoney(amountInput);
-    try {
-      setRows((prev) => {
-        if (!prev) return prev;
-        return prev.map((r) => {
-          if (r.branch_id !== branchId) return r;
-          const manual = amount;
-          const expected = r.expected_amount || 0;
-          const diff = manual - expected;
-          const status: RecoRow['status'] = Math.abs(diff) <= TOLERANCE ? 'match' : diff < -TOLERANCE ? 'shortage' : 'overpay';
-          return { ...r, manual_amount: manual, diff, status };
-        });
+    const depositFee = parseMoney(depositFeeInput);
+    const selected = rows?.find((r) => r.branch_id === branchId);
+    if (selected && depositFee > Math.max(0, selected.cash_to_handover)) {
+      alert('Комиссия внесения не может быть больше суммы к сдаче.');
+      return;
+    }
+    const previousRows = rows;
+    const requestedWeek = weekStartISO;
+    setRows((prev) => {
+      if (!prev) return prev;
+      return prev.map((r) => {
+        if (r.branch_id !== branchId) return r;
+        const manual = amount;
+        const expected = r.cash_to_handover - depositFee;
+        const diff = manual - expected;
+        const status = cashStatusFromDiff(true, diff);
+        return {
+          ...r,
+          deposit_fee: depositFee,
+          expected_amount: expected,
+          manual_amount: manual,
+          has_manual: true,
+          diff,
+          status,
+        };
       });
-      setLastUpdatedAt(new Date());
-
+    });
+    try {
       await upsertManualAmount({
-        weekStartISO,
+        weekStartISO: requestedWeek,
         branchId,
         amount,
+        depositFee,
         comment: comment?.trim() ? comment.trim() : null,
       });
-
-      await new Promise((r) => setTimeout(r, DELAY_REFETCH_MS));
-      const fresh = await fetchOverview(weekStartISO);
-      const cleaned = (fresh || []).filter((r) => r.branch_name !== 'Новый филиал');
-      setRows((prev) => (prev ? softMergeRows(prev, cleaned) : cleaned));
-      setLastUpdatedAt(new Date());
     } catch (e: any) {
+      if (activeWeekRef.current === requestedWeek) setRows(previousRows);
       alert(`Не удалось сохранить факт: ${e?.message ?? e}`);
+      return;
+    }
+
+    try {
+      await new Promise((r) => setTimeout(r, DELAY_REFETCH_MS));
+      const fresh = await fetchOverview(requestedWeek);
+      if (activeWeekRef.current !== requestedWeek) return;
+      const cleaned = (fresh || []).filter((r) => r.branch_name !== 'Новый филиал');
+      setRows(cleaned);
+    } catch (e: any) {
+      if (activeWeekRef.current === requestedWeek) {
+        alert(`Факт сохранён, но данные не удалось перечитать: ${e?.message ?? e}`);
+      }
     }
   }
 
   async function fixTransfer(branchId: number, comment?: string) {
+    if (!owner) return;
+    const requestedWeek = weekStartISO;
     try {
-      await fixTransferRPC(weekStartISO, branchId, comment?.trim() ? comment.trim() : null);
+      await fixTransferRPC(requestedWeek, branchId, comment?.trim() ? comment.trim() : null);
+      if (activeWeekRef.current !== requestedWeek) return;
       setLastFixedAt((prev) => ({ ...prev, [branchId]: new Date().toISOString() }));
       alert('Перевод зафиксирован. Запись добавлена в историю.');
 
       await new Promise((r) => setTimeout(r, DELAY_REFETCH_MS));
-      const fresh = await fetchOverview(weekStartISO);
+      const fresh = await fetchOverview(requestedWeek);
+      if (activeWeekRef.current !== requestedWeek) return;
       const cleaned = (fresh || []).filter((r) => r.branch_name !== 'Новый филиал');
-      setRows((prev) => (prev ? softMergeRows(prev, cleaned) : cleaned));
-      setLastUpdatedAt(new Date());
+      setRows(cleaned);
     } catch (e: any) {
       alert(`Не удалось зафиксировать перевод: ${e?.message ?? e}`);
     }
   }
 
   async function openHistory(branchId: number, branchName: string) {
+    const requestedWeek = weekStartISO;
     setHistOpen({ open: true, branchId, branchName });
     setHistLoading(true);
     try {
-      const data = await fetchFixHistoryRPC(weekStartISO, branchId);
+      const data = await fetchFixHistoryRPC(requestedWeek, branchId);
+      if (activeWeekRef.current !== requestedWeek) return;
       setHistory(data);
       if (data && data.length > 0) {
         setLastFixedAt((prev) => ({ ...prev, [branchId]: data[data.length - 1].fixed_at }));
       }
     } finally {
-      setHistLoading(false);
+      if (activeWeekRef.current === requestedWeek) setHistLoading(false);
     }
   }
 
@@ -509,6 +462,20 @@ export default function Page() {
   }
 
   async function saveOnline() {
+    if (
+      !owner ||
+      loading ||
+      onlineSaving ||
+      !onlineRow ||
+      onlineRow.week_start !== weekStartISO
+    ) {
+      return;
+    }
+    if (!onlineInput.trim()) {
+      alert('Введите сумму, которая фактически поступила на счёт. Если поступлений не было, введите 0.');
+      return;
+    }
+    const requestedWeek = weekStartISO;
     const amount = parseMoney(onlineInput);
 
     const posTotal = Number(onlineRow?.expected_amount || 0);
@@ -522,50 +489,50 @@ export default function Page() {
         ? parseMoney(onlineCommissionInput)
         : Math.round((posTotal * ratePct) / 100);
 
+    setOnlineSaving(true);
     try {
-      setOnlineSaving(true);
-
       await upsertOnlineManual({
-        weekStartISO,
+        weekStartISO: requestedWeek,
         amountBank: amount,
         commission: comm,
         comment: onlineComment,
       });
-
-      await new Promise((r) => setTimeout(r, DELAY_REFETCH_MS));
-      const online = await fetchOnlineOverview(weekStartISO);
-
-      setOnlineRow(online);
-      setOnlineInput(online.manual_amount > 0 ? String(Math.round(online.manual_amount)) : '');
-
-      const refreshedPosTotal = Number(online.expected_amount || 0);
-      const refreshedSavedComm = Number(online.commission || 0);
-
-      let refreshedRatePct = DEFAULT_ACQUIRING_RATE_PCT;
-      if (refreshedPosTotal > 0 && refreshedSavedComm > 0) {
-        refreshedRatePct = round2((refreshedSavedComm / refreshedPosTotal) * 100);
-      }
-      setOnlineCommissionRateInput(String(refreshedRatePct));
-
-      const computedComm = refreshedPosTotal > 0 ? Math.round((refreshedPosTotal * refreshedRatePct) / 100) : 0;
-      const initialComm = refreshedSavedComm > 0 ? Math.round(refreshedSavedComm) : computedComm;
-      setOnlineCommissionInput(initialComm > 0 ? String(initialComm) : '');
-
-      setOnlineComment('');
-      setLastUpdatedAt(new Date());
     } catch (e: any) {
       alert(`Не удалось сохранить онлайн-выручку: ${e?.message ?? e}`);
+      setOnlineSaving(false);
+      return;
+    }
+
+    if (activeWeekRef.current === requestedWeek) {
+      const diff = amount + comm - posTotal;
+      const status: OnlineRecoRow['status'] =
+        Math.abs(diff) <= TOLERANCE ? 'match' : diff < 0 ? 'shortage' : 'overpay';
+      setOnlineRow((prev) =>
+        prev ? { ...prev, manual_amount: amount, commission: comm, diff, status } : prev,
+      );
+      setOnlineComment('');
+    }
+
+    try {
+      await new Promise((r) => setTimeout(r, DELAY_REFETCH_MS));
+      const online = await fetchOnlineOverview(requestedWeek);
+      if (activeWeekRef.current !== requestedWeek) return;
+
+      setOnlineRow(online);
+      const onlineForm = getOnlineFormValues(online);
+      setOnlineInput(onlineForm.amount);
+      setOnlineCommissionRateInput(onlineForm.ratePct);
+      setOnlineCommissionInput(onlineForm.commission);
+    } catch (e: any) {
+      if (activeWeekRef.current === requestedWeek) {
+        alert(`Онлайн-выручка сохранена, но данные не удалось перечитать: ${e?.message ?? e}`);
+      }
     } finally {
       setOnlineSaving(false);
     }
   }
 
   /* ====================== render ====================== */
-
-  const currentRatePct =
-    onlineCommissionRateInput.trim() !== ''
-      ? parsePercent(onlineCommissionRateInput)
-      : DEFAULT_ACQUIRING_RATE_PCT;
 
   return (
     <div className="text-slate-50">
@@ -576,19 +543,17 @@ export default function Page() {
             <PiggyBank className="h-5 w-5 text-white" />
           </div>
           <div>
-            <div className="text-2xl font-bold tracking-tight text-slate-50">
-              Сверка недельной выручки
-            </div>
-            <div className="mt-0.5 text-[12px] text-cyan-300/50">
-              Наличные, расходы и онлайн-оплаты по филиалам
+            <div className="text-2xl font-bold tracking-tight text-slate-50">Наличные в кассах</div>
+            <div className="mt-0.5 text-[12px] text-cyan-300/60">
+              Сколько должно быть в каждом филиале по данным учёта
             </div>
           </div>
         </div>
 
-        {/* Навигация по неделям */}
+        {/* Навигация по периодам сверки */}
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white ring-1 ring-sky-100 px-4 py-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
           <button
-            onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, -1))}
+            onClick={() => selectWeek(shiftReconciliationPeriodISO(activeWeekRef.current, -1))}
             className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" /> Предыдущая
@@ -597,17 +562,18 @@ export default function Page() {
           <div className="text-center">
             <div className="text-[13px] font-semibold text-slate-800">{weekLabel}</div>
             <button
-              onClick={() => setWeekStartDate(new Date(getWeekStartMonday(new Date())))}
+              onClick={() => selectWeek(getReconciliationPeriodStart(new Date()))}
               className="mt-0.5 text-[11px] font-medium text-cyan-600 hover:text-cyan-800 transition-colors"
             >
-              Текущая неделя
+              Текущий период
             </button>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setWeekStartDate((prev) => shiftWeeks(prev, +1))}
-              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors"
+              onClick={() => selectWeek(shiftReconciliationPeriodISO(activeWeekRef.current, +1))}
+              disabled={weekStartISO >= currentWeekStartISO}
+              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             >
               Следующая <ArrowRight className="h-4 w-4" />
             </button>
@@ -621,194 +587,64 @@ export default function Page() {
           </div>
         </div>
 
-        {/* поиск + легенда */}
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:w-96">
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Поиск филиала…"
-              className="w-full rounded-xl bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
-            />
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        {err && (
+          <div className="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-900 ring-1 ring-rose-200">
+            <div className="font-semibold">Данные не обнулены — загрузка не выполнена полностью.</div>
+            <div className="mt-1">{err}</div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <LegendChip color="emerald" label={`Совпадает: ${cashSummary.match}`} />
-            <LegendChip color="red" label={`Недостача: ${cashSummary.shortage}`} />
-            <LegendChip color="yellow" label={`Переплата: ${cashSummary.overpay}`} />
-          </div>
-        </div>
+        )}
 
-        {/* сводка по НАЛИЧНЫМ */}
-        <div className="mt-6 rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
-          <div className="mb-3 text-sm font-semibold text-slate-800">Наличные по филиалам</div>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
-            <StatBox
-              title="Должно (наличные)"
-              value={fmtKGS(cashSummary.should)}
-              subtitle="Авансы + доплаты (кэш) с учётом расходов"
-            />
-            <StatBox title="Факт (наличные)" value={fmtKGS(cashSummary.fact)} />
-            <StatBox
-              title="Δ Наличные"
-              value={fmtKGS(cashSummary.delta)}
-              tone={
-                cashSummary.delta < -TOLERANCE
-                  ? 'bad'
-                  : Math.abs(cashSummary.delta) <= TOLERANCE
-                  ? 'ok'
-                  : 'warn'
-              }
-            />
-            <div>
-              <div className="text-sm text-slate-700 mb-2">Совпадение по филиалам</div>
-              <div className="h-2 w-full rounded-full bg-slate-200/80 overflow-hidden">
+        {/* Быстрый обзор наличных по филиалам */}
+        <section className="mt-5 rounded-2xl bg-gradient-to-br from-cyan-500 via-sky-500 to-blue-600 p-5 text-white shadow-[0_12px_32px_rgba(14,165,233,0.28)] ring-1 ring-white/20">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50/80">
+            {isCurrentWeek ? 'Должно быть в кассах сейчас' : 'Должно было быть в кассах'}
+          </div>
+
+          {rows === null ? (
+            <div className="mt-4 rounded-xl bg-white/10 px-4 py-5 text-sm text-cyan-50/80 ring-1 ring-white/15">
+              {loading ? 'Данные загружаются…' : 'Данные по наличным недоступны'}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="mt-4 rounded-xl bg-white/10 px-4 py-5 text-sm text-cyan-50/80 ring-1 ring-white/15">
+              Нет данных по филиалам.
+            </div>
+          ) : (
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {rows.map((row) => (
                 <div
-                  className="h-full bg-cyan-500"
-                  style={{ width: `${cashSummary.percent}%` }}
-                />
-              </div>
-              <div className="mt-1 text-right text-[11px] text-slate-500">{cashSummary.percent.toFixed(0)}%</div>
-              <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                <Building2 className="h-3.5 w-3.5" />
-                Обновлено: {lastUpdatedAt ? lastUpdatedAt.toLocaleString('ru-RU') : '—'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* блок по РАСХОДАМ (наличные) */}
-        <div className="mt-6 rounded-2xl p-5 bg-white ring-1 ring-rose-200 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-200">
-                <AlertTriangle className="h-4 w-4" />
-              </span>
-              Расходы по филиалам (наличные)
-            </div>
-            <div className="text-[11px] text-slate-500">Все расходы, которые уже вычтены из кэша в расчёте «Должно».</div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
-            <StatBox
-              title="Итого расходы (кэш)"
-              value={fmtKGS(expensesSummary.total)}
-              subtitle="Все филиалы за выбранную неделю"
-              tone={expensesSummary.total > 0 ? 'warn' : 'ok'}
-            />
-            <div className="sm:col-span-3 flex flex-col gap-2">
-              {expensesSummary.list.length === 0 ? (
-                <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 px-3 py-2 text-xs text-slate-500">
-                  Нет расходов по филиалам за эту неделю.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {expensesSummary.list.map((item) => (
-                    <div
-                      key={item.branch_id}
-                      className="rounded-xl bg-rose-50 ring-1 ring-rose-200 px-3 py-2 flex items-center justify-between text-sm"
-                    >
-                      <div className="font-medium text-slate-900">{item.branch_name}</div>
-                      <div className="font-semibold text-rose-700">{fmtKGS(item.cash_expenses)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* блок по ОНЛАЙН-оплатам (вся сеть) */}
-        <div className="mt-6 rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-teal-100 text-teal-700 ring-1 ring-teal-200">
-                <PiggyBank className="h-4 w-4" />
-              </span>
-              Онлайн-оплаты (вся сеть)
-            </div>
-            <div className="text-[11px] text-slate-500">Сводка по онлайн-платежам за выбранную неделю.</div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
-            <StatBox
-              title="По POS (онлайн)"
-              value={fmtKGS(onlineSummary.posTotal)}
-              subtitle="Сумма онлайн-платежей в CRM"
-            />
-            <StatBox
-              title="По банку (грязными)"
-              value={fmtKGS(onlineSummary.bankIncoming)}
-              subtitle="Платежи клиентов по выписке"
-            />
-            <StatBox
-              title="Комиссия банка"
-              value={fmtKGS(onlineSummary.bankCommission)}
-              subtitle={`Ставка: ${round2(currentRatePct).toString()}% (по умолчанию ${DEFAULT_ACQUIRING_RATE_PCT}%)`}
-              tone={onlineSummary.bankCommission > 0 ? 'warn' : undefined}
-            />
-            <StatBox
-              title="Δ POS vs банк"
-              value={fmtKGS(onlineSummary.delta)}
-              tone={
-                Math.abs(onlineSummary.delta) <= TOLERANCE
-                  ? 'ok'
-                  : onlineSummary.delta < -TOLERANCE
-                  ? 'bad'
-                  : 'warn'
-              }
-            />
-          </div>
-
-          {/* POS (онлайн) по филиалам */}
-          <div className="mt-5">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-800">Оплата по POS терминалам (онлайн) по филиалам</div>
-              <div className="text-[11px] text-slate-500">Итого: {fmtKGS(onlinePosByBranch.total)}</div>
-            </div>
-
-            {onlinePosByBranch.list.length === 0 ? (
-              <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 px-3 py-2 text-xs text-slate-500">
-                Нет POS-онлайна по филиалам за эту неделю.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {onlinePosByBranch.list.map((item) => (
-                  <div
-                    key={item.branch_id}
-                    className="rounded-xl bg-sky-50 ring-1 ring-sky-200 px-3 py-2 flex items-center justify-between text-sm"
-                  >
-                    <div className="font-medium text-slate-900">{item.branch_name}</div>
-                    <div className="font-semibold text-slate-900">{fmtKGS(item.pos_amount)}</div>
+                  key={`cash-overview:${row.branch_id}`}
+                  className="min-w-0 rounded-2xl bg-white/15 p-4 ring-1 ring-white/20 backdrop-blur-sm"
+                >
+                  <div className="truncate text-xs font-medium text-cyan-50/85" title={row.branch_name}>
+                    {row.branch_name}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+                  <div className="mt-2 whitespace-nowrap text-xl font-bold tracking-tight text-white xl:text-2xl">
+                    {fmtKGS(row.cash_to_handover)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* карточки по филиалам */}
         <div className="mt-7">
-          {err && (
-            <div className="mb-4 rounded-xl bg-rose-50 text-rose-800 ring-1 ring-rose-200 px-4 py-3">
-              {err}
-            </div>
-          )}
-          {loading && (
+          {loading && rows === null && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {[...Array(6)].map((_, i) => (
+              {[...Array(5)].map((_, i) => (
                 <SkeletonCard key={i} />
               ))}
             </div>
           )}
-          {!loading && filtered.length === 0 && <EmptyState />}
-          {!loading && filtered.length > 0 && (
+          {!loading && rows !== null && rows.length === 0 && <EmptyState />}
+          {!loading && rows !== null && rows.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {filtered.map((r) => (
+              {rows.map((r) => (
                 <BranchCard
-                  key={r.branch_id}
+                  key={`${r.week_start}:${r.branch_id}`}
                   row={r}
-                  canFix={owner}
+                  canEdit={owner}
+                  isCurrentPeriod={isCurrentWeek}
                   lastFixedAt={lastFixedAt[r.branch_id]}
                   onSave={saveManual}
                   onFix={fixTransfer}
@@ -819,50 +655,44 @@ export default function Page() {
           )}
         </div>
 
-        {/* Онлайн-оплаты за неделю */}
-        {onlineRow && (
-          <div className="mt-10">
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-100">
-              <PiggyBank className="h-4 w-4 text-cyan-300" />
-              Онлайн-оплаты за неделю
-            </h2>
-            <OnlineCard
-              row={onlineRow}
-              inputAmount={onlineInput}
-              inputCommission={onlineCommissionInput}
-              inputCommissionRate={onlineCommissionRateInput}
-              comment={onlineComment}
-              onChangeAmount={setOnlineInput}
-              onChangeCommission={handleOnlineCommissionAmountChange}
-              onChangeCommissionRate={handleOnlineCommissionRateChange}
-              onChangeComment={setOnlineComment}
-              onSave={saveOnline}
-              saving={onlineSaving}
-            />
-          </div>
-        )}
-
-        {/* Переплаты */}
-        {!loading && cashSummary.overList.length > 0 && (
-          <div className="mt-10">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-amber-400" />
-              <div className="text-sm text-slate-100">
-                Переплаты (наличные) • всего {cashSummary.overList.length} • сумма {fmtKGS(cashSummary.overpayTotal)}
+        {/* Вторичная банковская сверка — не влияет на наличные в кассах */}
+        {!loading && (onlineErr || (onlineRow && onlineRow.week_start === weekStartISO)) && (
+          <details className="group mt-8 overflow-hidden rounded-2xl bg-white text-slate-900 ring-1 ring-slate-200 shadow-[0_8px_30px_rgba(15,23,42,0.35)]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 marker:content-none">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Дополнительно: онлайн-оплаты и банк</div>
+                <div className="mt-0.5 text-xs text-slate-500">Не влияет на сумму наличных в кассах</div>
               </div>
-            </div>
-            <div className="rounded-2xl ring-1 ring-amber-200 bg-white p-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
-              {cashSummary.overList.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl bg-amber-50 ring-1 ring-amber-200 px-3 py-2 flex items-center justify-between text-sm"
-                >
-                  <div className="font-medium text-slate-900">{item.name}</div>
-                  <div className="font-semibold text-amber-700">{fmtKGS(item.delta)}</div>
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-cyan-700">
+                <span className="group-open:hidden">Открыть</span>
+                <span className="hidden group-open:inline">Скрыть</span>
+                <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+              </span>
+            </summary>
+            <div className="border-t border-slate-200 p-4">
+              {onlineErr && (
+                <div className="mb-4 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-800 ring-1 ring-rose-200">
+                  {onlineErr}
                 </div>
-              ))}
+              )}
+              {onlineRow && onlineRow.week_start === weekStartISO && (
+                <OnlineCard
+                  row={onlineRow}
+                  inputAmount={onlineInput}
+                  inputCommission={onlineCommissionInput}
+                  inputCommissionRate={onlineCommissionRateInput}
+                  comment={onlineComment}
+                  onChangeAmount={setOnlineInput}
+                  onChangeCommission={handleOnlineCommissionAmountChange}
+                  onChangeCommissionRate={handleOnlineCommissionRateChange}
+                  onChangeComment={setOnlineComment}
+                  onSave={saveOnline}
+                  saving={onlineSaving}
+                  canEdit={owner && !onlineSaving}
+                />
+              )}
             </div>
-          </div>
+          </details>
         )}
       </div>
 
@@ -944,78 +774,49 @@ function SoftGhostBtn({
   );
 }
 
-function LegendChip({ color, label }: { color: 'emerald' | 'red' | 'yellow'; label: string }) {
-  const map = {
-    emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    red: 'bg-red-50 text-red-700 ring-red-200',
-    yellow: 'bg-amber-50 text-amber-700 ring-amber-200',
-  } as const;
-  const icon =
-    color === 'emerald' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />;
-  return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 ring-1 ${map[color]}`}>
-      {icon}
-      {label}
-    </span>
-  );
-}
-
-function StatBox({
-  title,
-  value,
-  subtitle,
-  tone,
-}: {
-  title: string;
-  value: string;
-  subtitle?: string;
-  tone?: 'ok' | 'warn' | 'bad';
-}) {
-  const ring =
-    tone === 'bad'
-      ? 'ring-rose-200'
-      : tone === 'warn'
-      ? 'ring-amber-200'
-      : tone === 'ok'
-      ? 'ring-emerald-200'
-      : 'ring-sky-100';
-
-  return (
-    <div className={`rounded-2xl p-4 bg-white ring-1 ${ring} shadow-[0_8px_30px_rgba(15,23,42,0.45)]`}>
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{title}</div>
-      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
-      {subtitle && <div className="mt-1 text-[11px] text-slate-500">{subtitle}</div>}
-    </div>
-  );
-}
-
 function BranchCard({
   row,
-  canFix,
+  canEdit,
+  isCurrentPeriod,
   lastFixedAt,
   onSave,
   onFix,
   onHistory,
 }: {
   row: RecoRow;
-  canFix: boolean;
+  canEdit: boolean;
+  isCurrentPeriod: boolean;
   lastFixedAt?: string;
-  onSave: (branchId: number, amountInput: string, comment?: string) => Promise<void>;
+  onSave: (
+    branchId: number,
+    amountInput: string,
+    depositFeeInput: string,
+    comment?: string,
+  ) => Promise<void>;
   onFix: (branchId: number, comment?: string) => Promise<void>;
   onHistory: (branchId: number, branchName: string) => void;
 }) {
-  const [input, setInput] = useState(row.manual_amount > 0 ? String(Math.round(row.manual_amount)) : '');
+  const [input, setInput] = useState(row.has_manual ? String(Math.round(row.manual_amount)) : '');
+  const [depositFeeInput, setDepositFeeInput] = useState(
+    row.deposit_fee > 0 ? String(Math.round(row.deposit_fee)) : '',
+  );
   const [comment, setComment] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [fixing, setFixing] = useState(false);
 
-  const percent =
-    row.expected_amount > 0
-      ? Math.min(100, Math.max(0, (row.manual_amount / row.expected_amount) * 100))
-      : 0;
+  useEffect(() => {
+    setInput(row.has_manual ? String(Math.round(row.manual_amount)) : '');
+    setDepositFeeInput(row.deposit_fee > 0 ? String(Math.round(row.deposit_fee)) : '');
+    setComment('');
+  }, [row.branch_id, row.week_start, row.manual_amount, row.deposit_fee, row.has_manual]);
 
   const theme =
     {
+      pending: {
+        chip: 'bg-slate-100 text-slate-700 ring-slate-200',
+        label: 'Факт не внесён',
+        icon: <Clock className="h-4 w-4" />,
+      },
       match: {
         chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
         label: 'Совпадает',
@@ -1038,15 +839,17 @@ function BranchCard({
     };
 
   async function handleSave() {
+    if (!canEdit) return;
     try {
       setSaving(true);
-      await onSave(row.branch_id, input, comment);
+      await onSave(row.branch_id, input, depositFeeInput, comment);
     } finally {
       setSaving(false);
     }
   }
 
   async function handleFix() {
+    if (!canEdit || !row.has_manual) return;
     try {
       setFixing(true);
       await onFix(row.branch_id, comment);
@@ -1056,80 +859,136 @@ function BranchCard({
   }
 
   return (
-    <div className="rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="font-semibold text-slate-900">{row.branch_name}</div>
-        <div className="flex items-center gap-2">
-          {lastFixedAt && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-              <History className="h-3.5 w-3.5" />
-              {new Date(lastFixedAt).toLocaleString('ru-RU')}
-            </span>
-          )}
-          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ring-1 ${theme.chip}`}>
-            {theme.icon}
-            {theme.label}
+    <div className="rounded-2xl bg-white p-5 text-slate-900 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+      <div className="text-base font-semibold text-slate-900">{row.branch_name}</div>
+
+      <div className="mt-4 rounded-2xl bg-gradient-to-br from-cyan-50 to-sky-100 p-4 ring-1 ring-cyan-200">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-800/70">
+          {isCurrentPeriod ? 'Должно быть в кассе сейчас' : 'Должно было быть в кассе'}
+        </div>
+        <div className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
+          {fmtKGS(row.cash_to_handover)}
+        </div>
+        <div className="mt-1 text-[11px] text-slate-600">По учёту выбранного кассового периода</div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200 min-[420px]:grid-cols-3">
+        <MiniKV k="Продажи наличными" v={fmtKGS(row.cash_sales)} />
+        <MiniKV k="Возвраты" v={fmtKGS(row.cash_refunds)} className="text-rose-600" />
+        <MiniKV k="Расходы" v={fmtKGS(row.cash_expenses)} className="text-rose-600" />
+      </div>
+
+      <details className="group mt-4 overflow-hidden rounded-xl bg-slate-50 ring-1 ring-slate-200">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 marker:content-none">
+          <span className="text-xs font-medium text-slate-600">Сверка внесения в банк</span>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-cyan-700">
+            <span className="group-open:hidden">Открыть</span>
+            <span className="hidden group-open:inline">Скрыть</span>
+            <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
           </span>
+        </summary>
+
+        <div className="border-t border-slate-200 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="text-[11px] text-slate-500">Статус сверки</span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ring-1 ${theme.chip}`}>
+              {theme.icon}
+              {theme.label}
+            </span>
+          </div>
+
+          {lastFixedAt && (
+            <div className="mb-3 flex items-center gap-1 text-[11px] text-slate-500">
+              <History className="h-3.5 w-3.5" />
+              Последняя фиксация: {new Date(lastFixedAt).toLocaleString('ru-RU')}
+            </div>
+          )}
+
+          {row.deposit_fee > 0 && (
+            <div className="mb-3 rounded-xl bg-sky-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-sky-200">
+              После комиссии {fmtKGS(row.deposit_fee)} на счёт должно поступить{' '}
+              <b>{fmtKGS(row.expected_amount)}</b>.
+            </div>
+          )}
+
+          {row.has_manual && (
+            <div className="mb-3 grid grid-cols-2 gap-3">
+              <MiniKV k="Фактически поступило" v={fmtKGS(row.manual_amount)} />
+              <MiniKV
+                k="Разница"
+                v={fmtKGS(row.diff)}
+                className={
+                  row.status === 'shortage'
+                    ? 'text-red-600'
+                    : row.status === 'overpay'
+                      ? 'text-amber-600'
+                      : 'text-slate-900'
+                }
+              />
+            </div>
+          )}
+
+          {canEdit ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label>
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Поступило на счёт, сом
+                  </span>
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="После комиссии внесения"
+                    inputMode="decimal"
+                    className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
+                  />
+                </label>
+                <label>
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Комиссия внесения, сом
+                  </span>
+                  <input
+                    value={depositFeeInput}
+                    onChange={(e) => setDepositFeeInput(e.target.value)}
+                    placeholder="0, если комиссии не было"
+                    inputMode="decimal"
+                    className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
+                  />
+                </label>
+              </div>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Комментарий"
+                rows={2}
+                className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
+              />
+              <SoftPrimaryBtn onClick={handleSave} disabled={saving}>
+                {saving ? 'Сохраняю…' : 'Сохранить факт и комиссию'}
+              </SoftPrimaryBtn>
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-500">Изменение сверки доступно владельцу и управляющей.</div>
+          )}
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {canEdit ? (
+              <SoftPrimaryBtn
+                onClick={handleFix}
+                disabled={!row.has_manual || fixing}
+                title={!row.has_manual ? 'Сначала сохраните факт' : ''}
+              >
+                {fixing ? 'Фиксирую…' : 'Зафиксировать'}
+              </SoftPrimaryBtn>
+            ) : (
+              <div />
+            )}
+            <SoftGhostBtn onClick={() => onHistory(row.branch_id, row.branch_name)}>
+              <History className="h-4 w-4" /> История
+            </SoftGhostBtn>
+          </div>
         </div>
-      </div>
-
-      {/* Numbers */}
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <MiniKV k="Должно (кэш)" v={fmtKGS(row.expected_amount)} />
-        <MiniKV k="Факт (кэш)" v={fmtKGS(row.manual_amount)} />
-        <MiniKV
-          k="Δ"
-          v={fmtKGS(row.diff)}
-          className={
-            row.status === 'shortage' ? 'text-red-600' : row.status === 'overpay' ? 'text-amber-600' : 'text-slate-900'
-          }
-        />
-      </div>
-
-      {/* Progress */}
-      <div className="mt-3">
-        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-          <div
-            className="h-full bg-cyan-500"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-        <div className="mt-1 text-right text-[11px] text-slate-500">{percent.toFixed(0)}%</div>
-      </div>
-
-      {/* Inputs */}
-      <div className="mt-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Факт, сом (наличные)"
-            inputMode="numeric"
-            className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
-          />
-          <SoftPrimaryBtn onClick={handleSave} disabled={saving}>
-            {saving ? 'Сохраняю…' : 'Сохранить'}
-          </SoftPrimaryBtn>
-        </div>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="Комментарий"
-          rows={2}
-          className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
-        />
-      </div>
-
-      {/* Actions */}
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <SoftPrimaryBtn onClick={handleFix} disabled={!canFix || fixing} title={canFix ? '' : 'Доступ только владельцу'}>
-          {fixing ? 'Фиксирую…' : 'Зафиксировать'}
-        </SoftPrimaryBtn>
-        <SoftGhostBtn onClick={() => onHistory(row.branch_id, row.branch_name)}>
-          <History className="h-4 w-4" /> История
-        </SoftGhostBtn>
-      </div>
+      </details>
     </div>
   );
 }
@@ -1155,6 +1014,7 @@ function OnlineCard({
   onChangeComment,
   onSave,
   saving,
+  canEdit,
 }: {
   row: OnlineRecoRow;
   inputAmount: string;
@@ -1167,24 +1027,41 @@ function OnlineCard({
   onChangeComment: (v: string) => void;
   onSave: () => Promise<void> | void;
   saving: boolean;
+  canEdit: boolean;
 }) {
-  const percent =
-    row.expected_amount > 0
-      ? Math.min(100, Math.max(0, (row.manual_amount / row.expected_amount) * 100))
-      : 0;
-
-  const theme =
-    {
-      match: { chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200', label: 'Совпадает' },
-      shortage: { chip: 'bg-rose-50 text-rose-700 ring-rose-200', label: 'Недостача' },
-      overpay: { chip: 'bg-amber-50 text-amber-700 ring-amber-200', label: 'Переплата' },
-    }[row.status] || { chip: 'bg-slate-100 text-slate-700 ring-slate-200', label: '—' };
-
   const ratePct =
     inputCommissionRate.trim() !== '' ? parsePercent(inputCommissionRate) : DEFAULT_ACQUIRING_RATE_PCT;
 
   const expectedCommissionHint =
     row.expected_amount > 0 ? fmtKGS((row.expected_amount * ratePct) / 100) : fmtKGS(0);
+
+  const bankNet = inputAmount.trim() !== '' ? parseMoney(inputAmount) : Number(row.manual_amount || 0);
+  const bankCommission =
+    inputCommission.trim() !== ''
+      ? parseMoney(inputCommission)
+      : Number(row.commission || Math.round((row.expected_amount * ratePct) / 100));
+  const bankGross = bankNet + bankCommission;
+  const liveDiff = bankGross - row.expected_amount;
+  const hasBankFact = row.status !== 'pending' || inputAmount.trim() !== '';
+  const liveStatus: OnlineRecoRow['status'] = !hasBankFact
+    ? 'pending'
+    : Math.abs(liveDiff) <= TOLERANCE
+      ? 'match'
+      : liveDiff < 0
+        ? 'shortage'
+        : 'overpay';
+  const percent =
+    hasBankFact && row.expected_amount > 0
+      ? Math.min(100, Math.max(0, (bankGross / row.expected_amount) * 100))
+      : 0;
+
+  const theme =
+    {
+      pending: { chip: 'bg-slate-100 text-slate-700 ring-slate-200', label: 'Факт не внесён' },
+      match: { chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200', label: 'Совпадает' },
+      shortage: { chip: 'bg-rose-50 text-rose-700 ring-rose-200', label: 'Недостача' },
+      overpay: { chip: 'bg-amber-50 text-amber-700 ring-amber-200', label: 'Переплата' },
+    }[liveStatus];
 
   return (
     <div className="rounded-2xl p-5 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] text-slate-900">
@@ -1193,7 +1070,7 @@ function OnlineCard({
         <div>
           <div className="text-sm font-semibold text-slate-900">Онлайн-оплаты (все филиалы)</div>
           <div className="mt-1 text-[11px] text-slate-500">
-            Неделя: {row.week_start} — {row.week_end}
+            Период: {row.week_start} — {row.week_end}
           </div>
         </div>
         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ring-1 ${theme.chip}`}>
@@ -1202,17 +1079,28 @@ function OnlineCard({
       </div>
 
       {/* Numbers */}
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <MiniKV k="Должно по POS" v={fmtKGS(row.expected_amount)} />
-        <MiniKV k="Факт по банку" v={fmtKGS(row.manual_amount)} />
-        <MiniKV k="Комиссия" v={fmtKGS(row.commission)} />
+        <MiniKV k="На счёт (чистыми)" v={hasBankFact ? fmtKGS(bankNet) : 'Не внесено'} />
+        <MiniKV k="Комиссия" v={fmtKGS(bankCommission)} />
+        <MiniKV k="До комиссии" v={hasBankFact ? fmtKGS(bankGross) : '—'} />
         <MiniKV
-          k="Δ (грязная)"
-          v={fmtKGS(row.diff)}
+          k="Δ POS vs до комиссии"
+          v={hasBankFact ? fmtKGS(liveDiff) : '—'}
           className={
-            row.status === 'shortage' ? 'text-red-600' : row.status === 'overpay' ? 'text-amber-600' : 'text-slate-900'
+            liveStatus === 'shortage' ? 'text-red-600' : liveStatus === 'overpay' ? 'text-amber-600' : 'text-slate-900'
           }
         />
+      </div>
+      <div className="mt-2 rounded-xl bg-sky-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-sky-200">
+        {hasBankFact ? (
+          <>
+            {fmtKGS(bankNet)} поступило на счёт + {fmtKGS(bankCommission)} комиссии ={' '}
+            <b>{fmtKGS(bankGross)}</b> до комиссии; сравниваем с {fmtKGS(row.expected_amount)} по POS.
+          </>
+        ) : (
+          <>Факт по банковской выписке ещё не внесён — недостача пока не рассчитывается.</>
+        )}
       </div>
 
       {/* Progress */}
@@ -1223,20 +1111,25 @@ function OnlineCard({
             style={{ width: `${percent}%` }}
           />
         </div>
-        <div className="mt-1 text-right text-[11px] text-slate-500">{percent.toFixed(0)}%</div>
+        <div className="mt-1 text-right text-[11px] text-slate-500">
+          {hasBankFact ? `${percent.toFixed(0)}%` : 'Ожидается ввод факта'}
+        </div>
       </div>
 
       {/* Inputs */}
       <div className="mt-4 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Факт по банку, сом</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+              Поступило на счёт после комиссии, сом
+            </div>
             <input
               value={inputAmount}
               onChange={(e) => onChangeAmount(e.target.value)}
               placeholder="Сколько реально пришло на счёт"
               inputMode="numeric"
-              className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
+              disabled={!canEdit}
+              className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
             />
           </div>
 
@@ -1252,7 +1145,8 @@ function OnlineCard({
                   onChange={(e) => onChangeCommissionRate(e.target.value)}
                   placeholder={String(DEFAULT_ACQUIRING_RATE_PCT)}
                   inputMode="decimal"
-                  className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
+                  disabled={!canEdit}
+                  className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
                 />
               </div>
 
@@ -1263,7 +1157,8 @@ function OnlineCard({
                   onChange={(e) => onChangeCommission(e.target.value)}
                   placeholder="Авто от ставки"
                   inputMode="numeric"
-                  className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
+                  disabled={!canEdit}
+                  className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
                 />
               </div>
             </div>
@@ -1281,14 +1176,16 @@ function OnlineCard({
             onChange={(e) => onChangeComment(e.target.value)}
             rows={2}
             placeholder="Например: «Много возвратов по онлайну»"
-            className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
+            disabled={!canEdit}
+            className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
           />
         </div>
+        {!canEdit && <div className="text-[11px] text-slate-500">Изменение онлайн-сверки доступно владельцу и управляющей.</div>}
       </div>
 
       {/* Actions */}
       <div className="mt-4 flex justify-end">
-        <SoftPrimaryBtn onClick={onSave} disabled={saving}>
+        <SoftPrimaryBtn onClick={onSave} disabled={!canEdit || saving}>
           {saving ? 'Сохраняю…' : 'Сохранить онлайн-выручку'}
         </SoftPrimaryBtn>
       </div>
@@ -1299,7 +1196,7 @@ function OnlineCard({
 function EmptyState() {
   return (
     <div className="rounded-2xl bg-white ring-1 ring-sky-100 p-10 text-center text-slate-500 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
-      Нет филиалов по фильтру.
+      Нет данных по филиалам.
     </div>
   );
 }

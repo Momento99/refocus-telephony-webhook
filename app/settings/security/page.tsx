@@ -69,7 +69,7 @@ export default function SecurityPage() {
     const t = toast.loading('Отправляю ссылку для сброса пароля…');
     try {
       const redirectTo =
-        typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
+        typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
       const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
       if (error) throw error;
       toast.success(`Ссылка отправлена на ${email}`);

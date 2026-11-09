@@ -6,13 +6,14 @@ import dynamic from 'next/dynamic';
 import type { EChartsOption } from 'echarts';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 import Link from 'next/link';
+import LensOnDemandCard from './LensOnDemandCard';
+import LensCostCard from './LensCostCard';
 import {
   AlertTriangle,
   BarChart3,
   Clipboard,
   Download,
   RefreshCw,
-  Search,
   Store,
   Package,
   Truck,
@@ -166,6 +167,87 @@ function clampNum(n: number, min: number, max: number, fallback: number) {
 
 function nf(n: number) {
   return Number.isFinite(+n) ? Number(n).toLocaleString('ru-RU') : '0';
+}
+
+// сумма в сомах
+function som(n: number) {
+  return `${nf(Math.round(n))} сом`;
+}
+
+// Порядок видов в левом блоке: стандартные → хамелеоны → асферика → поликарбонат → миопия.
+// Используется отдельно внутри групп "постоянно закупаем" и "под заказ".
+const FAMILY_ORDER: string[] = [
+  'white', 'ar', 'bb',
+  'chame_black', 'chame_brown', 'chame_green', 'chame_blue', 'chame_purple',
+  'asph_standard', 'asph_ar', 'asph_bb',
+  'pc_159_hmc', 'myopia_control',
+];
+function familyOrderIdx(k: string) {
+  const i = FAMILY_ORDER.indexOf(k);
+  return i < 0 ? 999 : i;
+}
+
+// Кнопка вида линзы в левом блоке (презентационная). accent: 'stock' (постоянно
+// закупаем, зелёный) или 'order' (под заказ, янтарный).
+function FamilyButton({
+  label,
+  indexText,
+  toBuyText,
+  toBuyCount,
+  costText,
+  demandOnly,
+  active,
+  accent,
+  onSelect,
+}: {
+  label: string;
+  indexText?: string | null;
+  toBuyText: string;
+  toBuyCount: number;
+  costText: string | null;
+  demandOnly?: boolean;
+  active: boolean;
+  accent: 'stock' | 'order';
+  onSelect: () => void;
+}) {
+  const activeCls =
+    accent === 'stock' ? 'border-emerald-300 bg-emerald-50/70 shadow-sm' : 'border-amber-300 bg-amber-50/70 shadow-sm';
+  const idleCls =
+    accent === 'stock'
+      ? 'border-emerald-200/70 bg-white/80 hover:bg-emerald-50/40'
+      : 'border-amber-200/70 bg-white/80 hover:bg-amber-50/40';
+  // 0 к закупке — приглушённый чип, чтобы "ничего не надо" не кричало
+  const chipCls =
+    toBuyCount <= 0
+      ? 'bg-slate-50 text-slate-400 ring-slate-200'
+      : accent === 'stock'
+      ? 'bg-emerald-100 text-emerald-800 ring-emerald-300'
+      : 'bg-amber-100 text-amber-800 ring-amber-300';
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={['w-full rounded-2xl border px-3 py-2 text-left transition', active ? activeCls : idleCls].join(' ')}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-slate-900">
+            {label}
+            {indexText && <span className="ml-1.5 text-[10px] font-normal text-slate-400">{indexText}</span>}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            {costText && <span className="text-[11px] font-semibold text-slate-600">{costText}</span>}
+            {demandOnly && (
+              <span className="rounded-full bg-sky-100 px-1.5 text-[9px] font-semibold uppercase tracking-wide text-sky-700 ring-1 ring-sky-200">
+                только спрос
+              </span>
+            )}
+          </div>
+        </div>
+        <div className={`shrink-0 rounded-xl px-2 py-1 text-xs font-semibold ring-1 ${chipCls}`}>{toBuyText}</div>
+      </div>
+    </button>
+  );
 }
 
 function onlyDateISO(d: Date) {
@@ -1239,6 +1321,149 @@ function buildSummarySheet(opts: SummarySheetOpts): any {
   return ws;
 }
 
+/* ====== Под заказ: ВСЕ виды в одной таблице (один лист, один файл) ====== */
+
+type OnDemandAllGroup = {
+  family: string; // ключ семейства (CHAME_GREEN, ASPH_AR, ...)
+  byDiopter: { sph: number; qty: number }[];
+  totalQty: number;
+};
+
+// Лист заказа для поставщика (китайская фабрика): только английский, без бренда,
+// кратко. Колонки: LENS TYPE | SPH | QTY. Заголовок показывает число видов.
+function buildOnDemandAllSheet(opts: { XLSX: any; groups: OnDemandAllGroup[]; exportDateISO: string }): any {
+  const X = opts.XLSX;
+  const C = REFOCUS_PALETTE;
+  const FD = REFOCUS_FONT_DISPLAY;
+  const NCOL = 3;
+  const blank = ['', '', ''];
+  const multi = opts.groups.length > 1;
+
+  const aoa: any[][] = [];
+  const push = (row: any[]) => {
+    aoa.push(row);
+    return aoa.length; // 1-based индекс строки
+  };
+
+  const totalAll = opts.groups.reduce((a, g) => a + g.totalQty, 0);
+  const typeWord = opts.groups.length === 1 ? 'type' : 'types';
+
+  const TITLE = push(['LENS ORDER', '', '']);
+  const SUBTITLE = push([`${opts.groups.length} ${typeWord} · ${totalAll} pcs · ${opts.exportDateISO}`, '', '']);
+  const SPC1 = push([...blank]);
+  const HDR = push(['LENS TYPE', 'SPH', 'QTY']);
+
+  const dataRows: number[] = [];
+  const subtotalRows: number[] = [];
+  for (const g of opts.groups) {
+    const label = vendorFamilyLabel(g.family);
+    for (const d of g.byDiopter) {
+      dataRows.push(push([label, fmtSph(d.sph), d.qty]));
+    }
+    if (multi) subtotalRows.push(push([`${label} — subtotal`, '', g.totalQty]));
+  }
+
+  const SPC2 = push([...blank]);
+  const GRAND = push(['TOTAL', '', totalAll]);
+  const LAST = GRAND;
+
+  const ws = X.utils.aoa_to_sheet(aoa);
+  ws['!ref'] = `A1:C${LAST}`;
+  ws['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 10 }];
+
+  rfSetRow(ws, TITLE, 32);
+  rfSetRow(ws, SUBTITLE, 18);
+  rfSetRow(ws, SPC1, 8);
+  rfSetRow(ws, HDR, 24);
+  for (const r of dataRows) rfSetRow(ws, r, 21);
+  for (const r of subtotalRows) rfSetRow(ws, r, 21);
+  rfSetRow(ws, SPC2, 8);
+  rfSetRow(ws, GRAND, 36);
+
+  addMerge(ws, TITLE, 1, TITLE, NCOL);
+  addMerge(ws, SUBTITLE, 1, SUBTITLE, NCOL);
+  for (const r of subtotalRows) addMerge(ws, r, 1, r, 2);
+  addMerge(ws, GRAND, 1, GRAND, 2);
+
+  applyRangeStyle(ws, 1, 1, LAST, NCOL, rfFill(C.Paper));
+
+  applyRangeStyle(ws, TITLE, 1, TITLE, NCOL, {
+    ...rfFill(C.Ink),
+    ...rfFont({ name: FD, size: 22, bold: true, color: C.White }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
+  applyRangeStyle(ws, SUBTITLE, 1, SUBTITLE, NCOL, {
+    ...rfFill(C.Paper),
+    ...rfFont({ size: 11, color: C.Slate }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+  });
+
+  for (let c = 1; c <= NCOL; c++) {
+    applyRangeStyle(ws, HDR, c, HDR, c, {
+      ...rfFill(C.Ink),
+      ...rfFont({ size: 11, bold: true, color: C.White }),
+      ...rfAlign({ h: c === 1 ? 'left' : 'right', v: 'center', indent: 1 }),
+      ...rfBorder({ bottom: C.Cyan, style: 'medium' }),
+    });
+  }
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const r = dataRows[i];
+    const bg = i % 2 === 0 ? C.White : C.Zebra;
+    applyRangeStyle(ws, r, 1, r, 1, {
+      ...rfFill(bg),
+      ...rfFont({ size: 12, bold: true, color: C.Ink }),
+      ...rfAlign({ h: 'left', v: 'center', indent: 1 }),
+      ...rfBorder({ bottom: C.Line }),
+    });
+    applyRangeStyle(ws, r, 2, r, 2, {
+      ...rfFill(bg),
+      ...rfFont({ size: 11, color: C.Slate }),
+      ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+      ...rfBorder({ bottom: C.Line }),
+    });
+    applyRangeStyle(ws, r, 3, r, 3, {
+      ...rfFill(bg),
+      ...rfFont({ size: 13, bold: true, color: C.Ink }),
+      ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+      ...rfBorder({ bottom: C.Line }),
+    });
+  }
+
+  for (const r of subtotalRows) {
+    applyRangeStyle(ws, r, 1, r, 2, {
+      ...rfFill(C.CyanSft),
+      ...rfFont({ size: 11, bold: true, color: C.CyanDk }),
+      ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+    });
+    applyRangeStyle(ws, r, 3, r, 3, {
+      ...rfFill(C.CyanSft),
+      ...rfFont({ size: 12, bold: true, color: C.CyanDk }),
+      ...rfAlign({ h: 'right', v: 'center', indent: 1 }),
+    });
+  }
+
+  applyRangeStyle(ws, GRAND, 1, GRAND, 2, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 12, bold: true, color: C.Mute }),
+    ...rfAlign({ h: 'left', v: 'center', indent: 2 }),
+  });
+  applyRangeStyle(ws, GRAND, 3, GRAND, 3, {
+    ...rfFill(C.Ink),
+    ...rfFont({ size: 24, bold: true, color: C.Cyan }),
+    ...rfAlign({ h: 'right', v: 'center' }),
+  });
+
+  for (const r of dataRows) rfSetNumFmt(ws, r, 3, r, 3, REFOCUS_NUMFMT_PCS);
+  for (const r of subtotalRows) rfSetNumFmt(ws, r, 3, r, 3, REFOCUS_NUMFMT_PCS);
+  rfSetNumFmt(ws, GRAND, 3, GRAND, 3, REFOCUS_NUMFMT_PCS);
+
+  ws['!pageSetup'] = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  ws['!pageMargins'] = { left: 0.5, right: 0.5, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 };
+
+  return ws;
+}
+
 /* ===================== types ===================== */
 
 type LensFamilyRow = {
@@ -1542,6 +1767,40 @@ function StatTile({ label, value, accent }: { label: string; value: number; acce
   );
 }
 
+// Денежная плитка: крупная сумма + подпись (кол-во / контекст).
+function MoneyTile({
+  label,
+  value,
+  sub,
+  accent,
+  muted,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent: 'teal' | 'sky' | 'amber';
+  muted?: boolean;
+}) {
+  const dot = accent === 'teal' ? 'bg-teal-400' : accent === 'sky' ? 'bg-sky-400' : 'bg-amber-400';
+  return (
+    <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
+      <div className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        <span className={['h-1.5 w-1.5 rounded-full', dot].join(' ')} />
+        {label}
+      </div>
+      <div
+        className={[
+          'mt-0.5 text-xl sm:text-2xl font-bold tabular-nums',
+          muted ? 'text-slate-300' : 'text-slate-900',
+        ].join(' ')}
+      >
+        {value}
+      </div>
+      {sub && <div className="mt-0.5 text-[11px] text-slate-400">{sub}</div>}
+    </div>
+  );
+}
+
 // Русские подписи статусов партии (англ. value остаётся в данных/фильтре)
 const STATUS_LABEL_RU: Record<string, string> = {
   received: 'Прибыло',
@@ -1712,6 +1971,11 @@ export default function LensProcurementPage() {
   const [toBuyTotals, setToBuyTotals] = React.useState<Record<string, number>>({});
   const [loadingToBuyTotals, setLoadingToBuyTotals] = React.useState(false);
 
+  // Мета семейства: флаг "под заказ" + закупочная цена (для группировки и суммы)
+  // ключ — lowerKey(family); cost в сомах за линзу (null = не задана)
+  const [familyMeta, setFamilyMeta] = React.useState<Record<string, { onDemand: boolean; cost: number | null; index: string | null; demandOnly: boolean }>>({});
+  const [familyMetaLoaded, setFamilyMetaLoaded] = React.useState(false);
+
   // locations
   const [locations, setLocations] = React.useState<LocationRow[]>([]);
   const [loadingLocations, setLoadingLocations] = React.useState(false);
@@ -1723,9 +1987,6 @@ export default function LensProcurementPage() {
   // строки закупа
   const [rows, setRows] = React.useState<ProcRow[]>([]);
   const [loadingRows, setLoadingRows] = React.useState(false);
-
-  // поиск слева
-  const [q, setQ] = React.useState('');
 
   // вкладка справа
   const [tab, setTab] = React.useState<'to_buy' | 'stock' | 'transit'>('to_buy');
@@ -1976,10 +2237,34 @@ export default function LensProcurementPage() {
     }
   }, [mounted]);
 
+  // Мета семейств (флаг "под заказ" + закупочная цена) для левого блока
+  const loadFamilyMeta = React.useCallback(async () => {
+    try {
+      const sb = getBrowserSupabase();
+      const { data, error } = await sb.rpc('lens_family_purchase_meta');
+      if (error) return;
+      const map: Record<string, { onDemand: boolean; cost: number | null; index: string | null; demandOnly: boolean }> = {};
+      for (const r of (data as any[]) ?? []) {
+        map[lowerKey(String(r.family))] = {
+          onDemand: !!r.is_on_demand,
+          cost: r.purchase_cost == null ? null : Number(r.purchase_cost),
+          index: r.display_index ?? null,
+          demandOnly: !!r.demand_only,
+        };
+      }
+      setFamilyMeta(map);
+    } catch {
+      /* мета не критична — без неё всё показывается как обычно */
+    } finally {
+      setFamilyMetaLoaded(true);
+    }
+  }, []);
+
   React.useEffect(() => {
     if (gate !== 'ok') return;
     void loadFamilies();
-  }, [gate, loadFamilies]);
+    void loadFamilyMeta();
+  }, [gate, loadFamilies, loadFamilyMeta]);
 
   /* ---------- load locations ---------- */
 
@@ -2171,13 +2456,19 @@ export default function LensProcurementPage() {
 
       const donorFam = getAsphDonor(selectedRpc);
 
+      // «только спрос» для отмеченных видов: без запаса и минимума
+      const _do = familyMeta[lowerKey(selectedRpc)]?.demandOnly ?? false;
+      const _safety = _do ? 1 : safetyFactor;
+      const _min = _do ? 0 : minEach;
+      const _apply = _do ? false : applyMinToAll;
+
       const mainP = sb.rpc(RPC_PROCUREMENT_FN, {
         p_lens_family: selectedRpc,
         p_location_id: locationId,
         p_plan_days: PLAN_DAYS,
-        p_safety: safetyFactor,
-        p_min_each: minEach,
-        p_apply_min_to_all: applyMinToAll,
+        p_safety: _safety,
+        p_min_each: _min,
+        p_apply_min_to_all: _apply,
       });
 
       const donorP = donorFam
@@ -2185,9 +2476,9 @@ export default function LensProcurementPage() {
             p_lens_family: donorFam,
             p_location_id: locationId,
             p_plan_days: PLAN_DAYS,
-            p_safety: safetyFactor,
-            p_min_each: minEach,
-            p_apply_min_to_all: applyMinToAll,
+            p_safety: _safety,
+            p_min_each: _min,
+            p_apply_min_to_all: _apply,
           })
         : Promise.resolve({ data: null, error: null } as any);
 
@@ -2200,7 +2491,7 @@ export default function LensProcurementPage() {
         ? mirrorDonorOntoAsph(parsed, aggregateBySph(parseProcRpcData(donor.data)))
         : parsed;
 
-      const adjusted = applyMinEachClient(working, minEach, applyMinToAll);
+      const adjusted = applyMinEachClient(working, _min, _apply);
 
       // ✅ apply SPH range limit by family
       const lim = getSphLimitsForFamily(selectedRpc);
@@ -2213,7 +2504,7 @@ export default function LensProcurementPage() {
     } finally {
       setLoadingRows(false);
     }
-  }, [mounted, selectedRpc, locationId, safetyFactor, minEach, applyMinToAll, parseProcRpcData, mirrorDonorOntoAsph]);
+  }, [mounted, selectedRpc, locationId, safetyFactor, minEach, applyMinToAll, familyMeta, parseProcRpcData, mirrorDonorOntoAsph]);
 
   React.useEffect(() => {
     if (gate !== 'ok') return;
@@ -2252,14 +2543,19 @@ export default function LensProcurementPage() {
 
         const donorFam = getAsphDonor(fam);
 
+        const _do = familyMeta[lowerKey(fam)]?.demandOnly ?? false;
+        const _safety = _do ? 1 : safetyFactor;
+        const _min = _do ? 0 : minEach;
+        const _apply = _do ? false : applyMinToAll;
+
         try {
           const mainP = sb.rpc(RPC_PROCUREMENT_FN, {
             p_lens_family: fam,
             p_location_id: locationId,
             p_plan_days: PLAN_DAYS,
-            p_safety: safetyFactor,
-            p_min_each: minEach,
-            p_apply_min_to_all: applyMinToAll,
+            p_safety: _safety,
+            p_min_each: _min,
+            p_apply_min_to_all: _apply,
           });
 
           const donorP = donorFam
@@ -2267,9 +2563,9 @@ export default function LensProcurementPage() {
                 p_lens_family: donorFam,
                 p_location_id: locationId,
                 p_plan_days: PLAN_DAYS,
-                p_safety: safetyFactor,
-                p_min_each: minEach,
-                p_apply_min_to_all: applyMinToAll,
+                p_safety: _safety,
+                p_min_each: _min,
+                p_apply_min_to_all: _apply,
               })
             : Promise.resolve({ data: null, error: null } as any);
 
@@ -2282,7 +2578,7 @@ export default function LensProcurementPage() {
             ? mirrorDonorOntoAsph(rrAgg, aggregateBySph(parseProcRpcData(donor.data)))
             : rrAgg;
 
-          const adjusted = applyMinEachClient(working, minEach, applyMinToAll);
+          const adjusted = applyMinEachClient(working, _min, _apply);
 
           // ✅ ВАЖНО: применяем тот же SPH-диапазон, что и справа (как в loadProcRows)
           const lim = getSphLimitsForFamily(fam);
@@ -2307,7 +2603,7 @@ export default function LensProcurementPage() {
     return () => {
       cancelled = true;
     };
-  }, [mounted, locationId, families, safetyFactor, minEach, applyMinToAll, parseProcRpcData, mirrorDonorOntoAsph]);
+  }, [mounted, locationId, families, safetyFactor, minEach, applyMinToAll, familyMeta, parseProcRpcData, mirrorDonorOntoAsph]);
 
   React.useEffect(() => {
     if (gate !== 'ok') return;
@@ -2397,17 +2693,95 @@ export default function LensProcurementPage() {
     void loadBatches();
   }, [gate, loadBatches]);
 
+  /* ---------- деньги «в пути» (вся сеть, по факту in_transit партий) ---------- */
+  const [inTransitMoney, setInTransitMoney] = React.useState<{ qty: number; cost: number; families: number } | null>(
+    null,
+  );
+
+  const loadInTransitMoney = React.useCallback(async () => {
+    try {
+      const sb = getBrowserSupabase();
+      const { data, error } = await sb.rpc('lens_in_transit_money');
+      if (error) throw new Error(error.message);
+      const r = Array.isArray(data) ? data[0] : data;
+      setInTransitMoney({
+        qty: Number(r?.total_qty || 0),
+        cost: Number(r?.total_cost || 0),
+        families: Number(r?.family_count || 0),
+      });
+    } catch {
+      setInTransitMoney(null);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (gate !== 'ok') return;
+    void loadInTransitMoney();
+  }, [gate, loadInTransitMoney]);
+
+  // пересчитываем «в пути», когда меняется список партий (создание/отмена/приём)
+  React.useEffect(() => {
+    if (gate !== 'ok') return;
+    void loadInTransitMoney();
+  }, [gate, batches, loadInTransitMoney]);
+
   /* ===================== derived ===================== */
 
-  const familiesFiltered = React.useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    if (!qq) return families;
-    return families.filter((f) => {
-      const a = String(f.lens_family || '').toLowerCase();
-      const b = vendorFamilyLabel(f.rpc_family).toLowerCase();
-      return a.includes(qq) || b.includes(qq);
-    });
-  }, [families, q]);
+  // Левый блок: делим виды на "закупаем постоянно" (is_on_demand=false) и
+  // "под заказ" (true), упорядочиваем логично и считаем сумму закупки постоянных.
+  const leftGroups = React.useMemo(() => {
+    const stocked: LensFamilyRow[] = [];
+    const onDemand: LensFamilyRow[] = [];
+    for (const f of families) {
+      const k = lowerKey(f.rpc_family);
+      if (familyMeta[k]?.onDemand) onDemand.push(f);
+      else stocked.push(f);
+    }
+    const byOrder = (a: LensFamilyRow, b: LensFamilyRow) =>
+      familyOrderIdx(lowerKey(a.rpc_family)) - familyOrderIdx(lowerKey(b.rpc_family));
+    stocked.sort(byOrder);
+    onDemand.sort(byOrder);
+
+    const lineCost = (f: LensFamilyRow): number | null => {
+      const k = lowerKey(f.rpc_family);
+      const qty = Number(toBuyTotals[k] ?? 0);
+      const cost = familyMeta[k]?.cost;
+      return qty > 0 && cost != null ? qty * cost : null;
+    };
+    let stockedCost = 0;
+    let stockedHasCost = false;
+    let stockedQty = 0;
+    for (const f of stocked) {
+      stockedQty += Number(toBuyTotals[lowerKey(f.rpc_family)] ?? 0);
+      const c = lineCost(f);
+      if (c != null) {
+        stockedCost += c;
+        stockedHasCost = true;
+      }
+    }
+    let onDemandCost = 0;
+    let onDemandHasCost = false;
+    let onDemandQty = 0;
+    for (const f of onDemand) {
+      onDemandQty += Number(toBuyTotals[lowerKey(f.rpc_family)] ?? 0);
+      const c = lineCost(f);
+      if (c != null) {
+        onDemandCost += c;
+        onDemandHasCost = true;
+      }
+    }
+    return {
+      stocked,
+      onDemand,
+      stockedCost,
+      stockedHasCost,
+      stockedQty,
+      onDemandCost,
+      onDemandHasCost,
+      onDemandQty,
+      lineCost,
+    };
+  }, [families, familyMeta, toBuyTotals]);
 
   const selectedMeta = React.useMemo(() => {
     if (!selectedRpc) return null;
@@ -2642,6 +3016,7 @@ export default function LensProcurementPage() {
     void loadProcRows();
     void loadBatches();
     void loadToBuyTotalsForFamilies();
+    void loadInTransitMoney();
   }
 
   async function copySelectedToClipboard() {
@@ -2778,7 +3153,12 @@ export default function LensProcurementPage() {
 
   // ================= Excel export (FIXED: apply family SPH limits everywhere) =================
 
-  async function exportExcelFromRowsSingle(famRpc: string, rr: ProcRow[], fileSuffix?: string) {
+  async function exportExcelFromRowsSingle(
+    famRpc: string,
+    rr: ProcRow[],
+    fileSuffix?: string,
+    opts?: { skipLimits?: boolean },
+  ) {
     setErr(null);
 
     let XLSX: XLSXStyleModule | null = null;
@@ -2804,9 +3184,12 @@ export default function LensProcurementPage() {
       .filter((x) => Number.isFinite(x.sph))
       .sort((a, b) => a.sph - b.sph);
 
-    // 2) лимиты SPH по семейству (как в UI)
+    // 2) лимиты SPH по семейству (как в UI). Для "под заказ" лимиты пропускаем —
+    //    клиент мог заказать диоптрию вне планового диапазона, её нельзя терять.
     const lim = getSphLimitsForFamily(rpcFam);
-    const dataRows = dataRows0.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
+    const dataRows = opts?.skipLimits
+      ? dataRows0
+      : dataRows0.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
 
     // 3) лейбл линзы для поставщика (например: "ASP HMC" или "BlueCut HMC")
     const lensType = vendorFamilyLabel(rpcFam);
@@ -2877,23 +3260,28 @@ export default function LensProcurementPage() {
       const rpcFam = normalizeFamilyKey(fam);
       const donorFam = getAsphDonor(rpcFam);
 
+      const _do = familyMeta[lowerKey(rpcFam)]?.demandOnly ?? false;
+      const _safety = _do ? 1 : safetyFactor;
+      const _min = _do ? 0 : minEach;
+      const _apply = _do ? false : applyMinToAll;
+
       // Запрашиваем основное семейство и (для ASPH) донора параллельно — как в loadProcRows
       const mainP = sb.rpc(RPC_PROCUREMENT_FN, {
         p_lens_family: rpcFam,
         p_location_id: locationId,
         p_plan_days: PLAN_DAYS,
-        p_safety: safetyFactor,
-        p_min_each: minEach,
-        p_apply_min_to_all: applyMinToAll,
+        p_safety: _safety,
+        p_min_each: _min,
+        p_apply_min_to_all: _apply,
       });
       const donorP = donorFam
         ? sb.rpc(RPC_PROCUREMENT_FN, {
             p_lens_family: donorFam,
             p_location_id: locationId,
             p_plan_days: PLAN_DAYS,
-            p_safety: safetyFactor,
-            p_min_each: minEach,
-            p_apply_min_to_all: applyMinToAll,
+            p_safety: _safety,
+            p_min_each: _min,
+            p_apply_min_to_all: _apply,
           })
         : Promise.resolve({ data: null, error: null } as any);
 
@@ -2911,7 +3299,7 @@ export default function LensProcurementPage() {
       const working = donorFam
         ? mirrorDonorOntoAsph(parsed, aggregateBySph(parseProcRpcData(donor.data)))
         : parsed;
-      const adjusted = applyMinEachClient(working, minEach, applyMinToAll);
+      const adjusted = applyMinEachClient(working, _min, _apply);
 
       const lim = getSphLimitsForFamily(rpcFam);
       const ranged = adjusted.filter((r) => r.sph >= lim.min - 1e-9 && r.sph <= lim.max + 1e-9);
@@ -3006,6 +3394,47 @@ export default function LensProcurementPage() {
     await exportExcelInternal(families.map((f) => f.rpc_family));
   }
 
+  // Лист заказа для поставщика (китайская фабрика): англ., без бренда. Один движок
+  // и для одного вида, и для "всё одним файлом".
+  async function exportOnDemandWorkbook(groups: OnDemandAllGroup[], fileToken: string) {
+    setErr(null);
+    if (!groups.length) return;
+    let XLSX: XLSXStyleModule | null = null;
+    try {
+      XLSX = (await import('xlsx-js-style')) as any;
+    } catch {
+      setErr(`Для цветного Excel нужен пакет "xlsx-js-style".\nУстанови: npm i xlsx-js-style`);
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = buildOnDemandAllSheet({ XLSX, groups, exportDateISO: todayISO });
+    XLSX.utils.book_append_sheet(wb, ws, 'Lens Order');
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true, sheetStubs: true });
+    const blob = new Blob([wbout], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const fileDate = todayISO.replaceAll('-', '.');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Lens_Order_${fileToken}_${fileDate}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // Один вид "под заказ" — отдельный файл (англ. имя по виду)
+  async function exportOnDemandGroup(family: string, groupRows: { sph: number; qty: number }[]) {
+    const totalQty = groupRows.reduce((a, r) => a + r.qty, 0);
+    const token = vendorFamilyLabel(family).replace(/[^\w.\-]+/g, '_');
+    await exportOnDemandWorkbook([{ family, byDiopter: groupRows, totalQty }], token);
+  }
+
+  // Все виды "под заказ" — ОДИН файл, ОДНА таблица
+  async function exportOnDemandAll(groups: OnDemandAllGroup[]) {
+    await exportOnDemandWorkbook(groups, 'All_Types');
+  }
+
   async function createBatchFromToBuy() {
     if (!selectedRpc || !locationId) return;
     if (loadingRows) return;
@@ -3053,13 +3482,14 @@ export default function LensProcurementPage() {
         if (error) throw new Error(error.message);
         batchId = (data as any) ?? null;
       } else {
+        const _do = familyMeta[lowerKey(selectedRpc)]?.demandOnly ?? false;
         const { data, error } = await sb.rpc(RPC_CREATE_BATCH_FN, {
           p_lens_family: selectedRpc,
           p_to_location_id: locationId,
           p_plan_days: PLAN_DAYS,
-          p_safety: safetyFactor,
-          p_min_each: minEach,
-          p_apply_min_to_all: applyMinToAll,
+          p_safety: _do ? 1 : safetyFactor,
+          p_min_each: _do ? 0 : minEach,
+          p_apply_min_to_all: _do ? false : applyMinToAll,
           p_comment: comment,
         });
         if (error) throw new Error(error.message);
@@ -3322,25 +3752,15 @@ export default function LensProcurementPage() {
         >
           <div className="grid gap-3 lg:grid-cols-12 lg:items-end">
             <div className="lg:col-span-8">
-              <Label>Локация назначения</Label>
-              <select
-                value={locationId}
-                onChange={(e) => setLocationId(e.target.value)}
-                className={[
-                  'w-full sm:max-w-sm rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900',
-                  'ring-1 ring-sky-200/80',
-                  'shadow-[0_18px_45px_rgba(15,23,42,0.12)]',
-                  'focus:outline-none focus:ring-2 focus:ring-cyan-400/80',
-                ].join(' ')}
-              >
-                {loadingLocations && <option>Загрузка…</option>}
-                {!loadingLocations &&
-                  locations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name} ({locationKindLabel(l)})
-                    </option>
-                  ))}
-              </select>
+              <Label>Назначение</Label>
+              {/* Всегда центральный склад (Сокулук) + магазины — выбор не нужен */}
+              <div className="inline-flex items-center gap-2 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-800 ring-1 ring-sky-200/80 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
+                <span className="grid h-6 w-6 place-items-center rounded-lg bg-gradient-to-br from-teal-400 to-cyan-400">
+                  <MapPin className="h-3.5 w-3.5 text-white" />
+                </span>
+                <span className="font-semibold">{selectedLocation?.name ?? 'Сокулук'}</span>
+                <span className="text-[12px] text-slate-400">· центральный склад + магазины</span>
+              </div>
 
               {/* параметры расчёта — read-only, настройка в «Настройки расчёта и формула» ниже */}
               <button
@@ -3349,14 +3769,6 @@ export default function LensProcurementPage() {
                 title="Изменить в «Настройки расчёта и формула» ниже"
                 className="mt-2 flex flex-wrap items-center gap-2 text-left"
               >
-                {selectedLocation?.name && (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                    <MapPin className="h-3.5 w-3.5" />
-                    <span className="truncate max-w-[260px] font-medium text-slate-700">
-                      {selectedLocation.name} · {locationKindLabel(selectedLocation)}
-                    </span>
-                  </span>
-                )}
                 <span className="rounded-full bg-slate-900/5 px-2 py-0.5 text-[11px] text-slate-600 ring-1 ring-slate-200">запас ×{safetyFactor}</span>
                 <span className="rounded-full bg-slate-900/5 px-2 py-0.5 text-[11px] text-slate-600 ring-1 ring-slate-200">мин/диоптрия {minEach}</span>
                 <span className="rounded-full bg-slate-900/5 px-2 py-0.5 text-[11px] text-slate-600 ring-1 ring-slate-200">
@@ -3378,11 +3790,37 @@ export default function LensProcurementPage() {
             </div>
           </div>
 
-          {/* KPI-плитки */}
-          <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
-            <StatTile label="Купить" value={totals.to_buy} accent="teal" />
-            <StatTile label="Склад" value={totals.on_hand} accent="sky" />
-            <StatTile label="В пути" value={totals.in_transit} accent="amber" />
+          {/* KPI-плитки — деньги (вся сеть), за одну линзу */}
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+            <MoneyTile
+              label="Докупить по плану"
+              accent="teal"
+              muted={!leftGroups.stockedHasCost}
+              value={leftGroups.stockedHasCost ? som(leftGroups.stockedCost) : '—'}
+              sub={
+                loadingToBuyTotals
+                  ? 'Считаю…'
+                  : `постоянные · ${nf(leftGroups.stockedQty)} линз${leftGroups.stockedQty === 0 ? ' — план закрыт' : ''}`
+              }
+            />
+            <MoneyTile
+              label="Под заказ"
+              accent="sky"
+              muted={!leftGroups.onDemandHasCost}
+              value={leftGroups.onDemandHasCost ? som(leftGroups.onDemandCost) : '—'}
+              sub={loadingToBuyTotals ? 'Считаю…' : `докупить · ${nf(leftGroups.onDemandQty)} линз`}
+            />
+            <MoneyTile
+              label="В пути"
+              accent="amber"
+              muted={!inTransitMoney || inTransitMoney.cost === 0}
+              value={inTransitMoney ? som(inTransitMoney.cost) : '—'}
+              sub={
+                inTransitMoney
+                  ? `${nf(inTransitMoney.qty)} линз едет · ${inTransitMoney.families} видов`
+                  : 'Загружаю…'
+              }
+            />
           </div>
 
           {/* компактная подсказка (сворачиваемая) */}
@@ -3505,6 +3943,12 @@ export default function LensProcurementPage() {
           )}
         </LightCard>
 
+        {/* Под заказ — линзы из клиентских заказов, которых нет в наличии */}
+        <LensOnDemandCard onExportGroup={exportOnDemandGroup} onExportAll={exportOnDemandAll} />
+
+        {/* Себестоимость линз по видам */}
+        <LensCostCard />
+
         {/* Master–detail */}
         <div className="mt-5 lg:flex lg:items-start lg:gap-4">
           {/* LEFT */}
@@ -3513,71 +3957,99 @@ export default function LensProcurementPage() {
             title={<span>Виды линз</span>}
             aside={
               <span className="text-[11px]">
-                {loadingToBuyTotals ? 'Считаю…' : 'Всего:'}{' '}
-                <span className="font-medium text-slate-700">{nf(families.length)}</span>
+                {loadingToBuyTotals || !familyMetaLoaded ? (
+                  'Считаю…'
+                ) : leftGroups.stockedHasCost ? (
+                  <>
+                    К закупке: <span className="font-semibold text-emerald-700">≈ {som(leftGroups.stockedCost)}</span>
+                  </>
+                ) : (
+                  <span className="text-slate-400">цены не заданы</span>
+                )}
               </span>
             }
           >
-            <div className="mb-3">
-              <Input value={q} onChange={setQ} placeholder="Поиск…" rightIcon={<Search className="h-4 w-4" />} />
-            </div>
-
-            <div className="overflow-auto pr-1 max-h-[calc(100dvh-220px)] space-y-2">
-              {familiesFiltered.map((f) => {
-                const active = f.rpc_family === selectedRpc;
-                const k = lowerKey(f.rpc_family);
-                const toBuy = toBuyTotals[k];
-
-                return (
-                  <button
-                    key={f.rpc_family}
-                    type="button"
-                    onClick={() => {
-                      setSelected(vendorFamilyLabel(f.rpc_family)); // UI label
-                      setSelectedRpc(f.rpc_family); // canonical for RPC/DB
-                      setTab('to_buy');
-                    }}
-                    className={[
-                      'w-full rounded-2xl border px-3 py-2 text-left transition',
-                      active ? 'border-cyan-300 bg-cyan-50/70 shadow-sm' : 'border-slate-200 bg-white/80 hover:bg-white',
-                    ].join(' ')}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-slate-900">{vendorFamilyLabel(f.rpc_family)}</div>
-                        <div className="mt-0.5 text-[10px] text-slate-500 truncate">
-                          История: <span className="font-medium text-slate-700">{nf(f.items_cnt)}</span>
-                          {f.days_span != null ? (
-                            <>
-                              {' '}
-                              · Дней: <span className="font-medium text-slate-700">{nf(Number(f.days_span))}</span>
-                            </>
-                          ) : null}
-                          {f.source === 'db' && (
-                            <span className="ml-2 rounded-full bg-slate-900/5 px-2 py-0.5 text-[10px] ring-1 ring-slate-200">
-                              в базе
-                            </span>
-                          )}
-                          {f.source === 'merged' && (
-                            <span className="ml-2 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] ring-1 ring-emerald-300/40 text-emerald-800">
-                              база+история
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 rounded-xl bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-800 ring-1 ring-slate-200">
-                        {toBuy === undefined && loadingToBuyTotals ? '…' : nf(Number(toBuy ?? 0))}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-
-              {!familiesFiltered.length && (
+            <div className="overflow-auto pr-1 pb-1 max-h-[calc(100dvh-200px)] space-y-4">
+              {!familyMetaLoaded || !families.length ? (
                 <div className="rounded-2xl bg-slate-100/70 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200">
-                  Ничего не найдено.
+                  {!familyMetaLoaded || loadingFamilies ? 'Загрузка…' : 'Нет видов линз.'}
                 </div>
+              ) : (
+                <>
+                  {/* Закупаем постоянно (в наличии) */}
+                  {leftGroups.stocked.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                          Закупаем постоянно
+                        </span>
+                        <span className="rounded-full bg-emerald-50 px-1.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                          {leftGroups.stocked.length}
+                        </span>
+                      </div>
+                      {leftGroups.stocked.map((f) => {
+                        const k = lowerKey(f.rpc_family);
+                        const toBuy = toBuyTotals[k];
+                        const c = leftGroups.lineCost(f);
+                        return (
+                          <FamilyButton
+                            key={f.rpc_family}
+                            label={vendorFamilyLabel(f.rpc_family)}
+                            indexText={familyMeta[k]?.index ?? null}
+                            demandOnly={familyMeta[k]?.demandOnly ?? false}
+                            toBuyText={toBuy === undefined && loadingToBuyTotals ? '…' : nf(Number(toBuy ?? 0))}
+                            toBuyCount={Number(toBuy ?? 0)}
+                            costText={c != null ? `≈ ${som(c)}` : null}
+                            active={f.rpc_family === selectedRpc}
+                            accent="stock"
+                            onSelect={() => {
+                              setSelected(vendorFamilyLabel(f.rpc_family));
+                              setSelectedRpc(f.rpc_family);
+                              setTab('to_buy');
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Под заказ — клиент ждёт */}
+                  {leftGroups.onDemand.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                          Под заказ — клиент ждёт
+                        </span>
+                        <span className="rounded-full bg-amber-50 px-1.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                          {leftGroups.onDemand.length}
+                        </span>
+                      </div>
+                      {leftGroups.onDemand.map((f) => {
+                        const k = lowerKey(f.rpc_family);
+                        const toBuy = toBuyTotals[k];
+                        const c = leftGroups.lineCost(f);
+                        return (
+                          <FamilyButton
+                            key={f.rpc_family}
+                            label={vendorFamilyLabel(f.rpc_family)}
+                            indexText={familyMeta[k]?.index ?? null}
+                            demandOnly={familyMeta[k]?.demandOnly ?? false}
+                            toBuyText={toBuy === undefined && loadingToBuyTotals ? '…' : nf(Number(toBuy ?? 0))}
+                            toBuyCount={Number(toBuy ?? 0)}
+                            costText={c != null ? `≈ ${som(c)}` : null}
+                            active={f.rpc_family === selectedRpc}
+                            accent="order"
+                            onSelect={() => {
+                              setSelected(vendorFamilyLabel(f.rpc_family));
+                              setSelectedRpc(f.rpc_family);
+                              setTab('to_buy');
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </LightCard>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/app/api/admin/_requireOwner';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { managerTeamMetrics, teamPeriod } from '@/lib/team360Access';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -21,26 +22,47 @@ export const runtime = 'nodejs';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, ctx: Ctx) {
-  const ok = await requireOwner();
+  const ok = await requireCrmPermission('team360');
   if (!ok.ok) return NextResponse.json({ error: ok.error }, { status: ok.status });
 
   const { id } = await ctx.params;
   const employeeId = Number(id);
-  if (!Number.isFinite(employeeId)) {
+  if (!Number.isSafeInteger(employeeId) || employeeId <= 0) {
     return NextResponse.json({ error: 'bad id' }, { status: 400 });
   }
 
   const url = new URL(req.url);
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
-  if (!from || !to) return NextResponse.json({ error: 'from/to required' }, { status: 400 });
-
-  const fromIso = `${from}T00:00:00Z`;
-  const toExclusive = new Date(`${to}T23:59:59Z`);
-  toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
-  const toIso = toExclusive.toISOString();
+  const period = teamPeriod(from, to);
+  if (!period) return NextResponse.json({ error: 'valid from/to required' }, { status: 400 });
+  const { fromIso, toIso } = period;
 
   const admin = getSupabaseAdmin();
+
+  if (ok.role === 'manager') {
+    const [metricsResult, employeeResult, ordersResult] = await Promise.all([
+      admin.rpc('rpc_employee_360', { p_from: from, p_to: to }),
+      admin.from('employees').select('id, full_name, role, branch_id').eq('id', employeeId).maybeSingle(),
+      admin.from('orders')
+        .select('id, order_no, total_amount, created_at, status')
+        .eq('seller_employee_id', employeeId)
+        .eq('is_deleted', false)
+        .gte('created_at', fromIso)
+        .lt('created_at', toIso)
+        .order('created_at', { ascending: false })
+        .limit(30),
+    ]);
+    const error = metricsResult.error || employeeResult.error || ordersResult.error;
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!employeeResult.data) return NextResponse.json({ error: 'employee not found' }, { status: 404 });
+    const metrics = (metricsResult.data ?? []).find((row: Record<string, unknown>) => Number(row.employee_id) === employeeId);
+    return NextResponse.json({
+      ok: true, access: 'manager', employee: employeeResult.data,
+      metrics: metrics ? managerTeamMetrics(metrics) : null,
+      orders: ordersResult.data ?? [],
+    });
+  }
 
   const [
     metricsR,

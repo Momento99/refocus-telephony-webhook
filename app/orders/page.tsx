@@ -24,7 +24,10 @@ import {
   Sparkles,
   Users,
   ArrowRight,
+  RotateCcw,
+  Undo2,
 } from 'lucide-react';
+import ReturnExchangeModal from './ReturnExchangeModal';
 
 /* ---------- Types ---------- */
 // UI-методы (как в New Order)
@@ -92,8 +95,17 @@ const STATUS_RU: Record<string, string> = {
   NEW: 'НОВЫЙ',
   READY: 'ГОТОВО',
   DELIVERED: 'ВЫДАНО',
+  REFUNDED: 'ВОЗВРАТ',
+  REPLACED: 'ЗАМЕНЁН',
+  CANCELLED: 'ОТМЕНЁН',
 };
-const FILTER_STATUSES: Array<keyof typeof STATUS_RU> = ['NEW', 'READY', 'DELIVERED'];
+const FILTER_STATUSES: Array<keyof typeof STATUS_RU> = [
+  'NEW',
+  'READY',
+  'DELIVERED',
+  'REFUNDED',
+  'CANCELLED',
+];
 
 /* ---------- Pay method mapping ---------- */
 const toUiMethod = (m: PayMethodDB | string | null | undefined): PayMethodUI => {
@@ -378,6 +390,24 @@ function StatusPill({ status, status_ru }: { status: string; status_ru?: string 
     text = 'text-sky-700';
     Icon = Sparkles;
   }
+  if (status === 'REFUNDED') {
+    ring = 'ring-rose-200';
+    bg = 'bg-rose-50';
+    text = 'text-rose-700';
+    Icon = Undo2;
+  }
+  if (status === 'REPLACED') {
+    ring = 'ring-violet-200';
+    bg = 'bg-violet-50';
+    text = 'text-violet-700';
+    Icon = RotateCcw;
+  }
+  if (status === 'CANCELLED') {
+    ring = 'ring-slate-200';
+    bg = 'bg-slate-100';
+    text = 'text-slate-500';
+    Icon = X;
+  }
 
   return (
     <span
@@ -519,6 +549,8 @@ const softDeleteBtn =
   pillBase + ' bg-white ring-1 ring-amber-200 text-amber-700 hover:bg-amber-50';
 const hardDeleteBtn =
   pillBase + ' bg-white ring-1 ring-rose-200 text-rose-700 hover:bg-rose-50';
+const returnBtn =
+  pillBase + ' bg-white ring-1 ring-sky-200 text-cyan-700 hover:bg-cyan-50';
 
 /* ---------- Normalize ---------- */
 function normalize(raw: RawRow): Row {
@@ -649,7 +681,17 @@ function MobileCards({
           )}
 
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <button onClick={() => onPay(r)} disabled={r.status === 'DELIVERED'} className={payBtn}>
+            <button
+              onClick={() => onPay(r)}
+              disabled={
+                r.status === 'DELIVERED' ||
+                r.status === 'CANCELLED' ||
+                r.status === 'REFUNDED' ||
+                r.status === 'REPLACED' ||
+                r.debt_amount <= 0
+              }
+              className={payBtn}
+            >
               <CreditCard className="h-4 w-4" />
               Оплата
             </button>
@@ -680,6 +722,7 @@ function Portal({ children }: { children: React.ReactNode }) {
 /* ---------- Page ---------- */
 export default function OrdersPage() {
   const sbRef = useRef<SupabaseClient | null>(null);
+  const [canHardDelete, setCanHardDelete] = useState(false);
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
@@ -701,7 +744,12 @@ export default function OrdersPage() {
 
   useEffect(() => {
     sbRef.current = getSupabase();
+    let active = true;
+    void sbRef.current.auth.getUser().then(({ data }) => {
+      if (active) setCanHardDelete(data.user?.app_metadata?.role === 'owner');
+    });
     void load();
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -862,7 +910,7 @@ export default function OrdersPage() {
     if (!ok) return;
 
     try {
-      const { error } = await sb.rpc('hard_delete_order', {
+      const { error } = await sb.rpc('admin_hard_delete_order', {
         p_order_id: id,
       });
 
@@ -1054,11 +1102,24 @@ export default function OrdersPage() {
   const [payLoading, setPayLoading] = useState(false);
 
   function openPayModal(r: Row) {
+    if (
+      r.status === 'DELIVERED' ||
+      r.status === 'CANCELLED' ||
+      r.status === 'REFUNDED' ||
+      r.status === 'REPLACED' ||
+      r.debt_amount <= 0
+    ) {
+      toast.error('Оплата по закрытому или полностью оплаченному заказу недоступна');
+      return;
+    }
     setPayOrder(r);
     setPaySum('');
     setPayMethod('cash');
     setPayOpen(true);
   }
+
+  /* ---------- Возврат / замена ---------- */
+  const [returnOrder, setReturnOrder] = useState<Row | null>(null);
 
   async function submitPayment() {
     const sb = sbRef.current;
@@ -1168,7 +1229,7 @@ export default function OrdersPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Link
+            {canHardDelete && <><Link
               href="/customers"
               className="group inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
             >
@@ -1176,7 +1237,7 @@ export default function OrdersPage() {
               Клиенты
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
-            <div className="hidden sm:block h-6 w-px bg-slate-700/40 mx-1" />
+            <div className="hidden sm:block h-6 w-px bg-slate-700/40 mx-1" /></>}
             <GBtn variant="soft" onClick={load}>
               <RefreshCw className="h-4 w-4" />
               Обновить
@@ -1391,19 +1452,41 @@ export default function OrdersPage() {
                           )}
                         </td>
 
-                        <td className="px-3.5 py-3 w-[220px]">
+                        <td className="px-3.5 py-3 w-[320px]">
                           <div
                             className="flex justify-end gap-1.5 flex-nowrap"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <button className={softDeleteBtn} onClick={() => softDeleteOrder(r.order_no)}>
+                            <button
+                              className={returnBtn}
+                              onClick={() => setReturnOrder(r)}
+                              title="Возврат / замена"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                              Возврат
+                            </button>
+                            <button
+                              className={softDeleteBtn}
+                              onClick={() => softDeleteOrder(r.order_no)}
+                              disabled={r.paid_amount !== 0}
+                              title={
+                                r.paid_amount !== 0
+                                  ? 'Оплаченный заказ закрывается только через «Возврат»'
+                                  : 'Скрыть неоплаченный заказ'
+                              }
+                            >
                               <Archive className="h-4 w-4" />
                               Скрыть
                             </button>
-                            <button className={hardDeleteBtn} onClick={() => hardDeleteOrder(r.order_no)}>
+                            {canHardDelete && <button
+                              className={hardDeleteBtn}
+                              onClick={() => hardDeleteOrder(r.order_no)}
+                              disabled={r.paid_amount !== 0 || r.status !== 'NEW'}
+                              title="Навсегда удалить можно только неоплаченный черновик NEW"
+                            >
                               <Trash2 className="h-4 w-4" />
                               Удалить
-                            </button>
+                            </button>}
                           </div>
                         </td>
                       </tr>
@@ -1434,7 +1517,9 @@ export default function OrdersPage() {
           paymentsLoading={paymentsLoading}
           onSoftDelete={() => selectedId && softDeleteOrder(selectedId)}
           onHardDelete={() => selectedId && hardDeleteOrder(selectedId)}
+          canHardDelete={canHardDelete}
           onEditPaymentMethod={openEditPaymentMethod}
+          onReturn={() => detail && setReturnOrder(detail)}
         />
 
         {/* Pay modal */}
@@ -1462,6 +1547,26 @@ export default function OrdersPage() {
           loading={editLoading}
           onSubmit={submitEditPaymentMethod}
         />
+
+        {/* Возврат / замена */}
+        {returnOrder && (
+          <ReturnExchangeModal
+            order={{
+              order_no: returnOrder.order_no,
+              status: returnOrder.status,
+              paid_amount: returnOrder.paid_amount,
+              total_amount: returnOrder.total_amount,
+              customer_name: returnOrder.customer_name,
+              phone: returnOrder.phone,
+            }}
+            onClose={() => setReturnOrder(null)}
+            onDone={async () => {
+              setReturnOrder(null);
+              await load();
+              if (selectedId) await reloadAround(selectedId);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -1476,7 +1581,9 @@ function DetailsDrawer({
   paymentsLoading,
   onSoftDelete,
   onHardDelete,
+  canHardDelete,
   onEditPaymentMethod,
+  onReturn,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1485,7 +1592,9 @@ function DetailsDrawer({
   paymentsLoading: boolean;
   onSoftDelete: () => void;
   onHardDelete: () => void;
+  canHardDelete: boolean;
   onEditPaymentMethod: (p: PaymentRow) => void;
+  onReturn: () => void;
 }) {
   if (!open) return null;
 
@@ -1744,15 +1853,37 @@ function DetailsDrawer({
                       <div className="text-[11px] text-slate-500">админ</div>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <button className={`${softDeleteBtn} w-full`} onClick={onSoftDelete}>
+                    <button
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400"
+                      onClick={onReturn}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Возврат / замена
+                    </button>
+
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <button
+                        className={`${softDeleteBtn} w-full`}
+                        onClick={onSoftDelete}
+                        disabled={Number(detail.paid_amount || 0) !== 0}
+                        title={
+                          Number(detail.paid_amount || 0) !== 0
+                            ? 'Оплаченный заказ закрывается только через «Возврат / замена»'
+                            : 'Скрыть неоплаченный заказ'
+                        }
+                      >
                         <Archive className="h-4 w-4" />
                         Скрыть заказ
                       </button>
-                      <button className={`${hardDeleteBtn} w-full`} onClick={onHardDelete}>
+                      {canHardDelete && <button
+                        className={`${hardDeleteBtn} w-full`}
+                        onClick={onHardDelete}
+                        disabled={Number(detail.paid_amount || 0) !== 0 || detail.status !== 'NEW'}
+                        title="Навсегда удалить можно только неоплаченный черновик NEW"
+                      >
                         <Trash2 className="h-4 w-4" />
                         Удалить навсегда
-                      </button>
+                      </button>}
                     </div>
                   </GlassCard>
 

@@ -1,20 +1,24 @@
 // /lib/getUserRole.ts
 import type { User } from "@supabase/supabase-js";
+import { cache } from 'react';
+import { headers } from 'next/headers';
 import { getSupabaseServerClient } from "./supabaseServer";
+import { normalizeCrmRole, type Role } from './crmAccess';
 
-export type Role = "seller" | "manager" | "owner";
+export type { Role } from './crmAccess';
 
-/** Текущий пользователь (SSR) — использует getSession (без сетевого запроса) */
-export async function getCurrentUser(): Promise<User | null> {
+/** Пользователь, проверенный Supabase Auth для текущего запроса. */
+export const getCurrentUser = cache(async (): Promise<User | null> => {
   const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase.auth.getSession();
+  const authorization = (await headers()).get('authorization');
+  const token = authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
+  const { data, error } = await supabase.auth.getUser(token);
   if (error) return null;
-  return data.session?.user ?? null;
-}
+  return data.user ?? null;
+});
 
-/** Роль пользователя из app_metadata.role, по умолчанию "seller" */
-export async function getUserRole(): Promise<Role> {
+/** Гость не имеет роли, пользователи без CRM-роли получают права продавца. */
+export async function getUserRole(): Promise<Role | null> {
   const user = await getCurrentUser();
-  const role = (user?.app_metadata?.role as Role) || "seller";
-  return role;
+  return user ? normalizeCrmRole(user.app_metadata?.role) || 'seller' : null;
 }

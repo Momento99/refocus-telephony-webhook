@@ -310,7 +310,7 @@ function PenaltyModal({
 /* ===========================================
    КОМПОНЕНТ
 =========================================== */
-export default function PenaltiesTab() {
+export default function PenaltiesTab({ onChanged }: { onChanged?: () => void } = {}) {
   const sbRef = useRef<ReturnType<typeof getBrowserSupabase> | null>(null);
 
   const [rules, setRules] = useState<PenaltyRule[]>([]);
@@ -682,6 +682,9 @@ export default function PenaltiesTab() {
     // Обновляем компактный список
     const sb2 = sbRef.current!;
     await loadEmployeeSummaries(sb2);
+
+    // Сообщаем странице: суммы «К выплате» на вкладке «Зарплаты» надо перезагрузить
+    onChanged?.();
   }
 
   /* ---------- render ---------- */

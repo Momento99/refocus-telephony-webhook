@@ -7,7 +7,7 @@ import {
   uiRoleToDb,
   type RoleT,
 } from "./usePayrollMonthly";
-import { Wallet, Building2, KeyRound, User2, Plus, X, BarChart2, Copy } from "lucide-react";
+import { Wallet, Building2, KeyRound, User2, Plus, X, BarChart2, Copy, Settings2, ChevronDown } from "lucide-react";
 import PenaltiesTab from "./PenaltiesTab";
 import DisciplinesTab from "./DisciplinesTab";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
@@ -47,8 +47,18 @@ function num(x: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/* ---------- кто оплачивает работу мастера ----------
+   Мастер собирает пары для всей сети, поэтому его зарплата делится между двумя
+   плательщиками пропорционально числу заказов филиалов за тот же день
+   (источник — v_master_pay_by_branch_day). */
+const MASTER_PAYERS: { key: string; label: string; branchIds: number[] }[] = [
+  { key: "mom", label: "Мама", branchIds: [1, 2, 3] },
+  { key: "boss", label: "Болот", branchIds: [4, 5] },
+];
+
 /* ---------- время смены (вход–выход) в таймзоне филиала ---------- */
 const BISHKEK_TZ = "Asia/Bishkek";
+const PAYROLL_V5_START = "2026-08";
 function isoHasTZ(s: string) {
   return /Z$|[+-]\d{2}:\d{2}$/.test(String(s).trim());
 }
@@ -158,7 +168,9 @@ type WeekRange = {
   endExclusive: string; // НЕ включительно
 };
 
-/** Недели месяца как сегменты внутри месяца */
+/** Недели месяца — настоящие ПН–ВС, БЕЗ обрезки по границе месяца.
+ *  В список месяца попадает каждая неделя, которая пересекает этот месяц,
+ *  поэтому пограничная неделя (напр. 29.06–05.07) видна и в июне, и в июле. */
 function getWeeksForMonth(month: string): WeekRange[] {
   const { year, monthIndex } = parseMonthStr(month);
 
@@ -182,23 +194,19 @@ function getWeeksForMonth(month: string): WeekRange[] {
   const monthStart = new Date(year, monthIndex, 1);
   const monthEndExcl = new Date(year, monthIndex + 1, 1);
 
+  // Понедельник недели, в которую попадает 1-е число месяца.
+  // JS: 0=вс,1=пн,…6=сб → (dow + 6) % 7 = сколько дней назад до понедельника.
+  const firstMonday = addDays(monthStart, -((monthStart.getDay() + 6) % 7));
+
   const weeks: WeekRange[] = [];
   let idx = 1;
-  let cursor = new Date(monthStart);
+  let cursor = new Date(firstMonday);
 
+  // Берём каждую неделю, чей понедельник раньше конца месяца, —
+  // так последняя неделя входит целиком, даже с «хвостом» в следующем месяце.
   while (cursor < monthEndExcl) {
     const start = new Date(cursor);
-
-    // JS: 0=вс,1=пн,...6=сб
-    const dow = start.getDay();
-
-    // до ближайшего понедельника (конец недели exclusive)
-    let daysToNextMon = (8 - dow) % 7;
-    if (daysToNextMon === 0) daysToNextMon = 7;
-
-    let endExcl = addDays(start, daysToNextMon);
-    if (endExcl > monthEndExcl) endExcl = new Date(monthEndExcl);
-
+    const endExcl = addDays(start, 7); // ровно 7 дней ПН→ПН, без обрезки
     const endIncl = addDays(endExcl, -1);
 
     weeks.push({
@@ -401,7 +409,7 @@ function NumberCell({
             (e.currentTarget as HTMLInputElement).blur();
           }
         }}
-        className={cx(inputCls, "pr-9 text-right tabular-nums", className)}
+        className={cx(inputCls, suffix ? "pr-9" : "pr-3", "text-right tabular-nums", className)}
       />
       {busy && (
         <span className="absolute right-2 top-2 h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-cyan-400" />
@@ -415,58 +423,7 @@ function NumberCell({
   );
 }
 
-function Switch({
-  checked,
-  onCommit,
-}: {
-  checked: boolean;
-  onCommit: (v: boolean) => Promise<void> | void;
-}) {
-  const [v, setV] = useState(checked);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => setV(checked), [checked]);
-
-  async function toggle() {
-    const prev = v;
-    const next = !prev;
-    setV(next);
-    setBusy(true);
-    try {
-      await onCommit(next);
-    } catch {
-      setV(prev);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      className={cx(
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200",
-        v ? "bg-cyan-500" : "bg-slate-300"
-      )}
-      aria-pressed={v}
-      title={v ? "Бонусы включены" : "Бонусы выключены"}
-    >
-      {busy ? (
-        <span className="absolute inset-0 flex items-center justify-center">
-          <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-        </span>
-      ) : (
-        <span
-          className={cx(
-            "h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200",
-            v ? "translate-x-[17px]" : "translate-x-[1px]"
-          )}
-        />
-      )}
-    </button>
-  );
-}
+// Switch (тумблер бонуса) удалён: бонус 0 = выключен, отдельный переключатель не нужен.
 
 /* ---------- карточки / кнопки ---------- */
 function Card({
@@ -544,10 +501,10 @@ function DangerBtn(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   );
 }
 
-/* ---------- План филиала: серверная формула v3.2 ---------- */
-// Расчёт live: fn_payroll_calc_auto_plan / fn_payroll_calc_coldstart на стороне Postgres.
-// Cron: ежедневно 18:05 UTC (= 00:05 Asia/Bishkek) → fn_payroll_ensure_all_plans()
-// Клиентская формула v2 удалена — раньше она расходилась с серверной.
+/* ---------- План филиала: серверная модель Payroll v5 ---------- */
+// Расчёт/экономика живут в Postgres; UI читает v_payroll_plan_progress_v5.
+// Создание и фиксация выполняются только для будущего месяца через freeze RPC.
+// Клиентская формула удалена — браузер никогда не пересчитывает финансовый факт.
 const BRANCH_PLAN_TABLE = "payroll_branch_plans";
 const HISTORY_MONTHS_FOR_DISPLAY = 6;
 
@@ -564,6 +521,8 @@ function shiftMonthStart(monthStart: string, delta: number): string {
   const d = new Date(y, (m || 1) - 1 + delta, 1);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`;
 }
+
+
 function median(arr: number[]) {
   const a = arr.slice().sort((x, y) => x - y);
   const n = a.length;
@@ -579,13 +538,12 @@ export default function Page() {
   const [tab, setTab] = useState<"payroll" | "penalties" | "disciplines">("payroll");
 
   const [month, setMonth] = useState<string>(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return currentBusinessMonthKey();
   });
 
   const { year, monthIndex } = useMemo(() => parseMonthStr(month), [month]);
   const years = useMemo(() => {
-    const cur = new Date().getFullYear();
+    const cur = parseMonthStr(currentBusinessMonthKey()).year;
     return [cur - 1, cur, cur + 1];
   }, []);
 
@@ -597,9 +555,7 @@ export default function Page() {
 
   // выбор недели — по умолчанию текущая неделя
   const [weekKey, setWeekKey] = useState<string>(() => {
-    const d = new Date();
-    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    return getCurrentWeekKey(m);
+    return getCurrentWeekKey(currentBusinessMonthKey());
   });
   const weeks = useMemo(() => getWeeksForMonth(month), [month]);
   const activeWeek = useMemo(
@@ -665,6 +621,11 @@ export default function Page() {
   const [openCredEmpId, setOpenCredEmpId] = useState<number | null>(null);
   // форма создания логина: per-employee
   const [credForm, setCredForm] = useState<Record<number, { login: string; pin: string }>>({});
+  // подтверждение удаления (защита от случайного клика)
+  const [confirmDel, setConfirmDel] = useState<
+    null | { kind: "branch" | "employee"; id: number; name: string }
+  >(null);
+  const [delBusy, setDelBusy] = useState(false);
 
   function genPin4() {
     let s = "";
@@ -760,9 +721,23 @@ export default function Page() {
   const [weekPeriodMap, setWeekPeriodMap] = useState<Map<string, number> | null>(null);
   const [weekLoading, setWeekLoading] = useState(false);
 
+  // Инкремент после отмены штрафа на вкладке «Штрафы» — форсирует перезагрузку
+  // недельных и месячных сумм «К выплате» без перезагрузки страницы.
+  const [payrollRefreshTick, setPayrollRefreshTick] = useState(0);
+
   const [monthPeriodMap, setMonthPeriodMap] = useState<Map<string, number> | null>(null);
   const [monthAdjMap, setMonthAdjMap] = useState<Map<string, number>>(new Map());
   const [monthLoading, setMonthLoading] = useState(false);
+
+  // Бонус за возврат долгов (система «Должники», Беловодск): сумма 10%-начислений
+  // по сотруднику за период. Ключ карты — employee_id. Втекает в «К выплате».
+  const [weekDebtMap, setWeekDebtMap] = useState<Map<number, number>>(new Map());
+  const [monthDebtMap, setMonthDebtMap] = useState<Map<number, number>>(new Map());
+
+  // Еженедельные удержания (недостача и т.п.): сумма по сотруднику за период.
+  // Ключ карты — employee_id. Вычитается из «К выплате» (неделя + месяц).
+  const [weekDeductMap, setWeekDeductMap] = useState<Map<number, number>>(new Map());
+  const [monthDeductMap, setMonthDeductMap] = useState<Map<number, number>>(new Map());
 
   useEffect(() => {
     if (visibleEmployees.length === 0) {
@@ -816,7 +791,7 @@ export default function Page() {
     return () => {
       cancelled = true;
     };
-  }, [monthStart, monthEndInclusive, visibleEmployees]);
+  }, [monthStart, monthEndInclusive, visibleEmployees, payrollRefreshTick]);
 
   useEffect(() => {
     if (!activeWeek) {
@@ -834,10 +809,10 @@ export default function Page() {
     async function loadWeekCanonical() {
       setWeekLoading(true);
       try {
-        const weekEndInclusive = shiftYmd(activeWeek.endExclusive, -1);
+        const weekEndInclusive = shiftYmd(activeWeek!.endExclusive, -1);
 
         const { data, error } = await sb.rpc("payroll_period_canonical", {
-          p_from: activeWeek.start,
+          p_from: activeWeek!.start,
           p_to: weekEndInclusive,
           p_branch_id: null,
           p_employee_id: null,
@@ -867,16 +842,120 @@ export default function Page() {
     return () => {
       cancelled = true;
     };
-  }, [activeWeek, visibleEmployees]);
+  }, [activeWeek, visibleEmployees, payrollRefreshTick]);
+
+  /* ===== Бонус за возврат долгов (debt_collection_payout) ===== */
+  // Bishkek = UTC+6 без переходов, границы периода строим с офсетом +06:00.
+  async function fetchDebtBonusMap(
+    startYmd: string,
+    endExclusiveYmd: string
+  ): Promise<Map<number, number>> {
+    const m = new Map<number, number>();
+    try {
+      const { data, error } = await sb
+        .from("debt_collection_payout")
+        .select("employee_id,bonus_amount")
+        .gte("collected_at", `${startYmd}T00:00:00+06:00`)
+        .lt("collected_at", `${endExclusiveYmd}T00:00:00+06:00`);
+      if (error) throw error;
+      for (const r of (data ?? []) as any[]) {
+        const id = Number(r.employee_id);
+        m.set(id, (m.get(id) ?? 0) + num(r.bonus_amount));
+      }
+    } catch (err) {
+      console.error("fetchDebtBonusMap error", err);
+    }
+    return m;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchDebtBonusMap(monthStart, monthEndExcl).then((m) => {
+      if (!cancelled) setMonthDebtMap(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [monthStart, monthEndExcl]);
+
+  useEffect(() => {
+    if (!activeWeek) {
+      setWeekDebtMap(new Map());
+      return;
+    }
+    let cancelled = false;
+    fetchDebtBonusMap(activeWeek.start, activeWeek.endExclusive).then((m) => {
+      if (!cancelled) setWeekDebtMap(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWeek]);
+
+  /* ===== Еженедельные удержания (payroll_weekly_deductions) ===== */
+  async function fetchDeductMap(
+    startYmd: string,
+    endExclusiveYmd: string
+  ): Promise<Map<number, number>> {
+    const m = new Map<number, number>();
+    try {
+      const { data, error } = await sb
+        .from("payroll_weekly_deductions")
+        .select("employee_id,amount")
+        .gte("week_start", startYmd)
+        .lt("week_start", endExclusiveYmd);
+      if (error) throw error;
+      for (const r of (data ?? []) as any[]) {
+        const id = Number(r.employee_id);
+        m.set(id, (m.get(id) ?? 0) + num(r.amount));
+      }
+    } catch (err) {
+      console.error("fetchDeductMap error", err);
+    }
+    return m;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchDeductMap(monthStart, monthEndExcl).then((m) => {
+      if (!cancelled) setMonthDeductMap(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [monthStart, monthEndExcl]);
+
+  useEffect(() => {
+    if (!activeWeek) {
+      setWeekDeductMap(new Map());
+      return;
+    }
+    let cancelled = false;
+    fetchDeductMap(activeWeek.start, activeWeek.endExclusive).then((m) => {
+      if (!cancelled) setWeekDeductMap(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWeek]);
 
   const getMonthNet = (e: any) => {
     const key = `${e.id}:${e.branchId}`;
-    return (monthPeriodMap?.get(key) ?? 0) + (monthAdjMap.get(key) ?? 0);
+    return (
+      (monthPeriodMap?.get(key) ?? 0) +
+      (monthAdjMap.get(key) ?? 0) +
+      (monthDebtMap.get(e.id) ?? 0) -
+      (monthDeductMap.get(e.id) ?? 0)
+    );
   };
 
   const getWeekNet = (e: any) => {
     const key = `${e.id}:${e.branchId}`;
-    return weekPeriodMap?.get(key) ?? 0;
+    return (
+      (weekPeriodMap?.get(key) ?? 0) +
+      (weekDebtMap.get(e.id) ?? 0) -
+      (weekDeductMap.get(e.id) ?? 0)
+    );
   };
 
   const getNet = (e: any) => {
@@ -886,12 +965,12 @@ export default function Page() {
 
   const totalNet = useMemo(
     () => visibleEmployees.reduce((s, e) => s + getNet(e), 0),
-    [visibleEmployees, weekPeriodMap, monthPeriodMap, monthAdjMap, activeWeek]
+    [visibleEmployees, weekPeriodMap, monthPeriodMap, monthAdjMap, weekDebtMap, monthDebtMap, weekDeductMap, monthDeductMap, activeWeek]
   );
 
   const totalNetMonth = useMemo(() => {
     return visibleEmployees.reduce((s, e) => s + getMonthNet(e), 0);
-  }, [visibleEmployees, monthPeriodMap, monthAdjMap]);
+  }, [visibleEmployees, monthPeriodMap, monthAdjMap, monthDebtMap, monthDeductMap]);
 
   /* Итог к выплате по каждому филиалу */
   const branchTotals = useMemo(() => {
@@ -901,7 +980,7 @@ export default function Page() {
       m.set(e.branchId, (m.get(e.branchId) ?? 0) + getNet(e));
     }
     return m;
-  }, [branches, visibleEmployees, weekPeriodMap, monthPeriodMap, monthAdjMap, activeWeek]);
+  }, [branches, visibleEmployees, weekPeriodMap, monthPeriodMap, monthAdjMap, weekDebtMap, monthDebtMap, weekDeductMap, monthDeductMap, activeWeek]);
 
   /* ===== Детализация по дням (модалка) ===== */
   const [dailyMeta, setDailyMeta] = useState<null | {
@@ -915,15 +994,18 @@ export default function Page() {
   const [dailyRows, setDailyRows] = useState<any[] | null>(null);
   const [dailyBusy, setDailyBusy] = useState(false);
   const [dailyAdj, setDailyAdj] = useState<number>(0);
-
-  const dailyNetSum = useMemo(
-    () =>
-      dailyRows?.reduce(
-        (s: number, r: any) => s + (r.net_day == null ? 0 : Number(r.net_day)),
-        0
-      ) ?? 0,
-    [dailyRows]
-  );
+  // Бонус за возврат долгов за выбранный период (для строки в модалке «Детали»).
+  const [dailyDebtBonus, setDailyDebtBonus] = useState<number>(0);
+  const [dailyDebtRows, setDailyDebtRows] = useState<{ order_no: string; bonus: number }[]>([]);
+  // Еженедельное удержание за выбранный период + полный график недель (для «Деталей»).
+  const [dailyDeduct, setDailyDeduct] = useState<number>(0);
+  const [dailyDeductPlan, setDailyDeductPlan] = useState<
+    { week_start: string; amount: number; reason: string | null }[]
+  >([]);
+  // Мастер: раскладка «кто сколько платит» по филиалам за выбранный период.
+  const [dailyMasterSplit, setDailyMasterSplit] = useState<
+    { branchId: number; pairs: number; amount: number }[]
+  >([]);
 
   async function openDaily(e: {
     id: number;
@@ -943,6 +1025,11 @@ export default function Page() {
     });
     setDailyRows(null);
     setDailyAdj(0);
+    setDailyDebtBonus(0);
+    setDailyDebtRows([]);
+    setDailyDeduct(0);
+    setDailyDeductPlan([]);
+    setDailyMasterSplit([]);
     setDailyBusy(true);
 
     try {
@@ -1024,6 +1111,34 @@ export default function Page() {
         } catch {
           // сверка не критична — пропускаем
         }
+
+        // Раскладка «кто сколько платит»: пары мастера разносятся по филиалам
+        // пропорционально их заказам за тот же день.
+        try {
+          const { data: splitRows } = await sb
+            .from("v_master_pay_by_branch_day")
+            .select("branch_id, pairs, net_day")
+            .eq("employee_id", e.id)
+            .gte("day", rangeStart)
+            .lte("day", rangeEndInclusive);
+
+          const byBranch = new Map<number, { pairs: number; amount: number }>();
+          for (const sr of (splitRows ?? []) as any[]) {
+            const bid = Number(sr.branch_id);
+            if (!Number.isFinite(bid)) continue;
+            const cur = byBranch.get(bid) ?? { pairs: 0, amount: 0 };
+            cur.pairs += num(sr.pairs);
+            cur.amount += num(sr.net_day);
+            byBranch.set(bid, cur);
+          }
+          setDailyMasterSplit(
+            [...byBranch.entries()]
+              .map(([branchId, v]) => ({ branchId, ...v }))
+              .sort((a, b) => a.branchId - b.branchId)
+          );
+        } catch {
+          // раскладка не критична — пропускаем
+        }
       }
 
       const { data: adjRow, error: errAdj } = await sb
@@ -1043,6 +1158,47 @@ export default function Page() {
 
       setDailyRows(daily);
       setDailyAdj(adj);
+
+      // Бонус за возврат долгов (Беловодск): сумма за период + разбивка по заказам.
+      setDailyDebtBonus((activeWeek ? weekDebtMap : monthDebtMap).get(e.id) ?? 0);
+      try {
+        const dbStart = activeWeek ? activeWeek.start : monthStart;
+        const dbEnd = activeWeek ? activeWeek.endExclusive : monthEndExcl;
+        const { data: payoutRows } = await sb
+          .from("debt_collection_payout")
+          .select("bonus_amount, orders(order_no)")
+          .eq("employee_id", e.id)
+          .gte("collected_at", `${dbStart}T00:00:00+06:00`)
+          .lt("collected_at", `${dbEnd}T00:00:00+06:00`);
+        setDailyDebtRows(
+          ((payoutRows ?? []) as any[]).map((r) => ({
+            order_no: r.orders?.order_no ?? "—",
+            bonus: num(r.bonus_amount),
+          }))
+        );
+      } catch {
+        setDailyDebtRows([]);
+      }
+
+      // Еженедельное удержание (недостача): сумма за период + весь график недель.
+      setDailyDeduct((activeWeek ? weekDeductMap : monthDeductMap).get(e.id) ?? 0);
+      try {
+        const { data: dedRows } = await sb
+          .from("payroll_weekly_deductions")
+          .select("week_start, amount, reason")
+          .eq("employee_id", e.id)
+          .eq("branch_id", e.branchId)
+          .order("week_start", { ascending: true });
+        setDailyDeductPlan(
+          ((dedRows ?? []) as any[]).map((r) => ({
+            week_start: String(r.week_start),
+            amount: num(r.amount),
+            reason: r.reason ?? null,
+          }))
+        );
+      } catch {
+        setDailyDeductPlan([]);
+      }
     } catch (err: any) {
       console.error("openDaily error", err);
       alert(
@@ -1059,6 +1215,11 @@ export default function Page() {
     setDailyMeta(null);
     setDailyRows(null);
     setDailyAdj(0);
+    setDailyDebtBonus(0);
+    setDailyDebtRows([]);
+    setDailyDeduct(0);
+    setDailyDeductPlan([]);
+    setDailyMasterSplit([]);
     setDailyBusy(false);
   }
 
@@ -1129,15 +1290,27 @@ export default function Page() {
     const tableW = cols.reduce((s, c) => s + c.w, 0);
     const W = tableW + padX * 2;
 
-    const foot: { label: string; value: string; strong?: boolean }[] = [];
-    foot.push({
-      label: activeWeek ? "Итого по дням за неделю" : "Итого по дням",
-      value: `${fmt(dailyNetSum)} сом`,
-    });
-    if (!activeWeek && Math.round(dailyAdj) !== 0) {
-      foot.push({ label: "Корректировки (премия за план)", value: `${fmt(dailyAdj)} сом` });
+    // В копию выводим только одну итоговую цифру — ровно как в модалке
+    // («К выплате за неделю/месяц»), без промежуточных строк по дням и корректировок.
+    const foot: { label: string; value: string; strong?: boolean }[] = [
+      {
+        label: activeWeek ? "К выплате за неделю" : "К выплате за месяц",
+        value: `${fmt(dailyMeta.netPeriod)} сом`,
+        strong: true,
+      },
+    ];
+    if (dailyMeta.branchId === 2 && dailyDebtBonus > 0) {
+      foot.push({
+        label: "в т.ч. бонус за возврат долгов (10%)",
+        value: `+${fmt(dailyDebtBonus)} сом`,
+      });
     }
-    foot.push({ label: `К выплате за ${period}`, value: `${fmt(dailyMeta.netPeriod)} сом`, strong: true });
+    if (dailyDeduct > 0) {
+      foot.push({
+        label: "в т.ч. удержание за недостачу",
+        value: `−${fmt(dailyDeduct)} сом`,
+      });
+    }
 
     const yTop = 22;
     const titleH = 62;
@@ -1295,8 +1468,10 @@ export default function Page() {
     hourlyRate?: number;
     hasBonus?: boolean;
     bonusPercent?: number;
+    bonusPerOrder?: number;
   }) {
-    const { employeeId, branchId, hourlyRate, hasBonus, bonusPercent } = opts;
+    const { employeeId, branchId, hourlyRate, hasBonus, bonusPercent, bonusPerOrder } =
+      opts;
 
     const payload: any = {
       employee_id: employeeId,
@@ -1309,6 +1484,9 @@ export default function Page() {
     if (typeof hasBonus === "boolean") payload.has_bonus = hasBonus;
     if (typeof bonusPercent === "number")
       payload.bonus_percent = Math.max(0, Math.trunc(bonusPercent));
+    // Промоутеры: фикс. бонус (сом) за заказ филиала в смене.
+    if (typeof bonusPerOrder === "number")
+      payload.bonus_per_order = Math.max(0, Math.trunc(bonusPerOrder));
 
     try {
       const { error } = await sb
@@ -1327,6 +1505,25 @@ export default function Page() {
 
   const periodLabel = activeWeek ? activeWeek.label : formatMonthRu(month);
 
+  // Удержания (недостача): итоги для блока в «Деталях».
+  // «Осталось» считаем относительно текущей реальной недели (не от выбранной вкладки).
+  const currentWeekStart = (() => {
+    const t = new Date();
+    const monday = new Date(t);
+    monday.setDate(t.getDate() - ((t.getDay() + 6) % 7));
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${monday.getFullYear()}-${pad(monday.getMonth() + 1)}-${pad(monday.getDate())}`;
+  })();
+  const deductTotal = dailyDeductPlan.reduce((s, x) => s + x.amount, 0);
+  const deductApplied = dailyDeductPlan
+    .filter((x) => x.week_start <= currentWeekStart)
+    .reduce((s, x) => s + x.amount, 0);
+  const deductRemaining = Math.max(0, deductTotal - deductApplied);
+  const dmFromYmd = (ymd: string) => {
+    const p = ymd.split("-");
+    return p.length === 3 ? `${p[2]}.${p[1]}` : ymd;
+  };
+
   const rowTdBase = cx(
     "bg-white/92 backdrop-blur",
     "border-y border-sky-100/80",
@@ -1337,7 +1534,7 @@ export default function Page() {
 
   const hasDailyRows = (dailyRows?.length ?? 0) > 0;
   const hasAdj = Math.round(dailyAdj) !== 0;
-  const showDailyFooter = dailyRows !== null && (hasDailyRows || hasAdj);
+  const showDailyFooter = dailyRows !== null && (hasDailyRows || hasAdj || dailyDebtBonus > 0 || dailyDeduct > 0);
 
   /* ===== Планы по филиалам (месяц >= 2026-02) ===== */
   type BranchPlan = {
@@ -1345,12 +1542,46 @@ export default function Page() {
     monthly_bonus_each: number;
     mode?: string;
     auto_params?: any;
-    updated_at?: string;
+    updated_at?: string | null;
+    formula_version?: string | null;
+    status?: string | null;
+    locked_at?: string | null;
+    forecast_target?: number;
+    economic_target?: number;
+    break_even_target?: number;
+    bonus_start_target?: number;
+    target_margin_rate?: number;
+    target_profit?: number;
+    eligible_seller_count?: number;
+    estimated_economics?: Record<string, unknown> | null;
+    payout_multiplier?: number;
+    projected_branch_payout?: number;
+    is_estimated?: boolean;
+    estimate_reasons?: string[];
+    is_v5?: boolean;
+    source_reason?: string | null;
+    review_required?: boolean;
+    review_status?: string | null;
+    review_reasons?: string[];
+    is_active?: boolean;
+    observed_month_count?: number;
+    recent_observed_max?: number;
+    target_to_recent_max_ratio?: number;
+    volatility_cv?: number;
+    approval_mode?: string | null;
+    approval_note?: string | null;
+    approved_at?: string | null;
   };
 
   type BranchPremium = {
     turnover_sum: number;
+    net_sales?: number;
+    gross_sales?: number;
+    refunds_sum?: number;
     plan_premium_each: number;
+    payout_multiplier?: number;
+    achievement_ratio?: number;
+    is_provisional?: boolean;
   };
 
   const [branchPlans, setBranchPlans] = useState<Map<number, BranchPlan>>(new Map());
@@ -1359,6 +1590,54 @@ export default function Page() {
   const [histMonthsKeys, setHistMonthsKeys] = useState<string[]>([]);
   const [histLoaded, setHistLoaded] = useState(false);
   const [planBusyBranchId, setPlanBusyBranchId] = useState<number | null>(null);
+  const [planRefreshTick, setPlanRefreshTick] = useState(0);
+  const [planDialog, setPlanDialog] = useState<
+    | { kind: "auto"; branchId: number; branchName: string }
+    | {
+        kind: "manual";
+        branchId: number;
+        branchName: string;
+        target: string;
+        bonus: string;
+        reason: string;
+      }
+    | {
+        kind: "approve";
+        branchId: number;
+        branchName: string;
+        target: string;
+        bonus: string;
+        originalTarget: number;
+        originalBonus: number;
+        allowAdjust: boolean;
+        reason: string;
+        reviewReasons: string[];
+      }
+    | null
+  >(null);
+  const businessMonth = useMemo(() => currentBusinessMonthKey(), []);
+  const nextBusinessMonth = useMemo(() => shiftMonthKey(businessMonth, 1), [businessMonth]);
+  const isFuturePlanMonth = month > businessMonth;
+  const isCurrentPlanMonth = month === businessMonth;
+  const isNextPlanMonth = month === nextBusinessMonth;
+  const isV5PlanMonth = month >= PAYROLL_V5_START;
+
+  useEffect(() => {
+    setPlanDialog(null);
+  }, [month]);
+
+  function planIsLocked(plan?: BranchPlan | null): boolean {
+    const status = String(plan?.status ?? "").toLowerCase();
+    return Boolean(
+      plan?.locked_at ||
+        plan?.mode === "auto_locked" ||
+        ["locked", "frozen", "final", "closed"].includes(status)
+    );
+  }
+
+  function planIsReadOnly(plan?: BranchPlan | null): boolean {
+    return !isFuturePlanMonth || planIsLocked(plan);
+  }
 
   // ✅ Канон: колонка месяца — `month` (date), PK (branch_id, month).
   // Hack с тремя именами колонки удалён после миграции payroll_phase1.
@@ -1378,14 +1657,12 @@ export default function Page() {
     return { rows: data ?? [], monthCol: "month" };
   }
 
-  // ✅ Клиентская формула v2 (suggestPlan) удалена.
-  // Расчёт авто-плана теперь только на сервере (fn_payroll_calc_auto_plan, v3.2).
-  // Это гарантирует, что CRM, POS my-shift и cron используют одни и те же цифры.
+  // Клиентской формулы нет: расчёт v5, экономика и payout multiplier приходят
+  // из серверных plan/progress объектов, одинаковых для CRM и POS.
 
-  // ✅ ИСТОЧНИК ПРАВДЫ — только payroll_branch_plans (запись из БД).
-  // Виртуальный "suggested" удалён: то, что показывает CRM, теперь равно тому,
-  // что видит POS my-shift. Если плана нет — mode='pending', UI показывает
-  // "План рассчитывается…" и страница уже вызвала fn_payroll_ensure_all_plans.
+  // Источник правды — v5 plan/progress; payroll_branch_plans остаётся только
+  // read-fallback до полной публикации v5. Отсутствующий текущий/прошлый план
+  // браузер не создаёт задним числом.
   function getBranchPlanEffective(branchId: number): BranchPlan {
     const bp = branchPlans.get(branchId);
     if (bp) {
@@ -1395,6 +1672,34 @@ export default function Page() {
         mode: bp.mode ?? "manual",
         auto_params: bp.auto_params ?? null,
         updated_at: bp.updated_at,
+        formula_version: bp.formula_version ?? bp.auto_params?.version ?? null,
+        status: bp.status ?? null,
+        locked_at: bp.locked_at ?? null,
+        forecast_target: optionalNum(bp.forecast_target),
+        economic_target: optionalNum(bp.economic_target),
+        break_even_target: optionalNum(bp.break_even_target),
+        bonus_start_target: optionalNum(bp.bonus_start_target),
+        target_margin_rate: optionalNum(bp.target_margin_rate),
+        target_profit: optionalNum(bp.target_profit),
+        eligible_seller_count: optionalNum(bp.eligible_seller_count),
+        estimated_economics: bp.estimated_economics ?? null,
+        payout_multiplier: optionalNum(bp.payout_multiplier),
+        projected_branch_payout: optionalNum(bp.projected_branch_payout),
+        is_estimated: bp.is_estimated,
+        estimate_reasons: bp.estimate_reasons ?? [],
+        is_v5: bp.is_v5 ?? false,
+        source_reason: bp.source_reason ?? null,
+        review_required: bp.review_required,
+        review_status: bp.review_status ?? null,
+        review_reasons: bp.review_reasons ?? [],
+        is_active: bp.is_active,
+        observed_month_count: optionalNum(bp.observed_month_count),
+        recent_observed_max: optionalNum(bp.recent_observed_max),
+        target_to_recent_max_ratio: optionalNum(bp.target_to_recent_max_ratio),
+        volatility_cv: optionalNum(bp.volatility_cv),
+        approval_mode: bp.approval_mode ?? null,
+        approval_note: bp.approval_note ?? null,
+        approved_at: bp.approved_at ?? null,
       };
     }
     return {
@@ -1403,6 +1708,13 @@ export default function Page() {
       mode: "pending",
       auto_params: null,
       updated_at: undefined,
+      formula_version: null,
+      status: "pending",
+      locked_at: null,
+      estimated_economics: null,
+      estimate_reasons: [],
+      is_v5: false,
+      review_reasons: [],
     };
   }
 
@@ -1420,15 +1732,6 @@ export default function Page() {
     let cancelled = false;
 
     async function loadPlansPremiumsAndHistory() {
-      // ✅ Гарантируем наличие планов для текущего месяца ДО чтения.
-      // Это закрывает кейс «cron не отработал» / «новый филиал/месяц».
-      // Идемпотентно (mode IN manual/auto_locked не перезаписывается).
-      try {
-        await sb.rpc("fn_payroll_ensure_all_plans", { p_month: monthStart });
-      } catch (e: any) {
-        console.warn("fn_payroll_ensure_all_plans failed:", extractErrMsg(e));
-      }
-
       const keys: string[] = [];
       for (let i = HISTORY_MONTHS_FOR_DISPLAY; i >= 1; i--) {
         keys.push(shiftMonthKey(month, -i));
@@ -1447,6 +1750,22 @@ export default function Page() {
             mode: r.mode ?? "manual",
             auto_params: r.auto_params ?? null,
             updated_at: r.updated_at ?? null,
+            formula_version: r.formula_version ?? r.auto_params?.version ?? null,
+            status: r.status ?? null,
+            locked_at: r.locked_at ?? null,
+            forecast_target: optionalNum(r.forecast_target),
+            economic_target: optionalNum(r.economic_target),
+            break_even_target: optionalNum(r.break_even_target),
+            bonus_start_target: optionalNum(r.bonus_start_target),
+            target_margin_rate: optionalNum(r.target_margin_rate),
+            target_profit: optionalNum(r.target_profit),
+            eligible_seller_count: optionalNum(r.eligible_seller_count),
+            estimated_economics:
+              r.estimated_economics && typeof r.estimated_economics === "object"
+                ? r.estimated_economics
+                : null,
+            payout_multiplier: optionalNum(r.payout_multiplier),
+            is_v5: false,
           });
         }
       } catch (e: any) {
@@ -1455,10 +1774,275 @@ export default function Page() {
       }
 
       let premMap = new Map<number, BranchPremium>();
+
+      // v5 — основной read-контракт. Таблица добавляет экономические детали,
+      // progress view — фактические net sales и плавный multiplier. Если v5 ещё
+      // не опубликован, ниже остаётся безопасный legacy fallback.
+      try {
+        const { data: v5PlanRows, error: v5PlanErr } = await sb
+          .from("payroll_branch_plans_v5")
+          .select("*")
+          .eq("month", monthStart);
+
+        if (!v5PlanErr) {
+          for (const r of (v5PlanRows ?? []) as any[]) {
+            const bid = Number(r.branch_id ?? 0);
+            if (!bid) continue;
+            const previous = planMap.get(bid);
+            const target =
+              optionalNum(r.monthly_target ?? r.target ?? r.monthly_turnover_target) ??
+              previous?.monthly_turnover_target ??
+              0;
+            const bonus =
+              optionalNum(r.bonus_each_full ?? r.monthly_bonus_each) ??
+              previous?.monthly_bonus_each ??
+              0;
+            const reasons = r.estimate_reasons ?? r.estimated_economics?.reasons;
+            planMap.set(bid, {
+              ...previous,
+              monthly_turnover_target: target,
+              monthly_bonus_each: bonus,
+              mode: r.source_mode ?? r.mode ?? previous?.mode ?? "auto",
+              auto_params: r.snapshot_inputs ?? r.auto_params ?? previous?.auto_params ?? null,
+              updated_at: r.frozen_at ?? r.updated_at ?? previous?.updated_at,
+              formula_version:
+                r.formula_version ?? previous?.formula_version ?? "payroll-v5",
+              status:
+                r.status ?? (r.is_frozen || r.frozen_at ? "frozen" : "provisional"),
+              locked_at: r.locked_at ?? r.frozen_at ?? previous?.locked_at ?? null,
+              forecast_target: optionalNum(r.weighted_forecast ?? r.forecast_target),
+              economic_target: optionalNum(r.economic_target ?? r.economic_floor),
+              break_even_target: optionalNum(r.break_even ?? r.break_even_target),
+              bonus_start_target: optionalNum(r.bonus_start_target ?? r.start_threshold),
+              target_margin_rate: optionalNum(
+                r.contribution_margin_used ?? r.target_margin_rate
+              ),
+              target_profit:
+                optionalNum(r.target_profit) ??
+                (optionalNum(r.contribution_margin_used) !== undefined &&
+                optionalNum(r.fixed_cost_used) !== undefined
+                  ? target * Number(r.contribution_margin_used) -
+                    Number(r.fixed_cost_used) -
+                    (optionalNum(r.eligible_seller_count) ?? 0) * bonus
+                  : undefined),
+              eligible_seller_count: optionalNum(
+                r.eligible_seller_count ?? r.eligible_sellers
+              ),
+              estimated_economics:
+                r.estimated_economics && typeof r.estimated_economics === "object"
+                  ? r.estimated_economics
+                  : null,
+              payout_multiplier: optionalNum(r.payout_multiplier),
+              projected_branch_payout: optionalNum(r.projected_branch_payout),
+              is_estimated:
+                typeof r.is_estimated === "boolean" ? r.is_estimated : undefined,
+              estimate_reasons: Array.isArray(reasons) ? reasons.map(String) : [],
+              is_v5: true,
+              source_reason: r.source_reason ?? null,
+            });
+          }
+        } else if (!/does not exist|schema cache/i.test(extractErrMsg(v5PlanErr))) {
+          console.warn("load payroll_branch_plans_v5 failed:", extractErrMsg(v5PlanErr));
+        }
+
+        const { data: progressRows, error: progressErr } = await sb
+          .from("v_payroll_plan_progress_admin_v5")
+          .select("*")
+          .eq("month", monthStart);
+
+        if (!progressErr) {
+          for (const r of (progressRows ?? []) as any[]) {
+            const bid = Number(r.branch_id ?? 0);
+            if (!bid) continue;
+            const previous = planMap.get(bid);
+            const target = optionalNum(r.target) ?? previous?.monthly_turnover_target ?? 0;
+            const reasons = Array.isArray(r.estimate_reasons)
+              ? r.estimate_reasons.map(String)
+              : previous?.estimate_reasons ?? [];
+            const isActive = r.is_active !== false;
+            const reviewReasons = Array.isArray(r.review_reasons)
+              ? r.review_reasons.map(String)
+              : previous?.review_reasons ?? [];
+            planMap.set(bid, {
+              ...previous,
+              monthly_turnover_target: target,
+              monthly_bonus_each:
+                optionalNum(r.bonus_each_full) ?? previous?.monthly_bonus_each ?? 0,
+              mode: previous?.mode ?? "auto",
+              formula_version:
+                r.formula_version ?? previous?.formula_version ?? "payroll-v5",
+              status:
+                r.review_status ??
+                (r.is_frozen ? "frozen" : previous?.status ?? "provisional"),
+              locked_at: previous?.locked_at ?? null,
+              economic_target:
+                optionalNum(r.economic_floor) ?? previous?.economic_target,
+              forecast_target:
+                optionalNum(r.weighted_forecast) ?? previous?.forecast_target,
+              break_even_target:
+                optionalNum(r.break_even) ?? previous?.break_even_target,
+              bonus_start_target:
+                optionalNum(r.start_threshold) ?? previous?.bonus_start_target,
+              target_margin_rate:
+                optionalNum(r.contribution_margin_used) ?? previous?.target_margin_rate,
+              target_profit:
+                optionalNum(r.target_profit) ??
+                (optionalNum(r.contribution_margin_used) !== undefined &&
+                optionalNum(r.fixed_cost_used) !== undefined
+                  ? target * Number(r.contribution_margin_used) -
+                    Number(r.fixed_cost_used) -
+                    (optionalNum(r.eligible_seller_count ?? r.eligible_sellers) ?? 0) *
+                      (optionalNum(r.bonus_each_full) ?? 0)
+                  : previous?.target_profit),
+              eligible_seller_count:
+                optionalNum(r.eligible_seller_count ?? r.eligible_sellers) ??
+                previous?.eligible_seller_count,
+              payout_multiplier: isActive
+                ? optionalNum(r.payout_multiplier) ?? previous?.payout_multiplier
+                : 0,
+              projected_branch_payout:
+                optionalNum(
+                  r.projected_branch_payout_at_full_service ?? r.projected_branch_payout
+                ) ??
+                previous?.projected_branch_payout,
+              is_estimated:
+                typeof r.is_estimated === "boolean"
+                  ? r.is_estimated
+                  : previous?.is_estimated,
+              estimate_reasons: reasons,
+              estimated_economics: previous?.estimated_economics ?? null,
+              is_v5: true,
+              source_reason: r.source_reason ?? previous?.source_reason ?? null,
+              review_required:
+                typeof r.review_required === "boolean"
+                  ? r.review_required
+                  : previous?.review_required,
+              review_status: r.review_status ?? previous?.review_status ?? null,
+              review_reasons: reviewReasons,
+              is_active: isActive,
+              observed_month_count:
+                optionalNum(r.observed_month_count) ?? previous?.observed_month_count,
+              recent_observed_max:
+                optionalNum(r.recent_observed_max) ?? previous?.recent_observed_max,
+              target_to_recent_max_ratio:
+                optionalNum(r.target_to_recent_max_ratio) ??
+                previous?.target_to_recent_max_ratio,
+              volatility_cv: optionalNum(r.volatility_cv) ?? previous?.volatility_cv,
+              approval_mode: r.approval_mode ?? previous?.approval_mode ?? null,
+              approval_note: r.approval_note ?? previous?.approval_note ?? null,
+              approved_at: r.approved_at ?? previous?.approved_at ?? null,
+            });
+
+            premMap.set(bid, {
+              turnover_sum: optionalNum(r.qualified_net_sales) ?? 0,
+              net_sales: optionalNum(r.qualified_net_sales),
+              plan_premium_each: isActive
+                ? (optionalNum(r.bonus_each_full) ?? 0) *
+                  (optionalNum(r.payout_multiplier) ?? 0)
+                : 0,
+              payout_multiplier: isActive ? optionalNum(r.payout_multiplier) : 0,
+              achievement_ratio: optionalNum(r.achievement_ratio),
+              is_provisional: !isActive || !Boolean(r.is_frozen),
+            });
+          }
+        } else if (!/does not exist|schema cache/i.test(extractErrMsg(progressErr))) {
+          console.warn("load v_payroll_plan_progress_admin_v5 failed:", extractErrMsg(progressErr));
+        }
+
+        // До фиксации владелец видит серверный preview ровно для текущего/
+        // следующего месяца. Preview ничего не записывает и не попадает на POS.
+        const needsPreview = branches.some((branch) => !planMap.get(branch.id)?.is_v5);
+        if (
+          needsPreview &&
+          isV5PlanMonth &&
+          (isCurrentPlanMonth || isNextPlanMonth)
+        ) {
+          const { data: previewRows, error: previewErr } = await sb
+            .from("v_payroll_plan_preview_v5")
+            .select("*")
+            .eq("month", monthStart);
+          if (previewErr) {
+            if (!/does not exist|schema cache/i.test(extractErrMsg(previewErr))) {
+              console.warn("load v_payroll_plan_preview_v5 failed:", extractErrMsg(previewErr));
+            }
+          } else {
+            for (const r of (previewRows ?? []) as any[]) {
+              const bid = Number(r.branch_id ?? 0);
+              const existing = planMap.get(bid);
+              if (!bid || r.already_frozen || (existing?.is_v5 && planIsLocked(existing))) continue;
+              const target = optionalNum(r.monthly_target) ?? 0;
+              const bonus = optionalNum(r.bonus_each_full) ?? 0;
+              const margin = optionalNum(r.contribution_margin_used);
+              const fixed = optionalNum(r.fixed_cost_used);
+              const sellerCount = optionalNum(r.eligible_seller_count) ?? 0;
+              planMap.set(bid, {
+                monthly_turnover_target: target,
+                monthly_bonus_each: bonus,
+                mode: r.source_mode ?? "auto",
+                auto_params: r.snapshot_inputs ?? null,
+                formula_version: r.formula_version ?? "v5.0-2026-09",
+                status: "preview",
+                locked_at: null,
+                forecast_target: optionalNum(r.weighted_forecast),
+                economic_target: optionalNum(r.economic_floor),
+                break_even_target: optionalNum(r.break_even),
+                bonus_start_target: optionalNum(r.start_threshold),
+                target_margin_rate: margin,
+                target_profit:
+                  margin !== undefined && fixed !== undefined
+                    ? target * margin - fixed - sellerCount * bonus
+                    : undefined,
+                eligible_seller_count: sellerCount,
+                payout_multiplier: 0,
+                projected_branch_payout: 0,
+                is_estimated: r.is_estimated === true,
+                estimate_reasons: Array.isArray(r.estimate_reasons)
+                  ? r.estimate_reasons.map(String)
+                  : [],
+                is_v5: true,
+              });
+            }
+          }
+        }
+
+        const { data: qualifiedRows, error: qualifiedErr } = await sb
+          .from("v_payroll_qualified_sales_monthly_v5")
+          .select("*")
+          .eq("month", monthStart);
+        if (!qualifiedErr) {
+          for (const r of (qualifiedRows ?? []) as any[]) {
+            const bid = Number(r.branch_id ?? 0);
+            if (!bid) continue;
+            const previous = premMap.get(bid) ?? {
+              turnover_sum: 0,
+              plan_premium_each: 0,
+            };
+            const net = optionalNum(
+              r.qualified_net_sales ?? r.net_sales ?? r.turnover_sum
+            );
+            premMap.set(bid, {
+              ...previous,
+              turnover_sum: net ?? previous.turnover_sum,
+              net_sales: net ?? previous.net_sales,
+              gross_sales:
+                optionalNum(
+                  r.qualified_gross_sales ?? r.gross_sales ?? r.positive_sales
+                ) ?? previous.gross_sales,
+              refunds_sum:
+                optionalNum(
+                  r.refunds_sum ?? r.refund_sum ?? r.refunds ?? r.refund_amount
+                ) ?? previous.refunds_sum,
+            });
+          }
+        }
+      } catch (e: any) {
+        console.warn("load payroll v5 compatibility data failed:", extractErrMsg(e));
+      }
+
       try {
         const { data: premRows, error: premErr } = await sb
           .from("v_payroll_plan_premium_monthly_branch")
-          .select("branch_id,turnover_sum,plan_premium_each")
+          .select("*")
           .eq("month", monthStart);
 
         if (premErr) throw premErr;
@@ -1466,14 +2050,29 @@ export default function Page() {
         for (const r of (premRows ?? []) as any[]) {
           const bid = Number(r.branch_id ?? 0);
           if (!bid) continue;
+          if (premMap.has(bid)) continue;
+          const turnoverSum = optionalNum(r.turnover_sum ?? r.turnover) ?? 0;
           premMap.set(bid, {
-            turnover_sum: Number(r.turnover_sum ?? 0),
-            plan_premium_each: Number(r.plan_premium_each ?? 0),
+            turnover_sum: turnoverSum,
+            net_sales: optionalNum(r.net_sales),
+            gross_sales: optionalNum(r.gross_sales ?? r.positive_sales),
+            refunds_sum: optionalNum(
+              r.refunds_sum ?? r.refund_sum ?? r.refunds ?? r.refund_amount
+            ),
+            plan_premium_each:
+              optionalNum(
+                r.plan_premium_each ??
+                  r.current_bonus_each ??
+                  r.provisional_bonus_each
+              ) ?? 0,
+            payout_multiplier: optionalNum(r.payout_multiplier),
+            achievement_ratio: optionalNum(r.achievement_ratio),
+            is_provisional:
+              typeof r.is_provisional === "boolean" ? r.is_provisional : undefined,
           });
         }
       } catch (e: any) {
         console.error("load branch premium error:", extractErrMsg(e));
-        premMap = new Map();
       }
 
       // ИСТОРИЯ: берём именно дневную выручку филиала
@@ -1483,13 +2082,24 @@ export default function Page() {
         const histStart = shiftMonthStart(monthStart, -HISTORY_MONTHS_FOR_DISPLAY);
         const histEnd = monthStart;
 
-        const { data: days, error: errDays } = await sb
-          .from("v_payroll_branch_turnover_daily")
-          .select("branch_id,day,turnover")
+        let days: any[] = [];
+        const { data: v5Days, error: v5DaysErr } = await sb
+          .from("v_payroll_qualified_sales_daily_v5")
+          .select("*")
           .gte("day", histStart)
           .lt("day", histEnd);
 
-        if (errDays) throw errDays;
+        if (!v5DaysErr) {
+          days = v5Days ?? [];
+        } else {
+          const { data: legacyDays, error: legacyDaysErr } = await sb
+            .from("v_payroll_branch_turnover_daily")
+            .select("branch_id,day,turnover")
+            .gte("day", histStart)
+            .lt("day", histEnd);
+          if (legacyDaysErr) throw legacyDaysErr;
+          days = legacyDays ?? [];
+        }
 
         const sumByBranchMonth = new Map<string, number>();
         const branchIdsSeen = new Set<number>();
@@ -1503,7 +2113,7 @@ export default function Page() {
           const mk = dayStr.length >= 7 ? dayStr.slice(0, 7) : "";
           if (!mk) continue;
 
-          const t = num(r.turnover);
+          const t = num(r.qualified_net_sales ?? r.net_sales ?? r.turnover);
           const k = `${bid}:${mk}`;
           sumByBranchMonth.set(k, (sumByBranchMonth.get(k) ?? 0) + t);
         }
@@ -1538,7 +2148,17 @@ export default function Page() {
     return () => {
       cancelled = true;
     };
-  }, [isMonthlyPlanMode, monthStart, month, branches]);
+  }, [
+    isMonthlyPlanMode,
+    isFuturePlanMonth,
+    isCurrentPlanMonth,
+    isNextPlanMonth,
+    isV5PlanMonth,
+    monthStart,
+    month,
+    branches,
+    planRefreshTick,
+  ]);
 
   async function saveBranchPlan(branchId: number, patch: Partial<BranchPlan>) {
     const current = getBranchPlanEffective(branchId);
@@ -1547,12 +2167,6 @@ export default function Page() {
       ...current,
       ...patch,
     };
-
-    setBranchPlans((m) => {
-      const nm = new Map(m);
-      nm.set(branchId, next);
-      return nm;
-    });
 
     const payloadBase: any = {
       branch_id: branchId,
@@ -1564,40 +2178,189 @@ export default function Page() {
       updated_at: new Date().toISOString(),
     };
 
+    if (isV5PlanMonth || current.is_v5) {
+      throw new Error(
+        "План v5 фиксируется одной операцией. Используйте «Настроить вручную» и подтвердите цель, бонус и причину вместе."
+      );
+    }
+    if (planIsReadOnly(current)) {
+      throw new Error("Текущий, прошлый или зафиксированный план доступен только для чтения.");
+    }
     await upsertBranchPlanWithFallback(payloadBase);
+
+    setBranchPlans((m) => {
+      const nm = new Map(m);
+      nm.set(branchId, next);
+      return nm;
+    });
+    setPlanRefreshTick((tick) => tick + 1);
   }
 
-  // ✅ "Пересчитать" — теперь делегирует серверной формуле v3 (одна на CRM/POS/cron).
-  // Сервер сам решает: auto / auto_coldstart / auto_dormant и записывает.
-  // Если у филиала mode='manual' / 'auto_locked' — сервер не перезапишет.
+  function openManualPlanDialog(branchId: number, branchName: string) {
+    const current = getBranchPlanEffective(branchId);
+    setPlanDialog({
+      kind: "manual",
+      branchId,
+      branchName,
+      target: String(Math.max(0, Math.trunc(current.monthly_turnover_target))),
+      bonus: String(Math.max(0, Math.trunc(current.monthly_bonus_each))),
+      reason: "",
+    });
+  }
+
+  function openPlanReviewDialog(branchId: number, branchName: string) {
+    const current = getBranchPlanEffective(branchId);
+    const target = Math.max(0, Math.trunc(current.monthly_turnover_target));
+    const bonus = Math.max(0, Math.trunc(current.monthly_bonus_each));
+    setPlanDialog({
+      kind: "approve",
+      branchId,
+      branchName,
+      target: String(target),
+      bonus: String(bonus),
+      originalTarget: target,
+      originalBonus: bonus,
+      allowAdjust: isCurrentPlanMonth || isNextPlanMonth,
+      reason: "",
+      reviewReasons: current.review_reasons ?? [],
+    });
+  }
+
+  // v5: одна серверная операция одновременно фиксирует формулу, цель, бонус
+  // и roster продавцов. Повторный вызов возвращает тот же неизменяемый план.
   async function applyAutoPlan(branchId: number) {
     setPlanBusyBranchId(branchId);
     try {
-      // Если стоит manual — сначала переводим в auto, чтобы серверная функция могла перезаписать
-      const cur = branchPlans.get(branchId);
-      if (cur && (cur.mode === "manual" || cur.mode === "auto_locked")) {
-        const ok = confirm(
-          `План филиала задан вручную (${cur.mode}). ` +
-          `Перевести в автоматический режим и пересчитать?`
+      const current = getBranchPlanEffective(branchId);
+      if (!isNextPlanMonth || planIsLocked(current)) {
+        throw new Error(
+          "Зафиксировать можно только следующий незаблокированный месяц."
         );
-        if (!ok) return;
-        const { error: upErr } = await sb
-          .from(BRANCH_PLAN_TABLE)
-          .update({ mode: "auto", updated_at: new Date().toISOString() })
-          .eq("branch_id", branchId)
-          .eq("month", monthStart);
-        if (upErr) throw upErr;
       }
 
-      const { error: rpcErr } = await sb.rpc("fn_payroll_ensure_plan", {
+      const { error: freezeErr } = await sb.rpc("fn_payroll_freeze_plan_v5", {
         p_branch_id: branchId,
         p_month: monthStart,
+        p_reason: "Зафиксировано владельцем на странице Payroll",
       });
-      if (rpcErr) throw rpcErr;
+      if (freezeErr) throw freezeErr;
 
       await mutate();
+      setPlanRefreshTick((tick) => tick + 1);
+      setPlanDialog(null);
+      toast.success("План рассчитан и зафиксирован");
     } catch (e: any) {
-      alert(`Не удалось пересчитать план: ${extractErrMsg(e)}`);
+      toast.error(`Не удалось зафиксировать план: ${extractErrMsg(e)}`);
+    } finally {
+      setPlanBusyBranchId(null);
+    }
+  }
+
+  async function applyManualPlan() {
+    if (!planDialog || planDialog.kind !== "manual") return;
+    const current = getBranchPlanEffective(planDialog.branchId);
+    const target = Math.trunc(Number(planDialog.target));
+    const bonus = Math.trunc(Number(planDialog.bonus));
+    const reason = planDialog.reason.trim();
+    if (!Number.isFinite(target) || target <= 0) {
+      toast.error("Укажите положительную цель продаж");
+      return;
+    }
+    if (!Number.isFinite(bonus) || bonus < 0) {
+      toast.error("Бонус не может быть отрицательным");
+      return;
+    }
+    if (reason.length < 12) {
+      toast.error("Укажите понятную причину не короче 12 символов");
+      return;
+    }
+    if (!isV5PlanMonth || (!isCurrentPlanMonth && !isNextPlanMonth)) {
+      toast.error("Изменять план можно только для текущего или следующего месяца");
+      return;
+    }
+
+    const shouldCorrectPublishedPlan = isCurrentPlanMonth || planIsLocked(current);
+    setPlanBusyBranchId(planDialog.branchId);
+    try {
+      const { error } = shouldCorrectPublishedPlan
+        ? await sb.rpc("fn_payroll_correct_effective_plan_v5", {
+            p_branch_id: planDialog.branchId,
+            p_month: monthStart,
+            p_effective_target: target,
+            p_effective_bonus_each: bonus,
+            p_correction_note: reason,
+          })
+        : await sb.rpc("fn_payroll_override_plan_v5", {
+            p_branch_id: planDialog.branchId,
+            p_month: monthStart,
+            p_monthly_turnover_target: target,
+            p_monthly_bonus_each: bonus,
+            p_reason: reason,
+          });
+      if (error) throw error;
+      await mutate();
+      setPlanRefreshTick((tick) => tick + 1);
+      setPlanDialog(null);
+      toast.success(shouldCorrectPublishedPlan ? "План скорректирован" : "План установлен");
+    } catch (e: any) {
+      toast.error(`Не удалось зафиксировать ручной план: ${extractErrMsg(e)}`);
+    } finally {
+      setPlanBusyBranchId(null);
+    }
+  }
+
+  async function approveReviewedPlan() {
+    if (!planDialog || planDialog.kind !== "approve") return;
+    const target = Math.trunc(Number(planDialog.target));
+    const bonus = Math.trunc(Number(planDialog.bonus));
+    const reason = planDialog.reason.trim();
+    if (!Number.isFinite(target) || target <= 0) {
+      toast.error("Укажите положительную цель чистых продаж");
+      return;
+    }
+    if (!Number.isFinite(bonus) || bonus < 0) {
+      toast.error("Бонус не может быть отрицательным");
+      return;
+    }
+    if (reason.length < 12) {
+      toast.error("Напишите причину решения не короче 12 символов");
+      return;
+    }
+    const changed =
+      target !== planDialog.originalTarget || bonus !== planDialog.originalBonus;
+    if (changed && !planDialog.allowAdjust) {
+      toast.error("В завершённом месяце можно принять только исходный замороженный план");
+      return;
+    }
+
+    setPlanBusyBranchId(planDialog.branchId);
+    try {
+      const unchanged = !changed;
+      const { error } = unchanged
+        ? await sb.rpc("fn_payroll_approve_plan_v5", {
+            p_branch_id: planDialog.branchId,
+            p_month: monthStart,
+            p_approval_note: reason,
+          })
+        : await sb.rpc("fn_payroll_correct_effective_plan_v5", {
+            p_branch_id: planDialog.branchId,
+            p_month: monthStart,
+            p_effective_target: target,
+            p_effective_bonus_each: bonus,
+            p_correction_note: reason,
+          });
+      if (error) throw error;
+
+      await mutate();
+      setPlanRefreshTick((tick) => tick + 1);
+      setPlanDialog(null);
+      toast.success(
+        unchanged
+          ? "План проверен и опубликован"
+          : "Скорректированный план проверен и опубликован"
+      );
+    } catch (e: any) {
+      toast.error(`Не удалось опубликовать план: ${extractErrMsg(e)}`);
     } finally {
       setPlanBusyBranchId(null);
     }
@@ -1611,6 +2374,161 @@ export default function Page() {
         <div className="absolute top-64 left-10 h-64 w-64 rounded-full bg-sky-500/10 blur-[70px]" />
         <div className="absolute bottom-0 right-0 h-72 w-72 rounded-full bg-emerald-500/10 blur-[80px]" />
       </div>
+
+      {planDialog ? (
+        <div
+          className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="payroll-plan-dialog-title"
+        >
+          <div className="w-full max-w-lg rounded-3xl bg-white p-5 text-slate-900 shadow-2xl ring-1 ring-cyan-200/70">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div id="payroll-plan-dialog-title" className="text-lg font-bold">
+                  {planDialog.kind === "auto"
+                    ? "Зафиксировать расчёт"
+                    : planDialog.kind === "approve"
+                    ? "Проверить и опубликовать план"
+                    : "Изменить план"}
+                </div>
+                <div className="mt-1 text-sm text-slate-500">
+                  {planDialog.branchName} · {formatMonthRu(month)}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlanDialog(null)}
+                disabled={planBusyBranchId === planDialog.branchId}
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+                aria-label="Закрыть"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {planDialog.kind === "auto" ? (
+              <div className="mt-5">
+                <div className="rounded-2xl bg-cyan-50 p-4 text-sm text-cyan-950 ring-1 ring-cyan-200">
+                  Будут навсегда сохранены показанный серверный расчёт и список действующих
+                  продавцов. После фиксации план нельзя пересчитать задним числом.
+                </div>
+                <div className="mt-5 flex justify-end gap-2">
+                  <GhostBtn
+                    type="button"
+                    onClick={() => setPlanDialog(null)}
+                    disabled={planBusyBranchId === planDialog.branchId}
+                  >
+                    Отмена
+                  </GhostBtn>
+                  <PrimaryBtn
+                    type="button"
+                    onClick={() => applyAutoPlan(planDialog.branchId)}
+                    disabled={planBusyBranchId === planDialog.branchId}
+                  >
+                    Зафиксировать
+                  </PrimaryBtn>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 space-y-4">
+                {planDialog.kind === "approve" ? (
+                  <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-950 ring-1 ring-rose-200">
+                    <div className="font-semibold">
+                      Автоматическая публикация остановлена защитной проверкой
+                    </div>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-rose-800">
+                      {planDialog.reviewReasons.map((reason) => (
+                        <li key={reason}>{payrollReviewReasonLabel(reason)}</li>
+                      ))}
+                    </ul>
+                    <div className="mt-2 text-xs text-rose-800">
+                      До вашего решения этот план не виден кассе, не начисляет премию и блокирует
+                      окончательное закрытие месяца.
+                    </div>
+                  </div>
+                ) : null}
+                <div>
+                  <label className="space-y-1.5 text-sm font-medium text-slate-700">
+                    <span>План продаж, сом</span>
+                    <input
+                      inputMode="numeric"
+                      readOnly={
+                        planDialog.kind === "approve" && !planDialog.allowAdjust
+                      }
+                      value={planDialog.target}
+                      onChange={(event) =>
+                        setPlanDialog({
+                          ...planDialog,
+                          target: event.target.value.replace(/[^\d]/g, ""),
+                        })
+                      }
+                      className={cx(
+                        "h-11 w-full rounded-xl px-3 text-slate-900 ring-1 ring-slate-300 outline-none focus:ring-2 focus:ring-cyan-400",
+                        planDialog.kind === "approve" && !planDialog.allowAdjust
+                          ? "bg-slate-100 text-slate-500"
+                          : "bg-white"
+                      )}
+                    />
+                  </label>
+                </div>
+                {planDialog.kind === "approve" && !planDialog.allowAdjust ? (
+                  <div className="rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">
+                    Месяц уже завершён: можно только принять исходные замороженные условия.
+                    Менять цель или бонус задним числом нельзя.
+                  </div>
+                ) : null}
+                <label className="block space-y-1.5 text-sm font-medium text-slate-700">
+                  <span>
+                    {planDialog.kind === "approve"
+                      ? "Основание для публикации"
+                      : "Причина изменения"}
+                  </span>
+                  <textarea
+                    value={planDialog.reason}
+                    onChange={(event) =>
+                      setPlanDialog({ ...planDialog, reason: event.target.value })
+                    }
+                    rows={3}
+                    placeholder={
+                      planDialog.kind === "approve"
+                        ? "Например: цель подтверждена руководителем филиала"
+                        : "Например: скорректировали план после изменения графика"
+                    }
+                    className="w-full resize-none rounded-xl bg-white px-3 py-2.5 text-slate-900 ring-1 ring-slate-300 outline-none focus:ring-2 focus:ring-cyan-400"
+                  />
+                </label>
+                <div className="rounded-2xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
+                  База отклонит цель ниже экономического минимума или слишком дорогой бонус.
+                  Принятый план и причина попадут в неизменяемый аудит.
+                </div>
+                <div className="flex justify-end gap-2">
+                  <GhostBtn
+                    type="button"
+                    onClick={() => setPlanDialog(null)}
+                    disabled={planBusyBranchId === planDialog.branchId}
+                  >
+                    Отмена
+                  </GhostBtn>
+                  <PrimaryBtn
+                    type="button"
+                    onClick={
+                      planDialog.kind === "approve"
+                        ? approveReviewedPlan
+                        : applyManualPlan
+                    }
+                    disabled={planBusyBranchId === planDialog.branchId}
+                  >
+                    {planDialog.kind === "approve"
+                      ? "Проверить и опубликовать"
+                      : "Сохранить план"}
+                  </PrimaryBtn>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <div className="relative">
         {errorText ? (
@@ -1646,58 +2564,84 @@ export default function Page() {
 
         <div className="mb-4">
           <HeaderCard>
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Период</span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <span className="text-slate-500">Месяц</span>
-                  <select
-                    value={monthIndex}
-                    onChange={(e) => handleMonthChange(year, Number(e.target.value))}
-                    className={selectCls}
-                  >
-                    {MONTHS_RU.map((name, idx) => (
-                      <option key={idx} value={idx}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={year}
-                    onChange={(e) => handleMonthChange(Number(e.target.value), monthIndex)}
-                    className={selectCls}
-                  >
-                    {years.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <span className="text-slate-500">Неделя</span>
-                  <select
-                    value={weekKey}
-                    onChange={(e) => setWeekKey(e.target.value)}
-                    className={selectCls}
-                  >
-                    <option value="__full__">Весь месяц</option>
-                    {weeks.map((w) => (
-                      <option key={w.key} value={w.key}>
-                        {w.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+              {/* Период */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Период</span>
+                <select
+                  value={monthIndex}
+                  onChange={(e) => handleMonthChange(year, Number(e.target.value))}
+                  className={selectCls}
+                >
+                  {MONTHS_RU.map((name, idx) => (
+                    <option key={idx} value={idx}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={year}
+                  onChange={(e) => handleMonthChange(Number(e.target.value), monthIndex)}
+                  className={selectCls}
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                <span className="ml-1 text-[12px] text-slate-500">Неделя</span>
+                <select
+                  value={weekKey}
+                  onChange={(e) => setWeekKey(e.target.value)}
+                  className={selectCls}
+                >
+                  <option value="__full__">Весь месяц</option>
+                  {weeks.map((w) => (
+                    <option key={w.key} value={w.key}>
+                      {w.label}
+                    </option>
+                  ))}
+                </select>
                 {(weekLoading || monthLoading) && (
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-cyan-400" />
                 )}
+              </div>
 
+              <div className="hidden h-6 w-px bg-slate-200 lg:block" />
+
+              {/* Удержания / мес */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Удержания / мес</span>
+                <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                  <span className="text-slate-500">Подоходный</span>
+                  <NumberCell
+                    value={cfgLocal?.income_tax_monthly ?? 0}
+                    onCommit={async (v) => {
+                      const vv = Math.max(0, Math.trunc(v));
+                      setCfgLocal((c) => (c ? ({ ...c, income_tax_monthly: vv } as any) : c));
+                      await updateConfig({ income_tax_monthly: vv } as any);
+                      await mutate();
+                    }}
+                    className="w-[96px]"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                  <span className="text-slate-500">Соцфонд</span>
+                  <NumberCell
+                    value={cfgLocal?.social_fund_monthly ?? 0}
+                    onCommit={async (v) => {
+                      const vv = Math.max(0, Math.trunc(v));
+                      setCfgLocal((c) => (c ? ({ ...c, social_fund_monthly: vv } as any) : c));
+                      await updateConfig({ social_fund_monthly: vv } as any);
+                      await mutate();
+                    }}
+                    className="w-[96px]"
+                  />
+                </label>
+              </div>
+
+              <div className="ml-auto">
                 <PrimaryBtn
                   onClick={async () => {
                     const name = prompt("Название филиала");
@@ -1757,7 +2701,9 @@ export default function Page() {
         </div>
 
         {/* ===== Вкладка «Штрафы и графики» ===== */}
-        {tab === "penalties" && <PenaltiesTab />}
+        {tab === "penalties" && (
+          <PenaltiesTab onChanged={() => setPayrollRefreshTick((t) => t + 1)} />
+        )}
 
         {/* ===== Вкладка «Дисциплинарные взыскания» ===== */}
         {tab === "disciplines" && <DisciplinesTab />}
@@ -1765,120 +2711,6 @@ export default function Page() {
         {/* ===== Вкладка «Зарплаты» (всё что было ниже) ===== */}
         {tab === "payroll" && (
         <>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Card>
-            <div className="flex items-center justify-between gap-3">
-              <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 ring-1 ring-cyan-200">
-                  <Building2 className="h-4 w-4 text-cyan-600" />
-                </span>
-                К выплате
-              </div>
-              <div className="text-[11px] text-slate-500">
-                {activeWeek ? "за выбранную неделю" : "за месяц"}
-              </div>
-            </div>
-
-            <div className="mt-2 flex items-baseline gap-3">
-              <div className="text-3xl font-semibold text-cyan-700 tabular-nums">
-                {fmt(totalNet)} сом
-              </div>
-            </div>
-
-            {activeWeek && (
-              <div className="mt-1 text-xs text-slate-600">
-                За месяц:{" "}
-                <span className="font-medium text-cyan-700">{fmt(totalNetMonth)} сом</span>
-              </div>
-            )}
-
-            <div className="mt-4 rounded-xl bg-slate-50/60 ring-1 ring-sky-100 p-4">
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                По филиалам
-              </div>
-              <ul className="space-y-1.5 text-sm">
-                {branches.map((b) => (
-                  <li key={b.id} className="flex items-center justify-between">
-                    <span className="text-slate-800">{b.name}</span>
-                    <span className="font-semibold text-cyan-700 tabular-nums">
-                      {fmt(branchTotals.get(b.id) ?? 0)} сом
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="mb-2 text-sm font-semibold text-slate-900">Настройки расчёта</div>
-
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-              <div className="text-slate-700">Подоходный (мес.)</div>
-              <NumberCell
-                value={cfgLocal?.income_tax_monthly ?? 0}
-                onCommit={async (v) => {
-                  const vv = Math.max(0, Math.trunc(v));
-                  setCfgLocal((c) => (c ? ({ ...c, income_tax_monthly: vv } as any) : c));
-                  await updateConfig({ income_tax_monthly: vv } as any);
-                  await mutate();
-                }}
-                suffix="сом"
-              />
-
-              <div className="text-slate-700">Соцфонд (мес.)</div>
-              <NumberCell
-                value={cfgLocal?.social_fund_monthly ?? 0}
-                onCommit={async (v) => {
-                  const vv = Math.max(0, Math.trunc(v));
-                  setCfgLocal((c) => (c ? ({ ...c, social_fund_monthly: vv } as any) : c));
-                  await updateConfig({ social_fund_monthly: vv } as any);
-                  await mutate();
-                }}
-                suffix="сом"
-              />
-
-              {!isMonthlyPlanMode ? (
-                <>
-                  <div className="text-slate-700">Порог выручки/день</div>
-                  <NumberCell
-                    value={cfgLocal?.daily_turnover_target ?? 0}
-                    onCommit={async (v) => {
-                      const vv = Math.max(0, Math.trunc(v));
-                      setCfgLocal((c) => (c ? ({ ...c, daily_turnover_target: vv } as any) : c));
-                      await updateConfig({ daily_turnover_target: vv } as any);
-                      await mutate();
-                    }}
-                    suffix="сом"
-                  />
-
-                  <div className="text-slate-700">Премия за день</div>
-                  <NumberCell
-                    value={cfgLocal?.daily_bonus_each ?? 0}
-                    onCommit={async (v) => {
-                      const vv = Math.max(0, Math.trunc(v));
-                      setCfgLocal((c) => (c ? ({ ...c, daily_bonus_each: vv } as any) : c));
-                      await updateConfig({ daily_bonus_each: vv } as any);
-                      await mutate();
-                    }}
-                    suffix="сом"
-                  />
-                </>
-              ) : (
-                <div className="col-span-2 mt-1 text-[12px] text-slate-600">
-                  С <span className="font-semibold text-slate-900">2026-02</span> план и премия задаются{" "}
-                  <span className="font-semibold text-slate-900">по каждому филиалу</span> ниже.
-                  Глобальный месячный fallback убран из этой страницы.
-                </div>
-              )}
-            </div>
-
-            <p className="mt-3 text-xs text-slate-500">
-              Бонус считается от <span className="font-semibold">ОПЛАЧЕННЫХ</span> заказов сотрудника
-              по данным <span className="font-semibold">payments</span>.
-            </p>
-          </Card>
-        </div>
-
         {/* Список филиалов */}
         {isLoading ? (
           <Card className="mt-6">
@@ -1891,23 +2723,26 @@ export default function Page() {
           branches.map((b) => {
             const list = (byBranch.get(b.id) ?? []).slice();
             const effectivePlan = isMonthlyPlanMode ? getBranchPlanEffective(b.id) : null;
-
-            const histArr = histTurnoverByBranch.get(b.id) ?? [];
-            const prevTurnover = histArr.length ? histArr[histArr.length - 1] : 0;
-            const med6 = histArr.filter((x) => x > 0).length
-              ? Math.trunc(median(histArr.filter((x) => x > 0)))
-              : 0;
-
-            // ✅ Кнопка "Пересчитать" доступна всегда в monthly-режиме —
-            // если истории нет, сервер сам выберет coldstart/dormant
-            const canAuto = isMonthlyPlanMode;
+            const isPendingReview =
+              effectivePlan?.review_required === true && effectivePlan?.is_active === false;
+            const canAdjustPlan =
+              isMonthlyPlanMode &&
+              isV5PlanMonth &&
+              (isCurrentPlanMonth || isNextPlanMonth);
 
             const prem = branchPremiumMap.get(b.id);
-            const turnover = prem?.turnover_sum ?? 0;
+            const legacyTurnover = prem?.turnover_sum ?? 0;
+            const netSales = prem?.net_sales ?? legacyTurnover;
             const planTarget = effectivePlan?.monthly_turnover_target ?? 0;
-            const pct = planTarget > 0 ? Math.min(100, Math.round((turnover / planTarget) * 100)) : 0;
-            const premiumEach = prem?.plan_premium_each ?? 0;
-            const leftToHit = Math.max(0, planTarget - turnover);
+            const rawAchievement = prem?.achievement_ratio;
+            const pct =
+              rawAchievement !== undefined
+                ? Math.round((rawAchievement > 10 ? rawAchievement : rawAchievement * 100) * 10) /
+                  10
+                : planTarget > 0
+                ? Math.round((netSales / planTarget) * 1000) / 10
+                : 0;
+            const progressBarPct = Math.max(0, Math.min(100, pct));
 
             return (
               <Card key={b.id} className="mt-6">
@@ -1917,15 +2752,7 @@ export default function Page() {
                     <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
                       ID {b.id}
                     </span>
-                    <TextCell
-                      value={b.name}
-                      onCommit={async (v) => {
-                        if (!v.trim() || v.trim() === b.name) return;
-                        await renameBranch(b.id, v.trim());
-                        await mutate();
-                      }}
-                      className="w-64"
-                    />
+                    <span className="text-xl font-bold tracking-tight text-slate-900">{b.name}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1948,28 +2775,42 @@ export default function Page() {
                     >
                       + Сотрудник
                     </PrimaryBtn>
-                    <DangerBtn
-                      onClick={async () => {
-                        if (!confirm(`Удалить филиал «${b.name}»?`)) return;
-                        try {
-                          await removeBranch(b.id);
-                          await mutate();
-                        } catch (e: any) {
-                          alert(`Не удалось удалить: ${e.message}`);
-                        }
-                      }}
+                    <button
+                      onClick={() => setConfirmDel({ kind: "branch", id: b.id, name: b.name })}
+                      title={`Удалить филиал «${b.name}»`}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-300 ring-1 ring-slate-200 transition hover:bg-rose-50 hover:text-rose-600 hover:ring-rose-200"
                     >
-                      Удалить филиал
-                    </DangerBtn>
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
 
-                {/* PIN филиала + доступ сотрудников */}
-                <div className="mb-4 rounded-2xl bg-slate-50/80 ring-1 ring-slate-200 px-4 py-3">
-                  {/* Строка: PIN филиала (действует и на кассу, и на touch-экран) */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <KeyRound className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-                    <span className="text-[12px] font-semibold text-slate-700">PIN филиала:</span>
+                {/* Настройки филиала: PIN + доступ + план (сворачиваемо) */}
+                <details className="group mb-4 overflow-hidden rounded-2xl bg-slate-50/80 ring-1 ring-slate-200">
+                  <summary className="flex cursor-pointer list-none select-none items-center gap-2 px-4 py-2.5 text-[12px] font-semibold text-slate-600 [&::-webkit-details-marker]:hidden">
+                    <Settings2 className="h-3.5 w-3.5 text-slate-400" />
+                    Настройки филиала
+                    <span className="font-normal text-slate-400">
+                      {isMonthlyPlanMode && planTarget > 0
+                        ? ` · план ${fmt(planTarget)} сом · выполнено ${fmtPct(pct)}`
+                        : " · план не задан"}
+                    </span>
+                    <ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="flex flex-col border-t border-slate-200">
+                  <details className="order-2 border-t border-slate-200">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-[11px] font-medium text-slate-500 [&::-webkit-details-marker]:hidden">
+                    Дополнительно: PIN и доступ
+                    <ChevronDown className="ml-auto h-3.5 w-3.5 text-slate-400" />
+                  </summary>
+                  <div className="space-y-4 px-4 pb-4">
+                  {/* PIN филиала (действует и на кассу, и на touch-экран) */}
+                  <div>
+                    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      <KeyRound className="h-3 w-3" />
+                      PIN филиала
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                     <input
                       value={pinInputs[b.id] ?? ""}
                       onChange={(e) => setPinInputs((p) => ({ ...p, [b.id]: e.target.value.replace(/\D/g, "") }))}
@@ -2002,18 +2843,21 @@ export default function Page() {
                         Очистить
                       </button>
                     )}
-                    <span className="ml-auto text-[11px] text-slate-500">
-                      {(branchPins[b.id] ?? "")
-                        ? <>текущий: <span className="font-mono font-semibold text-slate-700">{branchPins[b.id]}</span></>
-                        : <span className="text-slate-400">не задан</span>
-                      }
-                    </span>
+                    {(branchPins[b.id] ?? "") && (pinInputs[b.id] ?? "") !== (branchPins[b.id] ?? "") && (
+                      <span className="ml-auto text-[11px] text-slate-400">
+                        сохранён: <span className="font-mono font-semibold text-slate-600">{branchPins[b.id]}</span>
+                      </span>
+                    )}
+                    </div>
                   </div>
 
-                  {/* Разделитель + доступ сотрудников */}
-                  <div className="mt-2.5 pt-2.5 border-t border-slate-200 flex flex-wrap items-center gap-2">
-                    <User2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span className="text-[11px] font-semibold text-slate-600">Доступ в смену:</span>
+                  {/* Доступ сотрудников в смену */}
+                  <div>
+                    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      <User2 className="h-3 w-3" />
+                      Доступ в смену
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
 
                     {list.map((emp: any) => {
                       const empCred = creds.find((c) => c.employee_id === emp.id && c.is_active);
@@ -2089,183 +2933,80 @@ export default function Page() {
                         </div>
                       );
                     })}
+                    </div>
                   </div>
                 </div>
+                </details>
 
-                {/* План месяца по филиалу */}
+                {/* Главные настройки плана филиала */}
                 {isMonthlyPlanMode ? (
-                  <div className="mb-4 rounded-2xl bg-sky-50/60 ring-1 ring-sky-200/60 px-4 py-3">
-                    {/* Строка 1: статистика + бейдж режима + кнопка Авто */}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        План
-                      </span>
-                      {effectivePlan && (
-                        <span className={cx(
-                          "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium ring-1",
-                          effectivePlan.mode === "manual"
-                            ? "bg-amber-50 text-amber-700 ring-amber-200"
-                            : effectivePlan.mode === "auto_locked"
-                            ? "bg-rose-50 text-rose-700 ring-rose-200"
-                            : effectivePlan.mode === "auto_dormant"
-                            ? "bg-slate-100 text-slate-500 ring-slate-200"
-                            : effectivePlan.mode === "auto_coldstart"
-                            ? "bg-violet-50 text-violet-700 ring-violet-200"
-                            : effectivePlan.mode === "pending"
-                            ? "bg-slate-50 text-slate-400 ring-slate-200"
-                            : "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                        )} title={
-                          effectivePlan.mode === "manual" ? "Задано вручную (cron не перезаписывает)" :
-                          effectivePlan.mode === "auto_locked" ? "Залочен ручной — cron не трогает" :
-                          effectivePlan.mode === "auto_dormant" ? "Филиал неактивен (выручка <30k/мес)" :
-                          effectivePlan.mode === "auto_coldstart" ? "Холодный старт (медиана других филиалов × 0.6)" :
-                          effectivePlan.mode === "pending" ? "Рассчитывается…" :
-                          "Автоматически по формуле v3 (EMA + тренд + волатильность)"
-                        }>
-                          {effectivePlan.mode === "manual" ? "ручной" :
-                           effectivePlan.mode === "auto_locked" ? "ручной (lock)" :
-                           effectivePlan.mode === "auto_dormant" ? "неактивен" :
-                           effectivePlan.mode === "auto_coldstart" ? "cold-start" :
-                           effectivePlan.mode === "pending" ? "ожидает" :
-                           "авто"}
-                        </span>
-                      )}
-                      {prevTurnover > 0 && (
-                        <span className="text-[11px] text-slate-500">
-                          прошл.:{" "}
-                          <span className="font-semibold tabular-nums text-slate-700">
-                            {fmt(prevTurnover)}
-                          </span>{" "}сом
-                        </span>
-                      )}
-                      <span className="text-[11px] text-slate-500">
-                        факт:{" "}
-                        <span className="font-semibold tabular-nums text-slate-800">
-                          {fmt(turnover)}
-                        </span>{" "}сом
-                      </span>
-                      {planTarget > 0 && (
-                        <span className={cx(
-                          "inline-flex items-center rounded-lg px-2 py-0.5 text-[11px] font-bold tabular-nums",
-                          pct >= 100
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-sky-100 text-sky-700"
-                        )}>
-                          {pct}%
-                        </span>
-                      )}
-                      {premiumEach > 0 ? (
-                        <span className="text-[11px] font-semibold text-emerald-600">
-                          +{fmt(premiumEach)} сом/чел
-                        </span>
-                      ) : planTarget > 0 ? (
-                        <span className="text-[11px] text-slate-400">
-                          до плана: {fmt(leftToHit)} сом
-                        </span>
-                      ) : null}
-                      {med6 > 0 && (
-                        <span className="text-[10px] text-slate-400 ml-1">
-                          • медиана 6м: {fmt(med6)}
-                        </span>
-                      )}
-                      <div className="ml-auto flex items-center gap-2">
-                        {planBusyBranchId === b.id && (
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-cyan-400" />
-                        )}
+                  <div className="order-1 px-4 py-4">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-stretch">
+                      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          План месяца
+                        </div>
+                        <div className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                          {planTarget > 0 ? `${fmt(planTarget)} сом` : "Не задан"}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-cyan-50 px-4 py-3 ring-1 ring-cyan-200">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-cyan-700/70">
+                          Выполнение
+                        </div>
+                        <div className="mt-1 text-2xl font-bold tabular-nums text-cyan-800">
+                          {planTarget > 0 ? fmtPct(pct) : "—"}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center sm:pl-1">
                         <GhostBtn
-                          disabled={!canAuto || planBusyBranchId === b.id}
-                          onClick={() => applyAutoPlan(b.id)}
-                          title="Пересчитать план через серверную формулу v3"
+                          disabled={!canAdjustPlan || planBusyBranchId === b.id}
+                          onClick={() =>
+                            isPendingReview
+                              ? openPlanReviewDialog(b.id, b.name)
+                              : openManualPlanDialog(b.id, b.name)
+                          }
+                          title={
+                            canAdjustPlan
+                              ? "Изменить план текущего или следующего месяца"
+                              : "Изменение доступно только для текущего или следующего месяца"
+                          }
                         >
-                          Пересчитать
+                          {planBusyBranchId === b.id ? "Сохраняю…" : "Изменить план"}
                         </GhostBtn>
                       </div>
                     </div>
 
-                    {/* Прогресс-бар */}
-                    {planTarget > 0 && (
-                      <div className="mb-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                    {planTarget > 0 ? (
+                      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200">
                         <div
-                          className="h-full rounded-full bg-cyan-500 transition-all"
-                          style={{ width: `${pct}%` }}
+                          className={cx(
+                            "h-full rounded-full transition-all",
+                            pct >= 100 ? "bg-emerald-500" : "bg-cyan-500"
+                          )}
+                          style={{ width: `${progressBarPct}%` }}
                         />
                       </div>
-                    )}
-
-                    {/* Строка 2: редактируемые поля */}
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-slate-500 shrink-0">Порог</span>
-                        <NumberCell
-                          value={effectivePlan?.monthly_turnover_target ?? 0}
-                          onCommit={async (v) => {
-                            try {
-                              await saveBranchPlan(b.id, {
-                                monthly_turnover_target: Math.max(0, Math.trunc(v)),
-                                mode: "manual",
-                              });
-                              await mutate();
-                            } catch (e: any) {
-                              alert(`Не удалось сохранить план: ${extractErrMsg(e)}`);
-                            }
-                          }}
-                          suffix="сом"
-                          className="w-[130px]"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-slate-500 shrink-0">Бонус/чел</span>
-                        <NumberCell
-                          value={effectivePlan?.monthly_bonus_each ?? 0}
-                          onCommit={async (v) => {
-                            try {
-                              await saveBranchPlan(b.id, {
-                                monthly_bonus_each: Math.max(0, Math.trunc(v)),
-                                mode: "manual",
-                              });
-                              await mutate();
-                            } catch (e: any) {
-                              alert(`Не удалось сохранить план: ${extractErrMsg(e)}`);
-                            }
-                          }}
-                          suffix="сом"
-                          className="w-[110px]"
-                        />
-                      </div>
-                    </div>
+                    ) : null}
                   </div>
                 ) : null}
-
+                </div>
+                </details>
                 {/* Таблица сотрудников */}
                 <div className="overflow-x-auto">
-                  <table className="w-full table-auto border-separate border-spacing-y-3">
+                  <table className="w-full table-auto border-separate border-spacing-y-2">
                     <colgroup>
-                      <col className="w-[190px]" />
+                      <col />
+                      <col className="w-[116px]" />
+                      <col className="w-[96px]" />
+                      <col className="w-[96px]" />
                       <col className="w-[120px]" />
-                      <col className="w-[100px]" />
-                      <col className="w-[150px]" />
-                      <col className="w-[120px]" />
-                      <col className="w-[160px]" />
+                      <col className="w-[104px]" />
                     </colgroup>
 
-                    <thead>
-                      <tr className="text-[11px] uppercase tracking-wide text-slate-500">
-                        <th className="text-left px-2">Сотрудник</th>
-                        <th className="text-left px-2">Роль</th>
-                        <th className="text-right px-2">Ставка/ч</th>
-                        <th className="text-center px-2">Бонус</th>
-                        <th className="text-right px-2">
-                          К выплате{" "}
-                          {activeWeek ? (
-                            <span className="text-[10px] text-slate-400">(нед)</span>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">(мес)</span>
-                          )}
-                        </th>
-                        <th className="text-right px-2"></th>
-                      </tr>
-                    </thead>
-
+                    {/* Шапка убрана — колонки понятны без подписей */}
                     <tbody>
                       {list.map((e: any) => {
                         const roleUi = dbRoleToUi(e.role) as Exclude<RoleT, "owner">;
@@ -2281,7 +3022,7 @@ export default function Page() {
                                   await updateEmployee(e.id, { fullName: v });
                                   await mutate();
                                 }}
-                                className="w-[180px]"
+                                className="w-full max-w-[240px]"
                               />
                             </td>
 
@@ -2309,21 +3050,17 @@ export default function Page() {
 
                             <td className={cx(rowTdBase, "text-right")}>
                               {roleUi === "master" ? (
-                                <div className="flex flex-col items-end">
-                                  <NumberCell
-                                    value={cfgLocal?.master_piece_rate ?? 150}
-                                    onCommit={async (v) => {
-                                      const vv = Math.max(0, Math.trunc(v));
-                                      setCfgLocal((c) => (c ? ({ ...c, master_piece_rate: vv } as any) : c));
-                                      await updateConfig({ master_piece_rate: vv } as any);
-                                      await mutate();
-                                    }}
-                                    className="w-[88px]"
-                                    step={10}
-                                    suffix="сом"
-                                  />
-                                  <span className="mt-0.5 text-[10px] text-slate-400">за заказ</span>
-                                </div>
+                                <NumberCell
+                                  value={cfgLocal?.master_piece_rate ?? 150}
+                                  onCommit={async (v) => {
+                                    const vv = Math.max(0, Math.trunc(v));
+                                    setCfgLocal((c) => (c ? ({ ...c, master_piece_rate: vv } as any) : c));
+                                    await updateConfig({ master_piece_rate: vv } as any);
+                                    await mutate();
+                                  }}
+                                  className="w-[72px]"
+                                  step={10}
+                                />
                               ) : (
                                 <NumberCell
                                   value={e.hourlyRate ?? 0}
@@ -2338,66 +3075,62 @@ export default function Page() {
                                     });
                                     await mutate();
                                   }}
-                                  className="w-[88px]"
+                                  className="w-[72px]"
                                   step={5}
-                                  suffix="сом"
                                 />
                               )}
                             </td>
 
-                            {/* Бонус: toggle + % (у мастера — сделка, бонуса от оборота нет) */}
-                            <td className={cx(rowTdBase, "text-center")}>
-                              {roleUi === "master" ? (
-                                <span
-                                  className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-600 ring-1 ring-indigo-200"
-                                  title="Сдельная оплата: бонус от оборота не применяется"
-                                >
-                                  сделка
-                                </span>
-                              ) : (
-                              <div className="flex items-center justify-center gap-2">
-                                <Switch
-                                  checked={!!e.hasBonus}
+                            {/* Бонус: продавец — % оборота; промоутер — сом/заказ; мастер — без бонуса */}
+                            <td className={cx(rowTdBase, "text-right")}>
+                              {roleUi === "master" ? null : roleUi === "promoter" ? (
+                                <NumberCell
+                                  value={e.bonusPerOrder ?? 0}
                                   onCommit={async (v) => {
-                                    await updateEmployee(e.id, { hasBonus: v });
                                     await persistProfileChange({
                                       employeeId: e.id,
                                       branchId: b.id,
-                                      hourlyRate: e.hourlyRate ?? 0,
-                                      hasBonus: v,
-                                      bonusPercent: e.bonusPercent ?? 0,
+                                      bonusPerOrder: v,
                                     });
                                     await mutate();
                                   }}
+                                  className="w-[72px]"
+                                  step={10}
                                 />
+                              ) : (
                                 <NumberCell
                                   value={e.bonusPercent ?? 0}
                                   onCommit={async (v) => {
-                                    await updateEmployee(e.id, { bonusPercent: v });
+                                    await updateEmployee(e.id, { bonusPercent: v, hasBonus: v > 0 });
                                     await persistProfileChange({
                                       employeeId: e.id,
                                       branchId: b.id,
                                       hourlyRate: e.hourlyRate ?? 0,
-                                      hasBonus: e.hasBonus ?? false,
+                                      hasBonus: v > 0,
                                       bonusPercent: v,
                                     });
                                     await mutate();
                                   }}
-                                  className="w-[68px]"
+                                  className="w-[72px]"
                                   step={1}
-                                  suffix="%"
                                 />
-                              </div>
                               )}
                             </td>
 
-                            <td
-                              className={cx(
-                                rowTdBase,
-                                "text-right font-semibold text-cyan-700 tabular-nums"
+                            <td className={cx(rowTdBase, "text-right")}>
+                              {netPeriod > 0 ? (
+                                <span className="text-[15px] font-bold tabular-nums text-cyan-700">
+                                  {fmt(netPeriod)}
+                                </span>
+                              ) : (
+                                <span
+                                  className="inline-flex flex-col items-end leading-none"
+                                  title="Нет смен за период"
+                                >
+                                  <span className="text-base text-slate-300">—</span>
+                                  <span className="mt-0.5 text-[10px] text-slate-400">нет смен</span>
+                                </span>
                               )}
-                            >
-                              {fmt(netPeriod)}
                             </td>
 
                             <td className={cx(rowTdLast, "text-right")}>
@@ -2412,15 +3145,7 @@ export default function Page() {
                                 </button>
                                 <button
                                   title={`Удалить ${e.fullName}`}
-                                  onClick={async () => {
-                                    if (!confirm(`Удалить сотрудника «${e.fullName}»?`)) return;
-                                    try {
-                                      await removeEmployee(e.id);
-                                      await mutate();
-                                    } catch (err: any) {
-                                      alert(`Не удалось удалить: ${err?.message || err?.error_description || String(err)}`);
-                                    }
-                                  }}
+                                  onClick={() => setConfirmDel({ kind: "employee", id: e.id, name: e.fullName })}
                                   className="inline-flex items-center rounded-xl p-2 text-rose-400 bg-white ring-1 ring-rose-200 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                                 >
                                   <X className="h-3.5 w-3.5" />
@@ -2434,17 +3159,73 @@ export default function Page() {
                   </table>
                 </div>
 
-                <div className="mt-4 flex items-center justify-end">
-                  <div className="text-sm text-slate-700">
-                    Итого по филиалу:{" "}
-                    <span className="font-semibold text-cyan-700 tabular-nums">
-                      {fmt((byBranch.get(b.id) ?? []).reduce((s, e: any) => s + getNet(e), 0))} сом
-                    </span>
-                  </div>
+                <div className="mt-3 flex items-center justify-between rounded-2xl bg-cyan-50/70 px-4 py-3 ring-1 ring-cyan-100">
+                  <span className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">
+                    Итого по филиалу
+                  </span>
+                  <span className="text-lg font-bold tabular-nums text-cyan-700">
+                    {fmt((byBranch.get(b.id) ?? []).reduce((s, e: any) => s + getNet(e), 0))}{" "}
+                    <span className="text-sm font-semibold text-slate-400">сом</span>
+                  </span>
                 </div>
               </Card>
             );
           })
+        )}
+
+        {/* Подтверждение удаления (защита от случайного клика) */}
+        {confirmDel && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+            onClick={() => !delBusy && setConfirmDel(null)}
+          >
+            <div
+              className="w-full max-w-md rounded-3xl bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-5 flex items-start gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-2xl bg-rose-500 shadow-[0_4px_16px_rgba(244,63,94,0.3)]">
+                  <X className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <div className="text-lg font-bold tracking-tight text-slate-900">
+                    {confirmDel.kind === "branch" ? "Удалить филиал?" : "Удалить сотрудника?"}
+                  </div>
+                  <div className="text-[12px] text-slate-500">
+                    «{confirmDel.name}» — действие необратимо
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => setConfirmDel(null)}
+                  disabled={delBusy}
+                >
+                  Отмена
+                </button>
+                <button
+                  className="inline-flex items-center gap-2 rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(244,63,94,0.28)] transition hover:bg-rose-400 disabled:opacity-50"
+                  disabled={delBusy}
+                  onClick={async () => {
+                    setDelBusy(true);
+                    try {
+                      if (confirmDel.kind === "branch") await removeBranch(confirmDel.id);
+                      else await removeEmployee(confirmDel.id);
+                      await mutate();
+                      setConfirmDel(null);
+                    } catch (err: any) {
+                      alert(`Не удалось удалить: ${err?.message || err?.error_description || String(err)}`);
+                    } finally {
+                      setDelBusy(false);
+                    }
+                  }}
+                >
+                  {delBusy ? "Удаляю…" : "Удалить"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Модалка «Детали по дням» */}
@@ -2606,6 +3387,116 @@ export default function Page() {
                   </div>
                 </div>
               ) : null}
+
+              {dailyMeta.role === "master" && dailyMasterSplit.length > 0 ? (
+                <div className="border-t border-slate-100 px-4 py-3 bg-sky-50/60">
+                  <div className="text-sm font-medium text-sky-900">Кто оплачивает</div>
+
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {MASTER_PAYERS.map((p) => {
+                      const rows = dailyMasterSplit.filter((s) =>
+                        p.branchIds.includes(s.branchId)
+                      );
+                      const amount = rows.reduce((a, s) => a + s.amount, 0);
+                      const pairs = rows.reduce((a, s) => a + s.pairs, 0);
+                      return (
+                        <div
+                          key={p.key}
+                          className="rounded-xl bg-white px-3 py-2.5 ring-1 ring-sky-200"
+                        >
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-sm font-semibold text-slate-900">{p.label}</span>
+                            <span className="text-lg font-bold tabular-nums text-sky-700">
+                              {fmt(amount)} сом
+                            </span>
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {pairs.toFixed(1).replace(".", ",")} пары ·{" "}
+                            {rows
+                              .map(
+                                (s) =>
+                                  `${branches.find((b) => b.id === s.branchId)?.name ?? s.branchId}: ${fmt(s.amount)}`
+                              )
+                              .join(" · ") || "нет заказов"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-2 text-[11px] text-sky-800/70">
+                    Пары мастера делятся между филиалами пропорционально их заказам за тот же
+                    день. Сумма обеих долей равна «К выплате» выше.
+                  </div>
+                </div>
+              ) : null}
+
+              {dailyMeta.branchId === 2 && dailyDebtBonus > 0 ? (
+                <div className="border-t border-slate-100 px-4 py-3 bg-emerald-50/60">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-emerald-800">
+                      Бонус за возврат долгов (10%){activeWeek ? " за неделю" : " за месяц"}
+                    </span>
+                    <span className="text-lg font-bold tabular-nums text-emerald-700">
+                      +{fmt(dailyDebtBonus)} сом
+                    </span>
+                  </div>
+                  {dailyDebtRows.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {dailyDebtRows.map((d, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200"
+                        >
+                          {d.order_no}: +{fmt(d.bonus)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-1.5 text-[11px] text-emerald-700/70">
+                    Уже включено в сумму «К выплате» выше.
+                  </div>
+                </div>
+              ) : null}
+
+              {dailyDeductPlan.length > 0 && (deductRemaining > 0 || dailyDeduct > 0) ? (
+                <div className="border-t border-slate-100 px-4 py-3 bg-rose-50/60">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-rose-800">
+                      Удержание за недостачу{activeWeek ? " за неделю" : " за месяц"}
+                    </span>
+                    <span className="text-lg font-bold tabular-nums text-rose-700">
+                      {dailyDeduct > 0 ? "−" : ""}{fmt(dailyDeduct)} сом
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {dailyDeductPlan.map((d, i) => {
+                      const isCur = activeWeek
+                        ? d.week_start === activeWeek.start
+                        : d.week_start === currentWeekStart;
+                      return (
+                        <span
+                          key={i}
+                          className={cx(
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1",
+                            isCur
+                              ? "bg-rose-600 text-white ring-rose-600"
+                              : "bg-white text-rose-700 ring-rose-200"
+                          )}
+                        >
+                          {dmFromYmd(d.week_start)}: −{fmt(d.amount)}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-rose-700/80">
+                    <span>
+                      Всего: {fmt(deductTotal)} сом · осталось: {fmt(deductRemaining)} сом
+                    </span>
+                    <span>Уже вычтено из «К выплате» выше.</span>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         )}
@@ -2620,4 +3511,55 @@ export default function Page() {
       </div>
     </div>
   );
+}
+
+function currentBusinessMonthKey(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BISHKEK_TZ,
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  return year && month ? `${year}-${month}` : new Date().toISOString().slice(0, 7);
+}
+
+function optionalNum(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function fmtPct(value: number): string {
+  return `${value.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`;
+}
+
+function payrollReviewReasonLabel(reason: string): string {
+  const labels: Record<string, string> = {
+    assessment_missing: "Не удалось подтвердить полноту автоматической проверки.",
+    invalid_three_month_snapshot: "Снимок истории за три месяца неполный или повреждён.",
+    incomplete_three_month_history: "Нет полной истории продаж за три месяца.",
+    coldstart_model: "План рассчитан по модели нового филиала, а не по полной истории.",
+    no_positive_recent_baseline: "В недавней истории нет положительной базы продаж.",
+    target_above_125pct_recent_max:
+      "Цель выше 125% максимальной фактической выручки последних месяцев.",
+    high_recent_sales_volatility: "Продажи последних месяцев слишком нестабильны.",
+    turnaround_economic_gap:
+      "Экономически необходимая цель заметно выше недавних продаж филиала.",
+  };
+  return labels[reason] ?? `Требуется ручная проверка: ${reason}.`;
+}
+
+function fmtLockedAt(value?: string | null): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString("ru-RU", {
+    timeZone: BISHKEK_TZ,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

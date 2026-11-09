@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/app/api/admin/_requireOwner';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { runLlmAnalysis, isValidModel, type LlmModelId } from '@/lib/llmAnalyze';
+import { teamPeriod } from '@/lib/team360Access';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -65,19 +66,20 @@ function buildUserPrompt(m: any, employeeName: string, branchName: string, from:
 }
 
 export async function POST(req: Request) {
-  const ok = await requireOwner();
+  const ok = await requireCrmPermission('team360');
   if (!ok.ok) return NextResponse.json({ error: ok.error }, { status: ok.status });
+  if (ok.role !== 'owner') return NextResponse.json({ error: 'AI-комментарии доступны владельцу' }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const employeeId = Number(body?.employee_id);
-  const from: string | undefined = body?.from;
-  const to: string | undefined = body?.to;
+  const period = teamPeriod(body?.from, body?.to);
   const modelRaw = body?.model ?? 'claude-haiku-4-5';
   const force = Boolean(body?.force);
 
-  if (!Number.isFinite(employeeId) || !from || !to) {
+  if (!Number.isSafeInteger(employeeId) || employeeId <= 0 || !period) {
     return NextResponse.json({ error: 'employee_id/from/to required' }, { status: 400 });
   }
+  const { from, to } = period;
   if (!isValidModel(modelRaw)) {
     return NextResponse.json({ error: 'invalid model' }, { status: 400 });
   }

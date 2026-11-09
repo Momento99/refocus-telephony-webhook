@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,8 @@ function pct(part: number, whole: number): number | null {
 
 export async function GET() {
   try {
+    const gate = await requireCrmPermission('mobileApp');
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
     const sb = getSupabaseAdmin();
     const now = Date.now();
     const DAY = 24 * 60 * 60 * 1000;

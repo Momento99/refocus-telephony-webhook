@@ -20,7 +20,6 @@ import {
   Glasses,
   Layers,
   CreditCard,
-  RotateCcw,
   ChevronRight,
   RefreshCw,
   ChevronDown,
@@ -104,12 +103,6 @@ type Frame = {
 };
 type PayMethod = 'cash' | 'card' | 'qr';
 type Gender = 'M' | 'F';
-type RefundReason =
-  | 'quality_issue'
-  | 'wrong_recipe'
-  | 'did_not_fit'
-  | 'customer_unhappy'
-  | 'other';
 
 /* ───────────────── Матрица цен линз ───────────────── */
 type Range = { min: number; max: number | null; price: number };
@@ -406,14 +399,6 @@ export default function NewOrderPage(): JSX.Element {
     { id: cryptoRandomId(), method: 'cash', amount: '' },
   ]);
 
-  // возврат
-  const [refundOpen, setRefundOpen] = useState(false);
-  const [refundAmount, setRefundAmount] = useState<string>('0');
-  const [refundMethod, setRefundMethod] = useState<PayMethod>('cash');
-  const [refundReason, setRefundReason] =
-    useState<RefundReason>('customer_unhappy');
-  const [refundComment, setRefundComment] = useState<string>('');
-  const [refundModal, setRefundModal] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [purchaseCount, setPurchaseCount] = useState<number | null>(null);
@@ -1067,40 +1052,6 @@ export default function NewOrderPage(): JSX.Element {
     lastEditRef.current = { phone: 0, lastName: 0 };
   }, []);
 
-  const confirmRefund = useCallback(async () => {
-    try {
-      const amount = Number(refundAmount || 0) || 0;
-      if (amount <= 0) throw new Error('Укажите сумму возврата');
-      const sb = getSupabase();
-      const normalizedPhone = normalizePhone(phone) || null;
-      const dbMethod =
-        refundMethod === 'cash'
-          ? 'cash'
-          : refundMethod === 'card'
-          ? 'pos'
-          : 'transfer';
-      const { error } = await sb.from('refunds').insert([
-        {
-          phone: normalizedPhone,
-          amount,
-          method: dbMethod,
-          reason_code: refundReason,
-          comment: refundComment || null,
-        },
-      ]);
-      if (error) throw error;
-      toast.success('Возврат зафиксирован');
-      setRefundModal(false);
-      setRefundOpen(false);
-      setRefundAmount('0');
-      setRefundComment('');
-      setRefundMethod('cash');
-      setRefundReason('customer_unhappy');
-    } catch (e: any) {
-      toast.error(e?.message || 'Ошибка возврата');
-    }
-  }, [refundAmount, refundMethod, refundReason, refundComment, phone]);
-
   // Сканер штрихкода (не мешаем обычному вводу)
   const scanBuf = useRef('');
   const lastTime = useRef<number>(0);
@@ -1657,107 +1608,6 @@ export default function NewOrderPage(): JSX.Element {
               )}
             </section>
 
-            {/* 5. Возврат / Отмена */}
-            <section className={card}>
-              <button
-                className="w-full px-4 py-2 flex items-center justify-between"
-                onClick={() => setRefundOpen((v) => !v)}
-                type="button"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="h-6 w-6 rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 text-white grid place-items-center text-[11px] shadow">
-                    5
-                  </div>
-                  <span className="font-semibold text-slate-900 flex items-center gap-2 text-sm">
-                    <RotateCcw size={16} className="text-indigo-500" />{' '}
-                    Возврат / Отмена
-                  </span>
-                </div>
-                <span className="text-xs text-slate-500">
-                  {refundOpen ? 'Свернуть' : 'Развернуть'}
-                </span>
-              </button>
-              {refundOpen && (
-                <div className="p-4 grid md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="hint">Сумма возврата, сом</label>
-                    <input
-                      className={input}
-                      value={refundAmount}
-                      onChange={(e) => setRefundAmount(e.target.value)}
-                      inputMode="numeric"
-                    />
-                  </div>
-                  <div>
-                    <label className="hint">Метод</label>
-                    <SelectShell>
-                      <select
-                        className={`${input} appearance-none pr-9`}
-                        value={refundMethod}
-                        onChange={(e) =>
-                          setRefundMethod(e.target.value as PayMethod)
-                        }
-                      >
-                        <option value="cash">Наличные</option>
-                        <option value="card">Карта</option>
-                        <option value="qr">QR</option>
-                      </select>
-                    </SelectShell>
-                  </div>
-                  <div>
-                    <label className="hint">Причина</label>
-                    <SelectShell>
-                      <select
-                        className={`${input} appearance-none pr-9`}
-                        value={refundReason}
-                        onChange={(e) =>
-                          setRefundReason(e.target.value as RefundReason)
-                        }
-                      >
-                        <option value="customer_unhappy">
-                          Не понравилось/передумал
-                        </option>
-                        <option value="did_not_fit">
-                          Не подошла оправа
-                        </option>
-                        <option value="wrong_recipe">
-                          Ошибка рецепта
-                        </option>
-                        <option value="quality_issue">
-                          Дефект/качество
-                        </option>
-                        <option value="other">Другое</option>
-                      </select>
-                    </SelectShell>
-                  </div>
-                  <div>
-                    <label className="hint">Комментарий (опц.)</label>
-                    <input
-                      className={input}
-                      value={refundComment}
-                      onChange={(e) =>
-                        setRefundComment(e.target.value)
-                      }
-                      placeholder="Текст причины…"
-                    />
-                  </div>
-                  <div className="md:col-span-2 flex gap-2">
-                    <button
-                      className="rounded-xl bg-red-600 text-white px-4 py-2 text-sm hover:opacity-95"
-                      onClick={() => setRefundModal(true)}
-                    >
-                      Зафиксировать возврат
-                    </button>
-                    <button
-                      className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50"
-                      onClick={() => setRefundOpen(false)}
-                    >
-                      Отмена
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
           </div>
 
           {/* Правая колонка — итог */}
@@ -1858,45 +1708,6 @@ export default function NewOrderPage(): JSX.Element {
         </div>
       </div>
 
-      {/* Модалка подтверждения возврата */}
-      {refundModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-            <div className="p-4 border-b border-slate-200 font-semibold text-slate-900">
-              Подтверждение возврата
-            </div>
-            <div className="p-4 space-y-3 text-slate-700">
-              <div>
-                Сумма к возврату:{' '}
-                <b className="tabular">
-                  {fmt.format(Number(refundAmount || 0))} с
-                </b>
-              </div>
-              <div className="text-sm text-slate-600">
-                Деньги возвращаются другим способом (касса/перевод). Здесь
-                фиксируем факт возврата.
-              </div>
-              {refundComment && (
-                <div className="text-sm">Комментарий: {refundComment}</div>
-              )}
-            </div>
-            <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
-              <button
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50"
-                onClick={() => setRefundModal(false)}
-              >
-                Отмена
-              </button>
-              <button
-                className="rounded-xl bg-red-600 text-white px-4 py-2 text-sm hover:opacity-95"
-                onClick={confirmRefund}
-              >
-                Подтвердить
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import puppeteer, { type Browser } from 'puppeteer-core';
 import fs from 'fs';
 import path from 'path';
 import { buildPdfHtml, stripTrainerSections } from '@/lib/franchiseMarkdown';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -76,6 +77,8 @@ async function launchBrowser(): Promise<Browser> {
 export async function POST(req: NextRequest) {
   let browser: Browser | null = null;
   try {
+    const gate = await requireCrmPermission('hqMaterials');
+    if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
     const body = await req.json();
     const { title, description, content, notes, itemId, audience, audienceLabel } = body as {
       title: string;

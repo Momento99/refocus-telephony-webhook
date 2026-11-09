@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { isLikelyFarewell } from '@/lib/farewellDetect';
+import { applyWhatsappDeliveryStatus, type WhatsappDeliveryStatus } from '@/lib/whatsappDelivery';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -54,12 +55,9 @@ type MetaMessage = {
   context?: { from?: string; id?: string };
 };
 
-type MetaStatus = {
-  id: string;
-  status: 'sent' | 'delivered' | 'read' | 'failed';
+type MetaStatus = WhatsappDeliveryStatus & {
   timestamp: string;
   recipient_id: string;
-  errors?: Array<{ code?: number; title?: string; message?: string }>;
 };
 
 type MetaValue = {
@@ -241,13 +239,7 @@ async function ingestMessage(m: MetaMessage) {
 }
 
 async function ingestStatus(s: MetaStatus) {
-  const admin = getSupabaseAdmin();
-  const update: Record<string, unknown> = { status: s.status };
-  if (s.status === 'failed' && s.errors?.[0]) {
-    update.error_code = String(s.errors[0].code ?? '');
-    update.error_message = s.errors[0].title ?? s.errors[0].message ?? '';
-  }
-  await admin.from('whatsapp_messages').update(update).eq('wa_message_id', s.id);
+  await applyWhatsappDeliveryStatus(getSupabaseAdmin(), s);
 }
 
 export async function POST(req: Request) {
@@ -258,7 +250,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // Meta требует 200 быстро. Обрабатываем после.
+  let statusSaveFailed = false;
+  // Return a retriable response if a delivery status could not be persisted.
   try {
     const entries = payload.entry ?? [];
     for (const entry of entries) {
@@ -278,6 +271,7 @@ export async function POST(req: Request) {
             await ingestStatus(s);
           } catch (e) {
             console.error('[whatsapp webhook] ingestStatus fail', e);
+            statusSaveFailed = true;
           }
         }
       }
@@ -286,5 +280,6 @@ export async function POST(req: Request) {
     console.error('[whatsapp webhook] processing error', e);
   }
 
+  if (statusSaveFailed) return NextResponse.json({ ok: false }, { status: 503 });
   return NextResponse.json({ ok: true });
 }

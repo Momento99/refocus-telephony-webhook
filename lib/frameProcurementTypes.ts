@@ -11,8 +11,32 @@
 
 import type { FrameTypeCode, GenderCode } from './framePricingFormula';
 
-/** Какая модель распознавала фото */
-export type RecognitionEngine = 'opus-4.7' | 'gpt-5' | 'manual';
+/** Модели, которыми разрешено запускать новое распознавание. */
+export const FRAME_RECOGNITION_MODELS = [
+  'gpt-6.1-sol',
+] as const;
+
+export type RecognitionEngine = (typeof FRAME_RECOGNITION_MODELS)[number];
+
+/** Единственная активная модель для распознавания цветов. */
+export const FRAME_RECOGNITION_MODEL: RecognitionEngine = 'gpt-6.1-sol';
+
+export function isRecognitionEngine(value: unknown): value is RecognitionEngine {
+  return typeof value === 'string' &&
+    (FRAME_RECOGNITION_MODELS as readonly string[]).includes(value);
+}
+
+/**
+ * Источник уже сохранённого результата. Старые значения остаются только для
+ * корректного отображения исторических записей и больше не доступны для запуска.
+ */
+export type RecognitionSource =
+  | RecognitionEngine
+  | 'gpt-5.6-sol'
+  | 'gpt-5.6-luna'
+  | 'opus-4.7'
+  | 'gpt-5'
+  | 'manual';
 
 /** Пол: F/M/U (U — унисекс, когда визуально определить нельзя) */
 export type CatalogGender = GenderCode | 'U';
@@ -42,7 +66,7 @@ export interface SupplierCatalogRow {
   width_px: number;
   height_px: number;
 
-  recognized_by: RecognitionEngine | null;
+  recognized_by: RecognitionSource | null;
   recognized_at: string | null;
   confidence: number | null;
   raw_response: unknown | null;
@@ -139,7 +163,7 @@ export interface BuildOrderInput {
   branchIds: number[];
   /** Режим расчёта */
   mode: PlanMode;
-  /** Минималка поставщика (для режима 'scaled' — таргет; для 'sold' — отображение) */
+  /** Минималка поставщика; в режиме 'custom' равна 0, потому что объём задаёт владелец */
   supplierMin: number;
   /** Произвольная цель (только для режима 'custom') */
   customTarget?: number;
@@ -194,7 +218,7 @@ export interface OrderPlan {
   sharesBySection: Record<SectionKey, number>;
   /** Целевой плановый объём после применения режима (sold → totalSoldQty; scaled → supplierMin; custom → customTarget) */
   totalQtyTarget: number;
-  /** Достаточно ли РЕАЛЬНО распределилось до минималки поставщика (totalQty >= supplierMin) */
+  /** Достаточно ли распределилось до минималки текущего режима (для custom supplierMin=0) */
   meetsSupplierMin: boolean;
   /** Конкретные позиции заказа */
   items: Array<{

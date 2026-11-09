@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { getUserRole } from '@/lib/getUserRole';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,8 +33,8 @@ async function authorize(req: NextRequest): Promise<boolean> {
   if (secrets.some((s) => hdr === `bearer ${s}`.toLowerCase())) return true;
   // ручной запуск из админки
   try {
-    const role = await getUserRole();
-    return role === 'owner' || role === 'manager';
+    const gate = await requireCrmPermission('mobileApp');
+    return gate.ok;
   } catch {
     return false;
   }

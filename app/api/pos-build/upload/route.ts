@@ -16,12 +16,33 @@ export async function POST(req: NextRequest) {
   // Найти .exe и latest.yml
   if (!fs.existsSync(DIST_DIR)) return NextResponse.json({ error: 'dist_installer not found' }, { status: 404 });
 
-  const files = fs.readdirSync(DIST_DIR).filter(f => f.endsWith('.exe') && !f.includes('blockmap')).sort();
-  const exeName = files.pop();
+  const ymlPath = path.join(DIST_DIR, 'latest.yml');
+
+  // Какая версия только что собрана. electron-builder пишет latest.yml с актуальной
+  // сборкой (path + version) — это надёжный источник. Имя .exe сравнивать строкой НЕЛЬЗЯ:
+  // '0.9.9' сортируется ПОЗЖЕ '0.9.11' (символ '9' > '1'), и .pop() хватает старую версию.
+  const semverCmp = (a: string, b: string) => {
+    const pa = (a.match(/(\d+)\.(\d+)\.(\d+)/)?.slice(1) ?? []).map(Number);
+    const pb = (b.match(/(\d+)\.(\d+)\.(\d+)/)?.slice(1) ?? []).map(Number);
+    for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+    return 0;
+  };
+
+  let exeName: string | undefined;
+  if (fs.existsSync(ymlPath)) {
+    const yml = fs.readFileSync(ymlPath, 'utf8');
+    const fromYml = yml.match(/^path:\s*(.+\.exe)\s*$/m)?.[1]?.trim();
+    if (fromYml && fs.existsSync(path.join(DIST_DIR, fromYml))) exeName = fromYml;
+  }
+  if (!exeName) {
+    // Фоллбэк (нет latest.yml): самая высокая версия по semver, не по алфавиту.
+    const files = fs.readdirSync(DIST_DIR).filter(f => f.endsWith('.exe') && !f.includes('blockmap'));
+    files.sort(semverCmp);
+    exeName = files.pop();
+  }
   if (!exeName) return NextResponse.json({ error: 'No .exe found' }, { status: 404 });
 
   const exePath = path.join(DIST_DIR, exeName);
-  const ymlPath = path.join(DIST_DIR, 'latest.yml');
 
   // Извлечь версию
   const vMatch = exeName.match(/(\d+\.\d+\.\d+)/);

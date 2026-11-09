@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,7 @@ type PostBody =
         repeat_after_days: number | null;
         checkup_interval_months: number | null;
         quiet_hours: { from: string; to: string };
+        country_id?: number | null;
       };
     }
   | {
@@ -86,6 +88,8 @@ function getSupabaseAdmin() {
 
 export async function GET() {
   try {
+    const gate = await requireCrmPermission('mobileApp');
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
     const sb = getSupabaseAdmin();
 
     const [rulesRes, campaignsRes, queueRes, logsRes, countriesRes] = await Promise.all([
@@ -152,6 +156,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const gate = await requireCrmPermission('mobileApp');
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
     const sb = getSupabaseAdmin();
     const body = (await req.json()) as PostBody;
 

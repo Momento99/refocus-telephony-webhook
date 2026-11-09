@@ -38,6 +38,7 @@ export async function GET(req: Request) {
       period_from: from,
       period_to: to,
       branch_id: null,
+      model: 'claude-haiku-4-5',
     }),
   });
   const data = await r.json().catch(() => ({}));

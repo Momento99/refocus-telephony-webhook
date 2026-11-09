@@ -11,13 +11,33 @@ export async function POST(req: NextRequest) {
   const { countryId } = await req.json();
   if (!countryId) return NextResponse.json({ error: 'countryId required' }, { status: 400 });
 
-  if (!fs.existsSync(DIST_DIR)) return NextResponse.json({ error: 'dist_installer not found' }, { status: 404 });
-  const files = fs.readdirSync(DIST_DIR).filter(f => f.endsWith('.exe') && !f.includes('blockmap')).sort();
-  const exeName = files.pop();
+  if (!fs.existsSync(DIST_DIR)) return NextResponse.json({ error: 'release dir not found' }, { status: 404 });
+
+  const ymlPath = path.join(DIST_DIR, 'latest.yml');
+
+  // Версию берём из latest.yml (его пишет electron-builder для текущей сборки).
+  // Имя .exe сортировать строкой НЕЛЬЗЯ: '2.1.9' окажется ПОЗЖЕ '2.1.10' (символ '9' > '1').
+  const semverCmp = (a: string, b: string) => {
+    const pa = (a.match(/(\d+)\.(\d+)\.(\d+)/)?.slice(1) ?? []).map(Number);
+    const pb = (b.match(/(\d+)\.(\d+)\.(\d+)/)?.slice(1) ?? []).map(Number);
+    for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+    return 0;
+  };
+
+  let exeName: string | undefined;
+  if (fs.existsSync(ymlPath)) {
+    const yml = fs.readFileSync(ymlPath, 'utf8');
+    const fromYml = yml.match(/^path:\s*(.+\.exe)\s*$/m)?.[1]?.trim();
+    if (fromYml && fs.existsSync(path.join(DIST_DIR, fromYml))) exeName = fromYml;
+  }
+  if (!exeName) {
+    const files = fs.readdirSync(DIST_DIR).filter(f => f.endsWith('.exe') && !f.includes('blockmap'));
+    files.sort(semverCmp);
+    exeName = files.pop();
+  }
   if (!exeName) return NextResponse.json({ error: 'No .exe' }, { status: 404 });
 
   const exePath = path.join(DIST_DIR, exeName);
-  const ymlPath = path.join(DIST_DIR, 'latest.yml');
   const vMatch = exeName.match(/(\d+\.\d+\.\d+)/);
   const version = vMatch ? vMatch[1] : '0.0.0';
   const releaseTag = countryId === 'kg' ? `kiosk-v${version}` : `kiosk-v${version}-${countryId}`;

@@ -8,7 +8,7 @@
  * Возвращает нормализованный результат: текст + токены + стоимость.
  */
 
-export type LlmModelId = 'gemma3:12b' | 'claude-haiku-4-5' | 'claude-opus-4-7';
+export type LlmModelId = 'gemma3:12b' | 'claude-haiku-4-5' | 'claude-opus-4-7' | 'claude-opus-4-8';
 
 export const LLM_MODELS: Array<{
   id: LlmModelId;
@@ -20,6 +20,7 @@ export const LLM_MODELS: Array<{
   { id: 'gemma3:12b', label: 'Gemma 3 (бесплатно)', provider: 'ollama', free: true, api_model: 'gemma3:12b' },
   { id: 'claude-haiku-4-5', label: 'Claude Haiku', provider: 'anthropic', free: false, api_model: 'claude-haiku-4-5-20251001' },
   { id: 'claude-opus-4-7', label: 'Claude Opus (премиум)', provider: 'anthropic', free: false, api_model: 'claude-opus-4-7' },
+  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (макс. качество)', provider: 'anthropic', free: false, api_model: 'claude-opus-4-8' },
 ];
 
 /** Цены в USD за 1 000 000 токенов для каждой модели. */
@@ -27,10 +28,11 @@ const PRICING: Record<LlmModelId, { input: number; output: number }> = {
   'gemma3:12b': { input: 0, output: 0 },
   'claude-haiku-4-5': { input: 1, output: 5 },
   'claude-opus-4-7': { input: 15, output: 75 },
+  'claude-opus-4-8': { input: 5, output: 25 },
 };
 
 export function isValidModel(v: unknown): v is LlmModelId {
-  return v === 'gemma3:12b' || v === 'claude-haiku-4-5' || v === 'claude-opus-4-7';
+  return v === 'gemma3:12b' || v === 'claude-haiku-4-5' || v === 'claude-opus-4-7' || v === 'claude-opus-4-8';
 }
 
 export function calcCost(model: LlmModelId, inputTokens: number, outputTokens: number): number {
@@ -107,7 +109,7 @@ export async function runLlmAnalysis(
     },
     body: JSON.stringify({
       model: meta.api_model,
-      max_tokens: 8192,
+      max_tokens: 16384,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     }),

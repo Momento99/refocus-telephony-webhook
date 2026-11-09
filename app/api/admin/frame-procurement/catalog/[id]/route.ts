@@ -13,11 +13,12 @@ import { getSupabaseServerClient } from '@/lib/supabaseServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import type { CatalogColor } from '@/lib/frameProcurementTypes';
 import { dedupOverlappingColors } from '@/lib/frameVision';
+import { isFrameUuid } from '@/lib/frameManualProcurement';
+import { deleteUnusedFramePhoto, FramePhotoDeleteError } from '@/lib/frameCatalogDeletion';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const BUCKET = 'frame-supplier-catalog';
 const VALID_TYPES = ['PA', 'MA', 'RP', 'RM', 'KD', 'RL'] as const;
 const VALID_GENDERS = ['F', 'M', 'U'] as const;
 
@@ -45,10 +46,14 @@ function sanitizeColors(input: unknown): CatalogColor[] | null {
     const bbox = Array.isArray(obj.bbox) && obj.bbox.length === 4
       ? ([clamp01(obj.bbox[0]), clamp01(obj.bbox[1]), clamp01(obj.bbox[2]), clamp01(obj.bbox[3])] as [number, number, number, number])
       : ([0, 0, 1, 0.15] as [number, number, number, number]);
+    const clickPoint = Array.isArray(obj.click_point) && obj.click_point.length === 2
+      ? ([clamp01(obj.click_point[0]), clamp01(obj.click_point[1])] as [number, number])
+      : undefined;
     out.push({
       label: String(obj.label ?? '').slice(0, 32),
       name_ru: String(obj.name_ru ?? '').slice(0, 32),
       bbox,
+      ...(clickPoint ? { click_point: clickPoint } : {}),
     });
   }
   return out;
@@ -127,14 +132,14 @@ export async function PATCH(
     }
   }
 
-  // Если поправили хоть что-то семантическое — отмечаем как ручную коррекцию
-  if (
+  // Если поправили хоть что-то семантическое — отмечаем как ручную коррекцию.
+  const semanticCorrection =
     'type_code' in body ||
     'gender' in body ||
     'colors' in body ||
     'supplier_model' in body ||
-    'estimated_price' in body
-  ) {
+    'estimated_price' in body;
+  if (semanticCorrection) {
     update.manually_corrected = true;
     if (!('needs_review' in body)) update.needs_review = false;
   }
@@ -145,18 +150,34 @@ export async function PATCH(
 
   const admin = getSupabaseAdmin();
 
+  // Источник manual ставим только карточке, которая раньше вообще не имела
+  // provenance. Если пользователь поправил результат Sol/Luna/legacy, модель
+  // сохраняем, а факт ручной коррекции уже отражает manually_corrected=true.
+  let existingRow: { colors: unknown; recognized_by: string | null } | null = null;
+  if (semanticCorrection || !('colors' in body)) {
+    const { data: existing, error: existingErr } = await admin
+      .from('frame_supplier_catalog')
+      .select('colors, recognized_by')
+      .eq('id', id)
+      .maybeSingle();
+    if (existingErr) {
+      return NextResponse.json({ error: existingErr.message }, { status: 500 });
+    }
+    existingRow = existing;
+  }
+
+  if (semanticCorrection && existingRow && !existingRow.recognized_by) {
+    update.recognized_by = 'manual';
+    update.recognized_at = new Date().toISOString();
+  }
+
   // Одноразовая чистка существующих «битых» строк: если пользователь правит
   // запись, но НЕ трогает colors[], всё равно подтянем текущие colors и
   // прогоним через dedup. Так исторические дубли GPT-5 (19 каталогов из
   // discovery) уйдут естественным путём при первом же сохранении.
   if (!('colors' in body)) {
-    const { data: existing } = await admin
-      .from('frame_supplier_catalog')
-      .select('colors')
-      .eq('id', id)
-      .maybeSingle();
-    const existingColors = Array.isArray(existing?.colors)
-      ? (existing!.colors as CatalogColor[])
+    const existingColors = Array.isArray(existingRow?.colors)
+      ? (existingRow.colors as CatalogColor[])
       : null;
     if (existingColors && existingColors.length >= 2) {
       const { colors: deduped, didDedup } = dedupOverlappingColors(existingColors);
@@ -193,34 +214,11 @@ export async function DELETE(
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 403 });
 
   const { id } = await params;
-  if (!id) return NextResponse.json({ error: 'id обязателен' }, { status: 400 });
-
-  const admin = getSupabaseAdmin();
-  const { data: row } = await admin
-    .from('frame_supplier_catalog')
-    .select('storage_path')
-    .eq('id', id)
-    .maybeSingle();
-
-  // FK frame_procurement_order_items.catalog_id → frame_supplier_catalog.id
-  // имеет ON DELETE RESTRICT, поэтому сначала удаляем позиции из исторических
-  // заказов, где эта модель использовалась. Сам заказ (frame_procurement_orders)
-  // остаётся: total_qty/qty_by_section/sent_at сохраняются как аудит, теряем
-  // только детализацию позиций (ZIP уже отправлен в WeChat).
-  await admin
-    .from('frame_procurement_order_items')
-    .delete()
-    .eq('catalog_id', id);
-
-  const { error: delErr } = await admin
-    .from('frame_supplier_catalog')
-    .delete()
-    .eq('id', id);
-  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
-
-  if (row?.storage_path) {
-    await admin.storage.from(BUCKET).remove([row.storage_path]).catch(() => {});
+  if (!isFrameUuid(id)) return NextResponse.json({ error: 'Некорректный id фото' }, { status: 400 });
+  try {
+    return NextResponse.json(await deleteUnusedFramePhoto(getSupabaseAdmin(), id));
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Не удалось удалить фото' },
+      { status: error instanceof FramePhotoDeleteError ? error.status : 500 });
   }
-
-  return NextResponse.json({ ok: true });
 }

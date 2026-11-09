@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createServerClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -15,22 +15,16 @@ export function getSupabaseServerClient(): SupabaseClient {
     throw new Error('Нет ENV: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
   }
 
-  // В Next 15 cookies() нужно вызывать асинхронно.
-  // Поэтому внутри методов cookies мы дергаем (await cookies()) каждый раз.
   return createServerClient(url, anon, {
     cookies: {
-      // get/set/remove могут быть async — @supabase/ssr это поддерживает
-      get: async (name: string) => {
-        const store = await cookies();
-        return store.get(name)?.value;
-      },
-      set: async (name: string, value: string, options: CookieOptions) => {
-        const store = await cookies();
-        store.set({ name, value, ...options });
-      },
-      remove: async (name: string, options: CookieOptions) => {
-        const store = await cookies();
-        store.delete({ name, ...options });
+      getAll: async () => (await cookies()).getAll(),
+      setAll: async cookieValues => {
+        try {
+          const store = await cookies();
+          for (const { name, value, options } of cookieValues) store.set(name, value, options);
+        } catch {
+          // Server Components receive refreshed cookies from middleware.
+        }
       },
     },
   });

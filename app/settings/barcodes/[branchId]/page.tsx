@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import getSupabase from '@/lib/supabaseClient';
+import { loadFrameBarcodeShelf } from '@/lib/frameBarcodeShelf';
 import { ArrowLeft, Barcode, LayoutGrid, Printer, Hourglass } from 'lucide-react';
 import {
   BRANCHES_WITHOUT_AUTO_REPLENISH,
@@ -642,6 +643,84 @@ function getSectionVariant(sec: TypeSection): SectionVariant {
   return 'default';
 }
 
+type TypePrintPlan = {
+  rules: { min: number; max: number };
+  activeSum: number;
+  dupActivePrices: { p: number; c: number }[];
+  soldSuggestUniq: number[];
+  remainingByPlan: number;
+  visiblePrices: number[];
+};
+
+/**
+ * Единый расчёт очереди ценников для одной секции.
+ * Его используют и карточка вида, и общая кнопка филиала — поэтому общий запуск
+ * печатает ровно те же цены, которые пользователь видит внутри секций.
+ */
+function computeTypePrintPlan({
+  frameType,
+  gender,
+  planSlots,
+  typeActivePrices,
+  typeSuggestPrices,
+  fixedPrices,
+}: {
+  frameType: FrameTypeCode;
+  gender: GenderCode;
+  planSlots: number;
+  typeActivePrices: Record<number, number>;
+  typeSuggestPrices: number[];
+  fixedPrices?: number[];
+}): TypePrintPlan {
+  const rules = getTypePriceBounds(frameType, gender);
+  const activeSum = Object.values(typeActivePrices || {}).reduce(
+    (sum, value) => sum + (Number.isFinite(value) ? Number(value) : 0),
+    0,
+  );
+  const dupActivePrices = Object.entries(typeActivePrices || {})
+    .map(([price, count]) => ({ p: Number(price), c: Number(count) }))
+    .filter((item) => Number.isFinite(item.p) && Number.isFinite(item.c) && item.c > 1)
+    .sort((a, b) => a.p - b.p);
+
+  if (!rules.min || !rules.max || rules.max <= rules.min) {
+    return { rules, activeSum, dupActivePrices, soldSuggestUniq: [], remainingByPlan: 0, visiblePrices: [] };
+  }
+
+  const soldSuggestUniq = Array.from(new Set((typeSuggestPrices || []).filter((price) => {
+    if (!Number.isFinite(price)) return false;
+    if (price < rules.min || price > rules.max) return false;
+    if ((typeActivePrices[price] || 0) > 0) return false;
+    return true;
+  }))).sort((a, b) => a - b);
+
+  const remainingByPlan = planSlots > 0 ? Math.max(planSlots - activeSum, 0) : 0;
+  const slotsForFormula = planSlots > 0 ? Math.max(remainingByPlan - soldSuggestUniq.length, 0) : 0;
+  let formulaPrices: number[] = [];
+
+  if (planSlots > 0 && slotsForFormula > 0) {
+    const used = new Set<number>();
+    Object.keys(typeActivePrices || {}).forEach((price) => {
+      const value = Number(price);
+      if (Number.isFinite(value)) used.add(value);
+    });
+    soldSuggestUniq.forEach((price) => used.add(price));
+
+    const ladderAll = fixedPrices && fixedPrices.length > 0
+      ? [...fixedPrices]
+      : generatePriceLadder(planSlots, rules.min, rules.max, PRICE_ALPHA);
+    formulaPrices = ladderAll.filter((price) => !used.has(price)).slice(0, slotsForFormula);
+  }
+
+  return {
+    rules,
+    activeSum,
+    dupActivePrices,
+    soldSuggestUniq,
+    remainingByPlan,
+    visiblePrices: planSlots > 0 ? [...soldSuggestUniq, ...formulaPrices] : soldSuggestUniq,
+  };
+}
+
 /* ────────── страница ────────── */
 
 
@@ -687,6 +766,8 @@ export default function BranchBarcodesPage() {
   const [printedByType, setPrintedByType] = useState<Record<string, number>>({});
   const [typeActive, setTypeActive] = useState<TypeActiveMap>({});
   const [typeSuggest, setTypeSuggest] = useState<Record<string, number[]>>({});
+  const [shelfReady, setShelfReady] = useState(false);
+  const [shelfError, setShelfError] = useState<string | null>(null);
 
   // Диагностика "тип/пол не совпадает с barcode"
   const [, setBarcodeIssues] = useState<{ total: number; mismatched: number; unparsable: number }>({
@@ -893,14 +974,7 @@ export default function BranchBarcodesPage() {
       try {
         const sb = getSupabase();
 
-        const { data, error } = await sb
-          .from('frame_barcodes')
-          .select('type_code, gender, barcode, voided_at, year')
-          .eq('branch_id', branchId)
-          .in('year', yearsForShelf)
-          .is('voided_at', null);
-
-        if (error) throw error;
+        const data = await loadFrameBarcodeShelf(sb, branchId, yearsForShelf);
 
         const map: Record<string, number> = {};
         let total = 0;
@@ -985,14 +1059,7 @@ export default function BranchBarcodesPage() {
     try {
       const sb = getSupabase();
 
-      const { data, error } = await sb
-        .from('frame_barcodes')
-        .select('price, sold_at, voided_at, year')
-        .eq('branch_id', branchId)
-        .in('year', yearsForShelf)
-        .is('voided_at', null);
-
-      if (error) throw error;
+      const data = await loadFrameBarcodeShelf(sb, branchId, yearsForShelf);
 
       const totalByBucket: Record<BucketId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
       const perHundred: Record<string, number> = {};
@@ -1027,18 +1094,13 @@ export default function BranchBarcodesPage() {
   // Активные ценники и "пустые крючки" по типам (учёт лет витрины)
   const fetchTypeActive = useCallback(async () => {
     if (!branchId || Number.isNaN(branchId)) return;
+    setShelfReady(false);
+    setShelfError(null);
 
     try {
       const sb = getSupabase();
 
-      const { data, error } = await sb
-        .from('frame_barcodes')
-        .select('type_code, gender, price, sold_at, voided_at, barcode, year')
-        .eq('branch_id', branchId)
-        .in('year', yearsForShelf)
-        .is('voided_at', null);
-
-      if (error) throw error;
+      const data = await loadFrameBarcodeShelf(sb, branchId, yearsForShelf);
 
       const activeMap: TypeActiveMap = {};
       const totalMap: TypeActiveMap = {};
@@ -1110,12 +1172,14 @@ export default function BranchBarcodesPage() {
 
       setTypeActive(activeMap);
       setTypeSuggest(disableAutoSuggest ? {} : suggestMap);
+      setShelfReady(true);
 
       setBarcodeIssues({ total, mismatched, unparsable });
       if (mismatched > 0) log(`⚠️ Несовпадений type/gender с barcode: ${mismatched}`);
       if (unparsable > 0) log(`⚠️ Нераспарсенных barcode: ${unparsable}`);
     } catch (e: any) {
       console.error('load typeActive error', e?.message || e);
+      setShelfError(e?.message || String(e));
       log(`Ошибка загрузки активных цен по видам: ${e?.message || String(e)}`);
     }
   }, [branchId, yearsForShelf, log, disableAutoSuggest]);
@@ -1344,12 +1408,14 @@ export default function BranchBarcodesPage() {
 
         if ((existing || []).length > 0) {
           const list = (existing || [])
-            .map((r: any) => `${r.barcode} (yy=${String(r.year).padStart(2, '0')}, serial=${r.serial})`)
+            .map((r: any) => r.barcode)
             .join(', ');
+          // A different tab may have printed after the queue was built.
+          // Refresh the queue, preserving the already active barcode.
+          await Promise.all([fetchCounts(), fetchTypeActive()]);
           throw new Error(
-            `Нельзя печатать дубль цены.\n` +
-              `В этом филиале уже есть активный ценник для ${actualType}/${actualGender} по цене ${p} сом: ${list}.\n` +
-              `Если ценник потерян — сначала погаси (void) этот штрих-код в БД, потом печатай заново.`,
+            `В филиале уже есть действующий ценник «${frameTypeMeta?.label ?? actualType}» по цене ${p} сом: ${list}. ` +
+              'Повторный ценник не создан. Очередь обновлена — можно продолжить печать остальных ценников.',
           );
         }
       }
@@ -1390,6 +1456,34 @@ export default function BranchBarcodesPage() {
       }
       if (!usedBarcode) throw new Error('Не удалось подобрать свободный штрихкод');
 
+      // Штрихкод нужен до отправки задания, потому что он напечатан на этикетке.
+      // Если принтер не принял задание, сразу гасим созданную запись: база не
+      // должна считать активным ценник, которого физически нет.
+      const isPremium = p >= 4000;
+      try {
+        await ensureCanvasFonts();
+        const b64 = buildBitmapJobBase64(String(p), usedBarcode, '', isPremium);
+        const cfg = qz.configs.create(printer, { legacy: true, altPrinting: true, rasterize: false, scaleContent: false });
+        await qz.print(cfg, [{ type: 'raw', format: 'base64', data: b64 }]);
+      } catch (printError: any) {
+        const message = String(printError?.message || printError || 'неизвестная ошибка');
+        const { error: voidError } = await sb
+          .from('frame_barcodes')
+          .update({
+            voided_at: new Date().toISOString(),
+            void_reason: `Ошибка печати; ценник не подтверждён: ${message}`.slice(0, 240),
+          })
+          .eq('barcode', usedBarcode)
+          .is('sold_at', null)
+          .is('voided_at', null);
+        if (voidError) {
+          log(`Критично: ${usedBarcode} не напечатан и не удалось погасить запись: ${voidError.message}`);
+        } else {
+          log(`Печать не выполнена, запись ${usedBarcode} автоматически погашена`);
+        }
+        throw printError;
+      }
+
       const typeKey = makeTypeKey(actualType, actualGender);
       setPrintedByType((prev) => ({ ...prev, [typeKey]: (prev[typeKey] || 0) + 1 }));
       setTypeActive((prev) => {
@@ -1404,13 +1498,6 @@ export default function BranchBarcodesPage() {
         nextArr.splice(idx, 1);
         return { ...prev, [typeKey]: nextArr };
       });
-
-      await ensureCanvasFonts();
-      // Премиум-маркер: ≥4000с → жирный шрифт + горизонтальная линия под логотипом
-      const isPremium = p >= 4000;
-      const b64 = buildBitmapJobBase64(String(p), usedBarcode, '', isPremium);
-      const cfg = qz.configs.create(printer, { legacy: true, altPrinting: true, rasterize: false, scaleContent: false });
-      await qz.print(cfg, [{ type: 'raw', format: 'base64', data: b64 }]);
       log(`Отпечатано: ${usedBarcode}${isPremium ? ' [PREMIUM]' : ''}`);
 
       const b = bucketOfPriceLocal(p);
@@ -1430,8 +1517,10 @@ export default function BranchBarcodesPage() {
           .map((h) => (h.hundredBase === base ? { ...h, shortage: Math.max(0, h.shortage - 1) } : h))
           .filter((h) => h.shortage > 0),
       );
+
+      return usedBarcode;
     },
-    [branchId, branchCode, frameType, gender, yy, serial, printer, status, log, yearNumCurrent],
+    [branchId, branchCode, frameType, gender, yy, serial, printer, status, log, yearNumCurrent, fetchCounts, fetchTypeActive],
   );
 
   /* ── Последние напечатанные ценники (для отмены) ── */
@@ -1472,25 +1561,12 @@ export default function BranchBarcodesPage() {
 
   const doPrintWithRecent = useCallback(
     async (p: number, overrides?: { typeCode: FrameTypeCode; gender: GenderCode }) => {
-      await doPrint(p, overrides);
+      const usedBarcode = await doPrint(p, overrides);
       const t = overrides?.typeCode ?? frameType;
       const g = overrides?.gender ?? gender;
-      const sb = getSupabase();
-      const { data } = await sb.from('frame_barcodes')
-        .select('barcode')
-        .eq('branch_id', branchId)
-        .eq('price', p as any)
-        .eq('type_code', t)
-        .eq('gender', g)
-        .is('sold_at', null)
-        .is('voided_at', null)
-        .order('created_at', { ascending: false })
-        .limit(1);
-      if (data?.[0]) {
-        addToRecent(String(data[0].barcode), p, t, g);
-      }
+      addToRecent(usedBarcode, p, t, g);
     },
-    [doPrint, frameType, gender, branchId, addToRecent],
+    [doPrint, frameType, gender, addToRecent],
   );
 
   const voidBarcode = useCallback(
@@ -1523,6 +1599,72 @@ export default function BranchBarcodesPage() {
     },
     [doPrintWithRecent, log],
   );
+
+  const branchPrintQueue = useMemo(() => TYPE_SECTIONS.flatMap((sec) => {
+    const sectionPlan = typePlans[sec.id];
+    const typeKey = makeTypeKey(sec.typeCode, sec.gender);
+    const fixedPrices = isFormulaBranch && branch?.name
+      ? computeSectionPrices(
+          sec.typeCode as FormulaFrameType,
+          sec.gender as FormulaGenderCode,
+          branch.name,
+        )
+      : undefined;
+    const printPlan = computeTypePrintPlan({
+      frameType: sec.typeCode,
+      gender: sec.gender,
+      planSlots: sectionPlan?.slots ?? 0,
+      typeActivePrices: typeActive[typeKey] || {},
+      typeSuggestPrices: typeSuggest[typeKey] || [],
+      fixedPrices,
+    });
+    return printPlan.visiblePrices.map((price) => ({
+      sectionId: sec.id,
+      sectionTitle: sec.title,
+      typeCode: sec.typeCode,
+      gender: sec.gender,
+      price,
+    }));
+  }), [typePlans, typeActive, typeSuggest, isFormulaBranch, branch?.name]);
+
+  const [branchBulk, setBranchBulk] = useState<{
+    running: boolean;
+    done: number;
+    total: number;
+    error: string | null;
+  }>({ running: false, done: 0, total: 0, error: null });
+  const [sectionBulkRunning, setSectionBulkRunning] = useState(false);
+  const printingAvailable = status === 'connected' && !!printer && shelfReady;
+  const branchQueueSectionCount = new Set(branchPrintQueue.map((job) => job.sectionId)).size;
+
+  const handlePrintAllBranch = useCallback(async () => {
+    if (!printingAvailable || branchBulk.running || sectionBulkRunning) return;
+    const queue = [...branchPrintQueue];
+    if (!queue.length) return;
+    if (!window.confirm(
+      `Распечатать все недостающие ценники филиала «${branch?.name ?? 'Филиал'}» — ${queue.length} шт.?\n\n` +
+      'Каждый ценник будет по очереди записан в базу и отправлен на принтер. При первой ошибке очередь остановится.',
+    )) return;
+
+    setBranchBulk({ running: true, done: 0, total: queue.length, error: null });
+    log(`Общая печать филиала: очередь ${queue.length} ценников`);
+
+    try {
+      for (let i = 0; i < queue.length; i++) {
+        const job = queue[i];
+        await quickPrint(job.price, job.typeCode, job.gender);
+        setBranchBulk((prev) => ({ ...prev, done: i + 1 }));
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
+      }
+      log(`Общая печать завершена: ${queue.length} ценников`);
+    } catch (error: any) {
+      const message = String(error?.message || error || 'неизвестная ошибка');
+      setBranchBulk((prev) => ({ ...prev, error: message }));
+      log(`Общая печать остановлена после ошибки: ${message}`);
+    } finally {
+      setBranchBulk((prev) => ({ ...prev, running: false }));
+    }
+  }, [printingAvailable, branchBulk.running, sectionBulkRunning, branchPrintQueue, branch?.name, quickPrint, log]);
 
   /**
    * Тестовая печать — не трогает БД, просто отправляет демо-этикетку на принтер.
@@ -1667,6 +1809,46 @@ export default function BranchBarcodesPage() {
           {isFormulaBranch && branch?.name && (
             <FormulaInfoStrip branchName={branch.name} />
           )}
+
+          <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-cyan-200 bg-gradient-to-r from-cyan-50 via-white to-sky-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-cyan-500 text-white shadow-[0_3px_12px_rgba(6,182,212,0.28)]">
+                  <Printer className="h-4 w-4" />
+                </span>
+                Все недостающие ценники филиала
+              </div>
+              <div className="mt-1 pl-10 text-[11px] leading-4 text-slate-600">
+                {shelfError ? 'Не удалось загрузить ценники. Обновите страницу.' : !shelfReady ? 'Загружаю действующие ценники…' : branchPrintQueue.length > 0 || branchBulk.running
+                  ? `${branchBulk.running ? branchBulk.total : branchPrintQueue.length} шт. по ${branchBulk.running ? 'всем нужным' : branchQueueSectionCount} разделам · запись в базу и печать идут последовательно`
+                  : 'Все разделы заполнены — сейчас печатать ничего не нужно.'}
+              </div>
+              {branchBulk.error && !branchBulk.running && (
+                <div className="mt-1 pl-10 text-[11px] font-medium text-rose-600">
+                  Очередь остановлена: {branchBulk.error}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => void handlePrintAllBranch()}
+              disabled={!printingAvailable || branchBulk.running || sectionBulkRunning || branchPrintQueue.length === 0}
+              title={
+                !shelfReady ? 'Дождитесь полной загрузки действующих ценников' : !printingAvailable
+                  ? 'Сначала подключите QZ и выберите принтер'
+                  : branchPrintQueue.length === 0
+                    ? 'Все недостающие ценники уже напечатаны'
+                    : `Печатать все ${branchPrintQueue.length} недостающих ценников филиала`
+              }
+              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-xs font-bold text-white shadow-[0_4px_16px_rgba(6,182,212,0.28)] transition hover:bg-cyan-400 active:scale-[.98] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+            >
+              <Printer className="h-4 w-4" />
+              {branchBulk.running
+                ? `Печатаю ${branchBulk.done}/${branchBulk.total}`
+                : branchPrintQueue.length > 0
+                  ? `Печатать все ${branchPrintQueue.length} ценников`
+                  : 'Все ценники напечатаны'}
+            </button>
+          </div>
         </Section>
       </div>
 
@@ -1704,7 +1886,8 @@ export default function BranchBarcodesPage() {
                 typeActivePrices={typeActive[makeTypeKey(sec.typeCode, sec.gender)] || {}}
                 typeSuggestPrices={typeSuggest[makeTypeKey(sec.typeCode, sec.gender)] || []}
                 onQuickPrint={(p) => quickPrint(p, sec.typeCode, sec.gender)}
-                printingAvailable={status === 'connected' && !!printer}
+                printingAvailable={printingAvailable && !branchBulk.running && !sectionBulkRunning}
+                onBulkRunningChange={setSectionBulkRunning}
                 fixedPrices={
                   isFormulaBranch && branch?.name
                     ? computeSectionPrices(
@@ -2074,6 +2257,7 @@ function TypeShortageGrid({
   typeSuggestPrices,
   onQuickPrint,
   printingAvailable,
+  onBulkRunningChange,
   fixedPrices,
 }: {
   bucketShortages: BucketShortage[];
@@ -2087,12 +2271,26 @@ function TypeShortageGrid({
   typeSuggestPrices: number[];
   onQuickPrint: (price: number) => Promise<void> | void;
   printingAvailable: boolean;
+  onBulkRunningChange?: (running: boolean) => void;
   /** Если передан — эти цены используются вместо formulaPrices (например, AI-сетка Токмока). */
   fixedPrices?: number[];
 }) {
   const planSlots = typePlanSlots ?? 0;
-
-  const rules = getTypePriceBounds(frameType, gender);
+  const {
+    rules,
+    activeSum,
+    dupActivePrices,
+    soldSuggestUniq,
+    remainingByPlan,
+    visiblePrices,
+  } = computeTypePrintPlan({
+    frameType,
+    gender,
+    planSlots,
+    typeActivePrices,
+    typeSuggestPrices,
+    fixedPrices,
+  });
   if (!rules.min || !rules.max || rules.max <= rules.min) {
     return (
       <div className="text-xs text-slate-500">
@@ -2100,50 +2298,7 @@ function TypeShortageGrid({
       </div>
     );
   }
-
-  const activeSum = Object.values(typeActivePrices || {}).reduce((s, v) => s + (Number.isFinite(v) ? Number(v) : 0), 0);
-
-  /* ===================== NEW: подсветка дублей активных цен ===================== */
-  const dupActivePrices = Object.entries(typeActivePrices || {})
-    .map(([k, v]) => ({ p: Number(k), c: Number(v) }))
-    .filter((x) => Number.isFinite(x.p) && Number.isFinite(x.c) && x.c > 1)
-    .sort((a, b) => a.p - b.p);
-  /* ============================================================================ */
-
-  const soldSuggestAll = (typeSuggestPrices || []).filter((p) => {
-    if (!Number.isFinite(p)) return false;
-    if (p < rules.min || p > rules.max) return false;
-    if ((typeActivePrices[p] || 0) > 0) return false;
-    return true;
-  });
-
-  const soldSuggestUniq = Array.from(new Set(soldSuggestAll)).sort((a, b) => a - b);
   const soldSet = new Set(soldSuggestUniq);
-
-  const remainingByPlan = planSlots > 0 ? Math.max(planSlots - activeSum, 0) : 0;
-  const slotsForFormula = planSlots > 0 ? Math.max(remainingByPlan - soldSuggestUniq.length, 0) : 0;
-
-  let formulaPrices: number[] = [];
-  if (planSlots > 0 && slotsForFormula > 0) {
-    const used = new Set<number>();
-    Object.keys(typeActivePrices || {}).forEach((k) => {
-      const num = Number(k);
-      if (Number.isFinite(num)) used.add(num);
-    });
-    soldSuggestUniq.forEach((p) => used.add(p));
-
-    // Если для филиала задана фиксированная сетка (например, Токмок) — берём из неё.
-    // Иначе — генерируем по старой «лестнице».
-    const ladderAll =
-      fixedPrices && fixedPrices.length > 0
-        ? [...fixedPrices]
-        : generatePriceLadder(planSlots, rules.min, rules.max, PRICE_ALPHA);
-
-    const free = ladderAll.filter((p) => !used.has(p));
-    formulaPrices = free.slice(0, slotsForFormula);
-  }
-
-  const visiblePrices = planSlots > 0 ? [...soldSuggestUniq, ...formulaPrices] : soldSuggestUniq;
 
   const [bulk, setBulk] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -2155,19 +2310,21 @@ function TypeShortageGrid({
 
     const list = [...visiblePrices];
     setBulk({ running: true, done: 0, total: list.length });
+    onBulkRunningChange?.(true);
 
-    for (let i = 0; i < list.length; i++) {
-      const p = list[i];
-      try {
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i];
         await onQuickPrint(p);
         setBulk((prev) => ({ ...prev, done: i + 1 }));
-      } catch {
-        break;
+        await sleep(120);
       }
-      await sleep(120);
+    } catch {
+      /* ошибка уже записана в общий лог */
+    } finally {
+      setBulk((prev) => ({ ...prev, running: false }));
+      onBulkRunningChange?.(false);
     }
-
-    setBulk((prev) => ({ ...prev, running: false }));
   };
 
   if (planSlots <= 0 && visiblePrices.length === 0) {

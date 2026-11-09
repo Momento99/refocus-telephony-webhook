@@ -26,6 +26,8 @@ type Employee = {
   hourlyRate: number;
   hasBonus: boolean;
   bonusPercent: number;
+  /** Промоутеры: фикс. бонус (сом) за заказ филиала в смене. null = бонус по проценту. */
+  bonusPerOrder?: number | null;
   hoursWorked?: number;
   accrued?: number;
   net?: number; // К ВЫПЛАТЕ за месяц
@@ -133,6 +135,19 @@ export function usePayrollMonthly(month: string) {
         .order("id", { ascending: true });
       if (eErr) throw eErr;
 
+      // 3b) Профили оплаты — берём bonus_per_order (фикс. бонус промоутера за заказ).
+      const { data: pRows, error: pErr } = await sb
+        .from("employee_payroll_profiles")
+        .select("employee_id, bonus_per_order, active");
+      if (pErr) throw pErr;
+      const bonusPerOrderByEmp = new Map<number, number | null>();
+      for (const r of pRows || []) {
+        if (r && (r as any).active === false) continue;
+        const eid = Number((r as any).employee_id);
+        const v = (r as any).bonus_per_order;
+        bonusPerOrderByEmp.set(eid, v === null || v === undefined ? null : Number(v));
+      }
+
       const employeesDict = (eRows || []).map((r: any) => ({
         id: Number(r.id),
         branchId: Number(r.branch_id),
@@ -141,6 +156,9 @@ export function usePayrollMonthly(month: string) {
         hourlyRate: n0(r.hourly_rate),
         hasBonus: !!r.has_bonus,
         bonusPercent: n0(r.bonus_percent),
+        bonusPerOrder: bonusPerOrderByEmp.has(Number(r.id))
+          ? bonusPerOrderByEmp.get(Number(r.id))!
+          : null,
         is_active: r.is_active ?? true,
       }));
 

@@ -2,10 +2,10 @@
  * POST /api/admin/frame-procurement/recognize
  *
  * Тело запроса:
- *   { catalogIds: string[], engine: 'opus-4.7' | 'gpt-5' }
+ *   { catalogIds: string[], engine: 'gpt-6.1-sol' }
  *
  * Для каждого catalogId:
- *   1) если запись уже распознана через тот же движок и не требует review — пропускает
+ *   1) если запись уже распознана или исправлена вручную — пропускает без forceRerun
  *   2) иначе: загружает фото из Storage, шлёт в LLM, парсит ответ, пишет в БД
  *
  * Возвращает массив результатов с прогрессом.
@@ -15,16 +15,17 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabaseServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { recognize } from '@/lib/frameVision';
-import { smartCrop } from '@/lib/frameAutoCrop';
-import type { RecognitionEngine } from '@/lib/frameProcurementTypes';
+import { recognizeFrameColors } from '@/lib/frameColorVision';
+import {
+  isRecognitionEngine,
+  type RecognitionEngine,
+} from '@/lib/frameProcurementTypes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // секунд — батч 116 фото может занять до 5 минут
+export const maxDuration = 300; // секунд — до 50 фото за один серверный запрос
 
 const BUCKET = 'frame-supplier-catalog';
-const VALID_ENGINES = new Set<RecognitionEngine>(['opus-4.7', 'gpt-5']);
 const MAX_BATCH = 50;
 const FORCE_RERUN_CONFIRM_THRESHOLD = 10;
 
@@ -72,12 +73,15 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  const engine = body.engine as RecognitionEngine;
-  if (!VALID_ENGINES.has(engine)) {
-    return NextResponse.json({ error: `Неизвестный engine: ${body.engine}` }, { status: 400 });
+  if (!isRecognitionEngine(body.engine)) {
+    return NextResponse.json(
+      { error: `Неизвестная модель распознавания: ${String(body.engine ?? '')}` },
+      { status: 400 },
+    );
   }
-  const forceRerun = Boolean(body.forceRerun);
-  const confirmForceRerun = Boolean(body.confirmForceRerun);
+  const engine: RecognitionEngine = body.engine;
+  const forceRerun = body.forceRerun === true;
+  const confirmForceRerun = body.confirmForceRerun === true;
   if (
     forceRerun &&
     catalogIds.length > FORCE_RERUN_CONFIRM_THRESHOLD &&
@@ -106,7 +110,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   type Result =
-    | { id: string; ok: true; skipped: false; engine: RecognitionEngine; supplierModel: string | null }
+    | { id: string; ok: true; skipped: false; engine: RecognitionEngine; supplierModel: string | null; recognition: Awaited<ReturnType<typeof recognizeFrameColors>> }
     | { id: string; ok: true; skipped: true; reason: string }
     | { id: string; ok: false; error: string };
 
@@ -118,16 +122,17 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   async function processOne(row: typeof queue[number]): Promise<Result> {
     try {
-      if (
-        !forceRerun &&
-        row.recognized_by === engine &&
-        !row.needs_review &&
-        !row.manually_corrected
-      ) {
-        return { id: row.id, ok: true, skipped: true, reason: `Уже распознано через ${engine}` };
-      }
       if (row.manually_corrected && !forceRerun) {
         return { id: row.id, ok: true, skipped: true, reason: 'Поправлено вручную' };
+      }
+      // Existing recognition is rerun only after an explicit request.
+      if (!forceRerun && row.recognized_by) {
+        return {
+          id: row.id,
+          ok: true,
+          skipped: true,
+          reason: `Уже распознано через ${row.recognized_by}`,
+        };
       }
 
       const { data: blob, error: dlErr } = await admin.storage
@@ -137,43 +142,10 @@ export async function POST(req: Request): Promise<NextResponse> {
         return { id: row.id, ok: false, error: dlErr?.message || 'Не скачалось фото' };
       }
 
-      let buf: Buffer = Buffer.from(await blob.arrayBuffer());
+      const buf: Buffer = Buffer.from(await blob.arrayBuffer());
 
-      // Авто-кроп: если фото имеет тёмную WeChat-рамку, обрежем и
-      // перезапишем в Storage. Идемпотентно — повторный кроп не вредит.
-      // Это нужно для уплоадов от watcher'а, которые идут мимо /upload.
-      const crop = await smartCrop(buf);
-      if (crop.cropped) {
-        buf = Buffer.from(crop.buffer);
-        // Перезаписываем в Storage по тому же пути
-        const { error: upErr } = await admin.storage
-          .from(BUCKET)
-          .upload(row.storage_path, buf, {
-            contentType: 'image/png',
-            upsert: true,
-          });
-        if (upErr) {
-          // не критично — продолжим с локальным буфером
-          console.warn('re-upload after crop failed:', upErr.message);
-        }
-        // Обновим размеры в БД, чтобы UI и аннотация знали актуальные
-        await admin
-          .from('frame_supplier_catalog')
-          .update({ width_px: crop.width, height_px: crop.height })
-          .eq('id', row.id);
-      }
-
-      const base64 = buf.toString('base64');
-
-      const recognition = await recognize(base64, 'image/png', engine);
-
-      // estimated_price хранится в БД как numeric — приведём оценку
-      // LLM к числу, либо null, если поле отсутствует/невалидно.
-      const epRaw = recognition.estimated_price_kgs;
-      const estimatedPrice: number | null =
-        typeof epRaw === 'number' && Number.isFinite(epRaw) && epRaw > 0
-          ? epRaw
-          : null;
+      // Preserve original bytes and coordinate system, including watcher screenshots.
+      const recognition = await recognizeFrameColors(buf.toString('base64'), blob.type || 'image/png');
 
       const { error: updErr } = await admin
         .from('frame_supplier_catalog')
@@ -183,13 +155,9 @@ export async function POST(req: Request): Promise<NextResponse> {
           confidence: recognition.confidence,
           raw_response: recognition,
           supplier_model: recognition.supplier_model,
-          type_code: recognition.type_code,
-          gender: recognition.gender,
           colors: recognition.colors,
-          estimated_price: estimatedPrice,
           needs_review: recognition.needs_review,
           notes: recognition.notes,
-          manually_corrected: false,
         })
         .eq('id', row.id);
 
@@ -203,6 +171,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         skipped: false,
         engine,
         supplierModel: recognition.supplier_model,
+        recognition,
       };
     } catch (e: any) {
       return { id: row.id, ok: false, error: e?.message || String(e) };
@@ -227,5 +196,5 @@ export async function POST(req: Request): Promise<NextResponse> {
     errors: results.filter((r) => !r.ok).length,
   };
 
-  return NextResponse.json({ results, summary });
+  return NextResponse.json({ engine, results, summary });
 }

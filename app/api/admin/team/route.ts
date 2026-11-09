@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/app/api/admin/_requireOwner';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { managerTeamMetrics, teamPeriod } from '@/lib/team360Access';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -12,13 +13,14 @@ export const runtime = 'nodejs';
  */
 
 export async function GET(req: Request) {
-  const ok = await requireOwner();
+  const ok = await requireCrmPermission('team360');
   if (!ok.ok) return NextResponse.json({ error: ok.error }, { status: ok.status });
 
   const url = new URL(req.url);
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
-  if (!from || !to) {
+  const period = teamPeriod(from, to);
+  if (!period) {
     return NextResponse.json({ error: 'from/to required (YYYY-MM-DD)' }, { status: 400 });
   }
 
@@ -26,11 +28,16 @@ export async function GET(req: Request) {
   const { data, error } = await admin.rpc('rpc_employee_360', { p_from: from, p_to: to });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  if (ok.role === 'manager') {
+    return NextResponse.json({
+      ok: true, from, to, access: 'manager',
+      rows: (data ?? []).map((row: Record<string, unknown>) => managerTeamMetrics(row)),
+      commentary: {},
+    });
+  }
+
   // Агрегаты по выходам из POS-приложения за тот же период
-  const fromIso = `${from}T00:00:00Z`;
-  const toExclusive = new Date(`${to}T23:59:59Z`);
-  toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
-  const toIso = toExclusive.toISOString();
+  const { fromIso, toIso } = period;
 
   const { data: focusRaw } = await admin
     .from('pos_focus_events')
@@ -84,6 +91,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ok: true,
+    access: 'owner',
     from,
     to,
     rows,

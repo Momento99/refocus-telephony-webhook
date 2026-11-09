@@ -19,7 +19,7 @@ const ROLES: Role[] = ['owner', 'manager', 'seller'];
 
 const ROLE_LABEL: Record<Role, string> = {
   owner: 'Владелец',
-  manager: 'Менеджер',
+  manager: 'Управляющий',
   seller: 'Продавец',
 };
 
@@ -432,7 +432,7 @@ function InviteModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) throw new Error(j.error || 'Ошибка');
-      toast.success('Приглашение отправлено');
+      toast.success(j.invited ? 'Приглашение отправлено' : j.ownerPreserved ? 'Права владельца сохранены' : 'Доступ пользователя обновлён');
       onDone();
     } catch (e: any) {
       toast.error(e.message || 'Ошибка');

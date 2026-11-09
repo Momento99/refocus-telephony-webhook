@@ -1,8 +1,14 @@
 // app/api/payroll/adjustments/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { requireOwner } from "@/app/api/admin/_requireOwner";
 
 export async function POST(req: Request) {
+  const auth = await requireOwner();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   const body = await req.json();
   const {
     employeeId,
@@ -13,7 +19,15 @@ export async function POST(req: Request) {
     kind = "other", // 'bonus' | 'fine' | 'premium' | 'other'
   } = body || {};
 
-  if (!employeeId || !branchId || !month || !amount) {
+  const employeeIdNum = Number(employeeId);
+  const branchIdNum = Number(branchId);
+  const amountNum = Number(amount);
+  if (
+    !Number.isSafeInteger(employeeIdNum) || employeeIdNum <= 0 ||
+    !Number.isSafeInteger(branchIdNum) || branchIdNum <= 0 ||
+    !/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month ?? "")) ||
+    !Number.isFinite(amountNum) || amountNum === 0
+  ) {
     return NextResponse.json({ error: "Bad payload" }, { status: 400 });
   }
 
@@ -23,10 +37,10 @@ export async function POST(req: Request) {
   const { data, error } = await db
     .from("payroll_adjustments")
     .insert({
-      employee_id: Number(employeeId),
-      branch_id: Number(branchId),
+      employee_id: employeeIdNum,
+      branch_id: branchIdNum,
       period,
-      amount: Number(amount),
+      amount: amountNum,
       reason: String(reason),
       kind: String(kind),
     })

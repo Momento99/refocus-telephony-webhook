@@ -10,6 +10,7 @@
     "prisma:seed": "node prisma/seed.js",
     "postinstall": "prisma generate",
     "index-books": "tsx scripts/index-books.ts",
+    "test:reconciliation": "tsx --test lib/reconciliation.periods.test.ts",
     "apply-frame-migrations": "node scripts/apply-frame-migrations.mjs"
   },
   "dependencies": {

@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { getSupabaseBrowser } from '@/lib/supabaseBrowser';
+import { normalizeCrmRole, safeCrmRedirect } from '@/lib/crmAccess';
 
 function ruError(msg: string) {
   const m = msg.toLowerCase();
@@ -14,7 +15,6 @@ function ruError(msg: string) {
 }
 
 export default function LoginPage() {
-  const router = useRouter();
   const params = useSearchParams?.() as URLSearchParams | null;
   const redirectTo = params?.get('redirect') || '/orders';
 
@@ -24,14 +24,25 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'password' | 'email'>('password');
+  const [sent, setSent] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    const search = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    if (search.has('code') || search.has('token_hash') || search.has('error') ||
+        hash.has('access_token') || hash.has('refresh_token') || hash.has('error')) {
+      window.location.replace('/auth/callback' + window.location.search + window.location.hash);
+      return;
+    }
     let ignore = false;
     (async () => {
       try {
         const { data, error } = await sb.auth.getUser();
-        if (!ignore && !error && data.user) router.replace(redirectTo);
+        if (!ignore && !error && data.user) {
+          window.location.replace(safeCrmRedirect(redirectTo, normalizeCrmRole(data.user.app_metadata?.role) || 'seller'));
+        }
       } catch {
         /* silent */
       }
@@ -39,19 +50,35 @@ export default function LoginPage() {
     return () => {
       ignore = true;
     };
-  }, [sb, router, redirectTo]);
+  }, [sb, redirectTo]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr(null);
+    setSent(false);
     setLoading(true);
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) {
-      setErr(ruError(error.message));
+    try {
+      if (mode === 'email') {
+        const callback = new URL('/auth/callback', window.location.origin);
+        if (redirectTo.startsWith('/') && !redirectTo.startsWith('//')) callback.searchParams.set('redirect', redirectTo);
+        const { error } = await sb.auth.signInWithOtp({
+          email: email.trim().toLowerCase(),
+          options: { shouldCreateUser: false, emailRedirectTo: callback.toString() },
+        });
+        if (error) throw error;
+        setSent(true);
+        return;
+      }
+      const { error } = await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      if (error) throw error;
+      const { data, error: userError } = await sb.auth.getUser();
+      if (userError || !data.user) throw userError || new Error('Не удалось подтвердить вход');
+      window.location.replace(safeCrmRedirect(redirectTo, normalizeCrmRole(data.user.app_metadata?.role) || 'seller'));
+    } catch (reason) {
+      setErr(ruError(reason instanceof Error ? reason.message : 'Ошибка соединения'));
+    } finally {
       setLoading(false);
-      return;
     }
-    router.replace(redirectTo);
   }
 
   return (
@@ -82,6 +109,14 @@ export default function LoginPage() {
           </div>
 
           <form className="space-y-3" onSubmit={onSubmit}>
+            <div className="mb-4 flex rounded-xl bg-slate-800/60 p-1 ring-1 ring-slate-700/60">
+              {(['password', 'email'] as const).map(value => (
+                <button key={value} type="button" onClick={() => { setMode(value); setErr(null); setSent(false); }}
+                  className={`flex-1 rounded-lg px-3 py-2 text-sm transition ${mode === value ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:bg-slate-700/50'}`}>
+                  {value === 'password' ? 'Пароль' : 'Ссылка на почту'}
+                </button>
+              ))}
+            </div>
             <div className="relative">
               <Mail
                 size={18}
@@ -89,6 +124,7 @@ export default function LoginPage() {
               />
               <input
                 type="email"
+                aria-label="Email"
                 inputMode="email"
                 autoComplete="email"
                 placeholder=""
@@ -102,13 +138,14 @@ export default function LoginPage() {
               />
             </div>
 
-            <div className="relative">
+            {mode === 'password' && <div className="relative">
               <Lock
                 size={18}
                 className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
               />
               <input
                 type={showPassword ? 'text' : 'password'}
+                aria-label="Пароль"
                 autoComplete="current-password"
                 placeholder=""
                 value={password}
@@ -126,7 +163,11 @@ export default function LoginPage() {
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
-            </div>
+            </div>}
+
+            {sent && <div className="rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200">
+              Проверьте почту и откройте ссылку для входа. Доступ определяется вашей учётной записью.
+            </div>}
 
             {err && (
               <div className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
@@ -136,7 +177,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading || !email || !password}
+              disabled={loading || !email || (mode === 'password' && !password)}
               className="group relative mt-2 w-full overflow-hidden rounded-xl px-4 py-3.5 text-sm font-semibold tracking-wide text-white shadow-[0_10px_30px_rgba(34,211,238,0.25)] transition
                          focus:outline-none focus:ring-2 focus:ring-cyan-400/40 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
@@ -151,7 +192,7 @@ export default function LoginPage() {
                     Входим…
                   </>
                 ) : (
-                  'Войти'
+                  mode === 'email' ? 'Отправить ссылку для входа' : 'Войти'
                 )}
               </span>
               <span

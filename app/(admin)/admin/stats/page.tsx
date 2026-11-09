@@ -7,6 +7,8 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import getSupabase from '@/lib/supabaseClient';
+import { hasCrmPermission } from '@/lib/crmAccess';
+import { fetchPayrollFinancialSummary } from '@/lib/payrollFinancialSummary';
 import {
   CalendarDays,
   Building2,
@@ -202,13 +204,12 @@ const getCurrentYearRange = () => {
   return { from, to };
 };
 
-/** Проверка роли owner */
-async function isOwner(): Promise<boolean> {
+async function getStatisticsRole(): Promise<string | null> {
   const sb = getSupabase();
-  const { data: u } = await sb.auth.getUser();
-  if (!u?.user) return false;
-  const { data } = await sb.from('profiles').select('role').eq('id', u.user.id).single();
-  return data?.role === 'owner';
+  const { data, error } = await sb.auth.getUser();
+  if (error || !data.user) return null;
+  const role = data.user.app_metadata?.role;
+  return hasCrmPermission(role, 'statistics') ? role : null;
 }
 
 /* ========== типы ответов ========== */
@@ -425,6 +426,7 @@ function getEffectiveStartDate(selectedBranches: string[]): string {
 export default function AdminStatsPage() {
   /* --- доступ --- */
   const [gate, setGate] = React.useState<'pending' | 'ok' | 'denied'>('pending');
+  const [statisticsRole, setStatisticsRole] = React.useState<string | null>(null);
 
   /* --- фильтры --- */
   const branchOptions = ALL_BRANCHES;
@@ -489,7 +491,9 @@ export default function AdminStatsPage() {
   React.useEffect(() => {
     (async () => {
       try {
-        setGate((await isOwner()) ? 'ok' : 'denied');
+        const role = await getStatisticsRole();
+        setStatisticsRole(role);
+        setGate(role ? 'ok' : 'denied');
       } catch {
         setGate('denied');
       }
@@ -695,29 +699,33 @@ export default function AdminStatsPage() {
         let totalPayroll = 0;
         try {
           const sb = getSupabase();
-          let payErr: any = null;
-          let rows = await fetchAllPaged<any>((a, bb) => {
-            let q = sb
-              .from('v_payroll_daily_canonical')
-              .select('day, net_day')
-              .gte('day', from)
-              .lte('day', to)
-              .range(a, bb);
-            if (branchIds) q = q.in('branch_id', branchIds);
-            return q;
-          }).catch((e) => { payErr = e; return [] as any[]; });
-          // Fallback на v_payroll_daily, если canonical недоступен
-          if (payErr || rows.length === 0) {
+          let rows: { day: string; net_day: number }[];
+          if (statisticsRole === 'manager') {
+            rows = await fetchPayrollFinancialSummary(sb, from, to, branchIds);
+          } else {
+            let payErr: any = null;
             rows = await fetchAllPaged<any>((a, bb) => {
-              let q2 = sb
-                .from('v_payroll_daily')
+              let q = sb
+                .from('v_payroll_daily_canonical')
                 .select('day, net_day')
                 .gte('day', from)
                 .lte('day', to)
                 .range(a, bb);
-              if (branchIds) q2 = q2.in('branch_id', branchIds);
-              return q2;
-            }).catch(() => [] as any[]);
+              if (branchIds) q = q.in('branch_id', branchIds);
+              return q;
+            }).catch((e) => { payErr = e; return [] as any[]; });
+            if (payErr || rows.length === 0) {
+              rows = await fetchAllPaged<any>((a, bb) => {
+                let q2 = sb
+                  .from('v_payroll_daily')
+                  .select('day, net_day')
+                  .gte('day', from)
+                  .lte('day', to)
+                  .range(a, bb);
+                if (branchIds) q2 = q2.in('branch_id', branchIds);
+                return q2;
+              }).catch(() => [] as any[]);
+            }
           }
           // Карта day → сумма net_day (по всем сотрудникам выбранных филиалов)
           const payByDay = new Map<string, number>();
@@ -992,16 +1000,18 @@ export default function AdminStatsPage() {
         try {
           const sb = getSupabase();
           // Часы и брутто-ФОТ по филиалам за период (постранично — обход лимита 1000)
-          const spRows = await fetchAllPaged<any>((a, bb) => {
-            let qsp = sb
-              .from('v_payroll_daily_canonical')
-              .select('branch_id, hours, hour_pay, bonus, penalties')
-              .gte('day', from)
-              .lte('day', to)
-              .range(a, bb);
-            if (branchIds) qsp = qsp.in('branch_id', branchIds);
-            return qsp;
-          });
+          const spRows = statisticsRole === 'manager'
+            ? await fetchPayrollFinancialSummary(sb, from, to, branchIds)
+            : await fetchAllPaged<any>((a, bb) => {
+                let qsp = sb
+                  .from('v_payroll_daily_canonical')
+                  .select('branch_id, hours, hour_pay, bonus, penalties')
+                  .gte('day', from)
+                  .lte('day', to)
+                  .range(a, bb);
+                if (branchIds) qsp = qsp.in('branch_id', branchIds);
+                return qsp;
+              });
           const payByBr = new Map<number, { hours: number; gross: number }>();
           for (const r of spRows) {
             const bid = Number(r.branch_id);
@@ -1076,7 +1086,7 @@ export default function AdminStatsPage() {
         if (!isStale()) setLoading(false);
       }
     },
-    [fromISO, toISO, branches, revenueMode, pushFiltersToURL],
+    [fromISO, toISO, branches, revenueMode, pushFiltersToURL, statisticsRole],
   );
 
   /* --- первичная загрузка: ровно один раз, когда доступ и фильтры готовы.
@@ -1322,7 +1332,7 @@ export default function AdminStatsPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'line', lineStyle: { color: 'rgba(56,189,248,0.45)' } },
-        valueFormatter: (v) => nf(Number(v)),
+        valueFormatter: (v: unknown) => nf(Number(v)),
         ...(tooltipGlass as any),
       },
       xAxis: {
@@ -1510,7 +1520,7 @@ export default function AdminStatsPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'line', lineStyle: { color: 'rgba(34,211,238,0.45)' } },
-        valueFormatter: (v) => nf(Number(v)),
+        valueFormatter: (v: unknown) => nf(Number(v)),
         ...(tooltipGlass as any),
       },
       xAxis: { type: 'category', data: x, ...axisCommon },
@@ -1553,7 +1563,7 @@ export default function AdminStatsPage() {
     backgroundColor: 'transparent',
     legend: { top: 0, textStyle: { color: chartTheme.subtext, fontWeight: 600 } },
     grid: { top: 40, right: 18, bottom: 38, left: 56 },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: 'rgba(34,211,238,0.45)' } }, valueFormatter: (v) => nf(Number(v as number)), ...(tooltipGlass as any) },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: 'rgba(34,211,238,0.45)' } }, valueFormatter: (v: unknown) => nf(Number(v as number)), ...(tooltipGlass as any) },
     xAxis: { type: 'category', data: netProfit.map((r) => r.day), ...axisCommon },
     yAxis: { type: 'value', ...axisCommon, axisLabel: { color: chartTheme.axis, formatter: (v: number) => nf(v) } },
     series: [
@@ -1579,7 +1589,7 @@ export default function AdminStatsPage() {
     ].filter((d) => d.value > 0);
     return {
       backgroundColor: 'transparent',
-      tooltip: { trigger: 'item', valueFormatter: (v) => nf(Number(v as number)), ...(tooltipGlass as any) },
+      tooltip: { trigger: 'item', valueFormatter: (v: unknown) => nf(Number(v as number)), ...(tooltipGlass as any) },
       legend: { top: 0, textStyle: { color: chartTheme.subtext, fontWeight: 600 } },
       series: [{ type: 'pie', radius: ['35%', '70%'], center: ['50%', '58%'], label: { formatter: '{b}: {c}', color: chartTheme.text }, data }],
     };
@@ -1590,7 +1600,7 @@ export default function AdminStatsPage() {
     const b = custKpis?.returning_customers ?? 0;
     return {
       backgroundColor: 'transparent',
-      tooltip: { trigger: 'item', valueFormatter: (v) => nf(Number(v)), ...(tooltipGlass as any) },
+      tooltip: { trigger: 'item', valueFormatter: (v: unknown) => nf(Number(v)), ...(tooltipGlass as any) },
       legend: { top: 6, textStyle: { color: chartTheme.subtext, fontWeight: 600 } },
       series: [
         {
@@ -1752,7 +1762,7 @@ export default function AdminStatsPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        valueFormatter: (v) => nf(Number(v)),
+        valueFormatter: (v: unknown) => nf(Number(v)),
         ...(tooltipGlass as any),
       },
       xAxis: { type: 'category', data: x, ...axisCommon },
@@ -1840,7 +1850,7 @@ export default function AdminStatsPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        valueFormatter: (v) => nf(Number(v)),
+        valueFormatter: (v: unknown) => nf(Number(v)),
         ...(tooltipGlass as any),
       },
       xAxis: { type: 'category', data: x, ...axisCommon },
@@ -1891,7 +1901,7 @@ export default function AdminStatsPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'line' },
-        valueFormatter: (v) => nf(Number(v)),
+        valueFormatter: (v: unknown) => nf(Number(v)),
         ...(tooltipGlass as any),
       },
       legend: { top: 8, data: ['Жен', 'Муж'], textStyle: { color: chartTheme.subtext, fontWeight: 600 } },
@@ -1970,7 +1980,7 @@ export default function AdminStatsPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        valueFormatter: (v) => nf(Number(v)),
+        valueFormatter: (v: unknown) => nf(Number(v)),
         ...(tooltipGlass as any),
       },
       xAxis: { type: 'value', ...axisCommon, minInterval: 1 },
@@ -2017,7 +2027,7 @@ export default function AdminStatsPage() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        valueFormatter: (v) => nf(Number(v)),
+        valueFormatter: (v: unknown) => nf(Number(v)),
         ...(tooltipGlass as any),
       },
       xAxis: {
@@ -2173,7 +2183,7 @@ export default function AdminStatsPage() {
           <Section tone="danger">
             <div className="inline-flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
               <AlertTriangle className="h-4 w-4" />
-              Доступ только владельцу.
+              Доступ к статистике не предоставлен.
             </div>
           </Section>
         )}
@@ -2194,7 +2204,7 @@ export default function AdminStatsPage() {
             </div>
 
             {/* Навигация */}
-            <div className="mb-5 grid grid-cols-1 gap-3">
+            {statisticsRole === 'owner' && <div className="mb-5 grid grid-cols-1 gap-3">
               <Link
                 href="/finance/settings"
                 className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40"
@@ -2208,7 +2218,7 @@ export default function AdminStatsPage() {
                 </div>
                 <ChevronRightIcon />
               </Link>
-            </div>
+            </div>}
 
             {/* Filters */}
             <Section tone="neutral">

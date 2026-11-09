@@ -258,19 +258,27 @@ export default function TeamDashboardPage() {
   const [commentary, setCommentary] = useState<Record<number, Array<{ model: string; summary: string; created_at: string }>>>({});
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [managerView, setManagerView] = useState<boolean | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const { from, to } = useMemo(() => periodDates(period), [period]);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       const r = await fetch(`/api/admin/team?from=${from}&to=${to}`);
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Ошибка');
+      if (j.access !== 'manager' && j.access !== 'owner') throw new Error('Не удалось определить доступ');
       setRows(j.rows ?? []);
       setCommentary(j.commentary ?? {});
+      setManagerView(j.access === 'manager');
     } catch (e: any) {
-      toast.error(e?.message || 'Ошибка загрузки');
+      const message = e?.message || 'Ошибка загрузки';
+      setManagerView(null);
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -300,6 +308,38 @@ export default function TeamDashboardPage() {
   }, [rows]);
 
   const selectedRow = selectedId != null ? rows.find((r) => r.employee_id === selectedId) ?? null : null;
+
+  if (managerView === null) {
+    return (
+      <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
+        <h1 className="text-2xl font-bold text-slate-50">Команда 360°</h1>
+        <p className="mt-3 text-sm text-slate-400" role={loadError ? 'alert' : 'status'}>
+          {loading ? 'Загрузка…' : loadError}
+        </p>
+        {!loading && (
+          <button onClick={() => void load()} className="mt-4 rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+            Повторить
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (managerView) {
+    return (
+      <ManagerTeamView
+        grouped={grouped}
+        period={period}
+        onPeriod={setPeriod}
+        from={from}
+        to={to}
+        loading={loading}
+        onRefresh={load}
+        selectedRow={selectedRow}
+        onSelect={setSelectedId}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-8">
@@ -596,6 +636,160 @@ export default function TeamDashboardPage() {
           periodDays={period === 'week' ? 7 : period === 'month' ? 30 : 90}
         />
       )}
+    </div>
+  );
+}
+
+function ManagerTeamView({
+  grouped,
+  period,
+  onPeriod,
+  from,
+  to,
+  loading,
+  onRefresh,
+  selectedRow,
+  onSelect,
+}: {
+  grouped: Array<{ name: string; employees: Row[] }>;
+  period: Period;
+  onPeriod: (period: Period) => void;
+  from: string;
+  to: string;
+  loading: boolean;
+  onRefresh: () => Promise<void>;
+  selectedRow: Row | null;
+  onSelect: (employeeId: number | null) => void;
+}) {
+  return (
+    <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-50">Команда 360°</h1>
+          <p className="mt-1 text-sm text-slate-400">Продажи и качество обслуживания · {from} — {to}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(['week', 'month', 'quarter'] as Period[]).map(value => (
+            <button
+              key={value}
+              onClick={() => onPeriod(value)}
+              className={`rounded-xl px-3 py-2 text-sm ${period === value ? 'bg-cyan-500 text-white' : 'bg-white text-slate-700'}`}
+            >
+              {value === 'week' ? 'Неделя' : value === 'month' ? 'Месяц' : 'Квартал'}
+            </button>
+          ))}
+          <button
+            onClick={() => void onRefresh()}
+            disabled={loading}
+            className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-50"
+          >
+            {loading ? 'Загрузка…' : 'Обновить'}
+          </button>
+        </div>
+      </div>
+      <div className="space-y-7">
+        {grouped.map(group => (
+          <section key={group.name}>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-cyan-300">{group.name}</h2>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {group.employees.map(employee => (
+                <button
+                  key={employee.employee_id}
+                  onClick={() => onSelect(employee.employee_id)}
+                  className="rounded-2xl bg-white p-5 text-left shadow-sm transition hover:shadow-md"
+                >
+                  <h3 className="font-semibold text-slate-900">{employee.full_name}</h3>
+                  <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                    <BigMetric icon={Receipt} label="Заказы" value={String(employee.orders_count)} />
+                    <BigMetric icon={Coins} label="Продажи" value={formatMoney(Number(employee.revenue_total))} suffix="сом" />
+                    <BigMetric icon={TrendingUp} label="Средний чек" value={formatMoney(Number(employee.avg_check))} suffix="сом" />
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-3 border-t border-slate-100 pt-3 text-sm">
+                    <ManagerServiceScore label="Общение" score={employee.audio_avg_score} count={employee.audio_chunks_count} />
+                    <ManagerServiceScore label="WhatsApp" score={employee.wa_avg_score} count={employee.wa_analyzed_count} />
+                    <ManagerServiceScore label="Instagram" score={employee.ig_avg_score} count={employee.ig_analyzed_count} />
+                  </div>
+                  <p className="mt-4 text-xs font-medium text-cyan-700">Последние заказы →</p>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+      {!loading && grouped.length === 0 && <p className="text-slate-400">За выбранный период данных нет.</p>}
+      {selectedRow && (
+        <ManagerEmployeeOrders
+          key={`${selectedRow.employee_id}-${from}-${to}`}
+          row={selectedRow}
+          from={from}
+          to={to}
+          onClose={() => onSelect(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ManagerServiceScore({ label, score, count }: { label: string; score: number | null; count: number }) {
+  return (
+    <div>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 font-semibold text-slate-900">{score == null ? '—' : `${Number(score).toFixed(1)} / 10`}</p>
+      <p className="mt-1 text-xs text-slate-400">Оценено {Number(count) || 0}</p>
+    </div>
+  );
+}
+
+function ManagerEmployeeOrders({ row, from, to, onClose }: { row: Row; from: string; to: string; onClose: () => void }) {
+  const [orders, setOrders] = useState<Array<{ id: number; order_no: string; total_amount: number; status: string; created_at: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadOrders() {
+      try {
+        const response = await fetch(`/api/admin/team/${row.employee_id}?from=${from}&to=${to}`, { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Не удалось загрузить заказы');
+        setOrders(data.orders ?? []);
+      } catch (loadError) {
+        if (!controller.signal.aborted) setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить заказы');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    void loadOrders();
+    return () => controller.abort();
+  }, [row.employee_id, from, to]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="manager-employee-orders-title">
+      <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 id="manager-employee-orders-title" className="text-lg font-semibold text-slate-900">{row.full_name}</h2>
+            <p className="text-sm text-slate-500">Последние заказы за выбранный период</p>
+          </div>
+          <button onClick={onClose} aria-label="Закрыть" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {loading && <p className="text-sm text-slate-500">Загрузка…</p>}
+        {error && <p className="text-sm text-rose-600">{error}</p>}
+        {!loading && !error && orders.length === 0 && <p className="text-sm text-slate-500">Заказов за период нет.</p>}
+        <div className="space-y-3">
+          {orders.map(order => (
+            <div key={order.id} className="flex flex-wrap justify-between gap-2 rounded-xl border border-slate-100 p-3 text-sm">
+              <div>
+                <p className="font-medium text-slate-900">{order.order_no || `№ ${order.id}`}</p>
+                <p className="mt-1 text-xs text-slate-500">{order.created_at.slice(0, 10)} · {order.status}</p>
+              </div>
+              <p className="font-semibold text-slate-900">{formatMoney(Number(order.total_amount))} сом</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

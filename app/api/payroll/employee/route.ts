@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { requireOwner } from "@/app/api/admin/_requireOwner";
 
 const ALLOWED_ROLES = new Set(["seller", "promoter", "master"]);
 
 // body: { branchId, role? }
 export async function POST(req: Request) {
+  const auth = await requireOwner();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   const body = await req.json().catch(() => ({}));
   const bId = Number(body.branchId);
   if (!bId) return NextResponse.json({ error: "branchId required" }, { status: 400 });

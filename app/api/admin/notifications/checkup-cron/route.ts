@@ -20,7 +20,7 @@ function getSupabaseAdmin() {
 
 function isAuthorized(req: NextRequest) {
   const secret = process.env.NOTIFICATIONS_CRON_SECRET;
-  if (!secret) return true;
+  if (!secret) return false;
 
   const bearer = req.headers.get('authorization');
   const headerSecret = req.headers.get('x-cron-secret');

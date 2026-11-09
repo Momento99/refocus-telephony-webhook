@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { orderReadySkipReason, reconcileWhatsappQueue } from '@/lib/whatsappDelivery';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -29,6 +30,7 @@ type QueueItem = {
   template_language: string;
   template_variables: Record<string, string> | null;
   attempts: number;
+  created_at: string;
 };
 
 type Config = {
@@ -165,7 +167,7 @@ async function createOutboundThreadAndMessage(
     .single();
   if (eMsg) {
     console.error('[wa scheduler] msg insert failed', eMsg);
-    return threadId;
+    return null;
   }
 
   await admin
@@ -232,7 +234,7 @@ async function runScheduler(req: Request) {
 
   const { data: items, error: eSel } = await admin
     .from('whatsapp_followup_queue')
-    .select('id, customer_id, order_id, branch_id, phone_number, scenario, template_name, template_language, template_variables, attempts')
+    .select('id, customer_id, order_id, branch_id, phone_number, scenario, template_name, template_language, template_variables, attempts, created_at')
     .eq('status', 'pending')
     .lte('scheduled_at', new Date().toISOString())
     .order('scheduled_at', { ascending: true })
@@ -245,9 +247,27 @@ async function runScheduler(req: Request) {
 
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const raw of items) {
     const item = raw as QueueItem;
+
+    if (item.scenario === 'order_ready') {
+      const { data: order, error: orderError } = await admin.from('orders')
+        .select('status,is_deleted,ready_at,delivered_at')
+        .eq('id', item.order_id).eq('branch_id', item.branch_id)
+        .eq('customer_id', item.customer_id).maybeSingle();
+      if (orderError) return NextResponse.json({ error: 'Could not verify order before WhatsApp send' }, { status: 503 });
+      const skipReason = orderReadySkipReason(order, item.created_at);
+      if (skipReason) {
+        const { error: cancelError } = await admin.from('whatsapp_followup_queue')
+          .update({ status: 'cancelled', error_message: skipReason })
+          .eq('id', item.id).eq('status', 'pending');
+        if (cancelError) return NextResponse.json({ error: 'Could not cancel obsolete ready notification' }, { status: 503 });
+        skipped++;
+        continue;
+      }
+    }
 
     // Note (2026-04-25): consent re-check removed per business decision —
     // we send Utility templates to all customers without explicit opt-in.
@@ -256,16 +276,29 @@ async function runScheduler(req: Request) {
 
     if (result.ok) {
       const msgId = await createOutboundThreadAndMessage(item, result.waMessageId);
-      await admin
+      const { error: queueError } = await admin
         .from('whatsapp_followup_queue')
         .update({
-          status: 'sent',
+          // Meta accepted the request; do not resend if local recording failed.
+          status: msgId ? 'sent' : 'failed',
           sent_at: new Date().toISOString(),
           sent_message_id: msgId,
+          error_message: msgId ? null : `Meta accepted ${result.waMessageId}; local message recording failed; verify before retrying`,
           attempts: (item.attempts ?? 0) + 1,
         })
         .eq('id', item.id);
-      sent++;
+      if (queueError) {
+        console.error('[wa scheduler] accepted message queue update failed', {
+          queueId: item.id, waMessageId: result.waMessageId, error: queueError.message,
+        });
+        return NextResponse.json({ error: 'Failed to record accepted WhatsApp message' }, { status: 500 });
+      }
+      if (msgId) {
+        await reconcileWhatsappQueue(admin, msgId);
+        sent++;
+      } else {
+        failed++;
+      }
     } else {
       const nextAttempts = (item.attempts ?? 0) + 1;
       const tooMany = nextAttempts >= 3;
@@ -374,7 +407,7 @@ async function runScheduler(req: Request) {
   return NextResponse.json({
     ok: true,
     sla_breaches_marked: breached,
-    followups: { processed: items.length, sent, failed },
+    followups: { processed: items.length, sent, failed, skipped },
     texts: { sent: textsSent, failed: textsFailed },
     instagram: ig,
   });

@@ -1,17 +1,39 @@
 // app/api/payroll/data/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { requireOwner } from "@/app/api/admin/_requireOwner";
 
-function firstDay(monthYYYYMM: string) {
-  const [y, m] = monthYYYYMM.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10); // 'YYYY-MM-01'
+type CanonicalMonthlyRow = {
+  employee_id: number;
+  branch_id: number;
+  month: string;
+  hours_total: number | string | null;
+  hour_pay_total: number | string | null;
+  bonus_total: number | string | null;
+  penalties_total: number | string | null;
+  social_fund_total: number | string | null;
+  income_tax_total: number | string | null;
+  plan_premium_total: number | string | null;
+  adjustments_sum: number | string | null;
+  net_total: number | string | null;
+  manual_adjustments: number | string | null;
+};
+
+function firstDay(monthYYYYMM: string): string | null {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(monthYYYYMM);
+  return match && Number(match[1]) > 0 ? `${match[1]}-${match[2]}-01` : null;
 }
 
 export async function GET(req: Request) {
+  const auth = await requireOwner();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   const { searchParams } = new URL(req.url);
   const month = searchParams.get("month"); // 'YYYY-MM'
-  if (!month) return NextResponse.json({ error: "month is required" }, { status: 400 });
-  const period = firstDay(month);
+  const period = month ? firstDay(month) : null;
+  if (!period) {
+    return NextResponse.json({ error: "month is required (YYYY-MM)" }, { status: 400 });
+  }
 
   const db = getSupabaseAdmin();
 
@@ -25,26 +47,29 @@ export async function GET(req: Request) {
 
   // 2) Месячные расчёты (готовая вьюха)
   const { data: monthlyRows, error: mErr } = await db
-    .from("v_payroll_monthly_calc")
+    .from("v_payroll_monthly_canonical_v5")
     .select(
       [
         "employee_id",
         "branch_id",
         "month",
-        "hours_worked",
-        "base_from_hours",
-        "bonus_from_sales",
-        "daily_bonus",
-        "penalties_month",
-        "social_fund_month",
-        "income_tax_month",
-        "net_without_adjustments",
+        "hours_total",
+        "hour_pay_total",
+        "bonus_total",
+        "penalties_total",
+        "social_fund_total",
+        "income_tax_total",
+        "plan_premium_total",
+        "adjustments_sum",
+        "net_total",
+        "manual_adjustments",
       ].join(", ")
     )
     .eq("month", period);
   if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 });
 
-  const empIds = Array.from(new Set((monthlyRows ?? []).map(r => r.employee_id)));
+  const canonicalRows = (monthlyRows ?? []) as unknown as CanonicalMonthlyRow[];
+  const empIds = Array.from(new Set(canonicalRows.map((row) => Number(row.employee_id))));
 
   // 3) Карточки сотрудников и их профили оплаты
   const [{ data: empList, error: eErr }, { data: profList, error: pErr }] = await Promise.all([
@@ -62,41 +87,36 @@ export async function GET(req: Request) {
   const empById = new Map((empList ?? []).map(e => [e.id, e]));
   const profByEmp = new Map((profList ?? []).map(p => [p.employee_id, p]));
 
-  // 4) Корректировки за месяц
-  const { data: adjRows, error: aErr } = await db
-    .from("v_payroll_adjustments_monthly")
-    .select("employee_id, branch_id, month, adjustments_sum")
-    .eq("month", period);
-  if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 });
-  const adjByEmp = new Map((adjRows ?? []).map(r => [r.employee_id, Number(r.adjustments_sum || 0)]));
-
-  // 5) Собираем «employees» для фронта
-  const employees = (monthlyRows ?? []).map(r => {
-    const emp = empById.get(r.employee_id);
-    const prof = profByEmp.get(r.employee_id);
-    const adjustments = adjByEmp.get(r.employee_id) ?? 0;
-
+  // 4) Собираем «employees» из единой месячной витрины.
+  const employees = canonicalRows.map((r) => {
+    const employeeId = Number(r.employee_id);
+    const emp = empById.get(employeeId);
+    const prof = profByEmp.get(employeeId);
+    const adjustments = Number(r.adjustments_sum || 0);
+    const baseFromHours = Number(r.hour_pay_total || 0);
+    const bonusFromSales = Number(r.bonus_total || 0);
+    const dailyBonus =
+      Number(r.plan_premium_total || 0) +
+      Math.max(0, adjustments - Number(r.manual_adjustments || 0));
     const accrued =
-      Number(r.base_from_hours || 0) +
-      Number(r.bonus_from_sales || 0) +
-      Number(r.daily_bonus || 0);
+      baseFromHours + bonusFromSales + dailyBonus + Number(r.manual_adjustments || 0);
 
     return {
-      id: r.employee_id,
-      fullName: emp?.full_name ?? `ID ${r.employee_id}`,
+      id: employeeId,
+      fullName: emp?.full_name ?? `ID ${employeeId}`,
       role: emp?.role ?? "seller",
       branchId: emp?.branch_id ?? r.branch_id,
 
-      hoursWorked: Number(r.hours_worked || 0),
-      baseFromHours: Number(r.base_from_hours || 0),
-      bonusFromSales: Number(r.bonus_from_sales || 0),
-      dailyBonus: Number(r.daily_bonus || 0),
-      penaltiesMonth: Number(r.penalties_month || 0),
-      socialFund: Number(r.social_fund_month || 0),
-      incomeTax: Number(r.income_tax_month || 0),
+      hoursWorked: Number(r.hours_total || 0),
+      baseFromHours,
+      bonusFromSales,
+      dailyBonus,
+      penaltiesMonth: Number(r.penalties_total || 0),
+      socialFund: Number(r.social_fund_total || 0),
+      incomeTax: Number(r.income_tax_total || 0),
 
       accrued,
-      net: Number(r.net_without_adjustments || 0) + adjustments,
+      net: Number(r.net_total || 0),
       adjustments,
 
       // поля профиля для редактирования в UI

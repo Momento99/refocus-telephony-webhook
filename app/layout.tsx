@@ -14,6 +14,7 @@ import { Toaster } from "react-hot-toast";
 import ClientShell from "@/components/ClientShell";
 import { getUserRole } from "@/lib/getUserRole";
 import PosAwareSidebar from "@/components/PosAwareSidebar";
+import PresentationLocaleProvider from "@/components/PresentationLocaleProvider";
 
 export const metadata: Metadata = {
   title: "Refocus CRM",
@@ -38,31 +39,33 @@ export default async function RootLayout({
       </head>
 
       <body className="relative min-h-screen antialiased text-slate-50 pos-autozoom">
-        {/* Background layers in globals.css body::before and body::after */}
+        <PresentationLocaleProvider>
+          {/* Background layers in globals.css body::before and body::after */}
 
-        <div className="flex relative">
-          <PosAwareSidebar role={role} />
+          <div className="flex relative">
+            <PosAwareSidebar role={role} />
 
-          <main className="app-main flex-1 min-h-screen transition-all duration-300">
-            <div className="mx-auto max-w-7xl px-5 pt-8 pb-10">
-              <ClientShell>{children}</ClientShell>
-            </div>
-          </main>
-        </div>
+            <main className="app-main flex-1 min-h-screen transition-all duration-300">
+              <div className="mx-auto max-w-7xl px-5 pt-8 pb-10">
+                <ClientShell>{children}</ClientShell>
+              </div>
+            </main>
+          </div>
 
-        <Toaster
-          position="top-center"
-          toastOptions={{
-            duration: 2800,
-            style: {
-              fontSize: "14px",
-              background: "rgba(255,255,255,0.95)",
-              color: "#0f172a",
-              border: "1px solid rgba(56,189,248,0.15)",
-              boxShadow: "0 12px 40px rgba(15,23,42,0.12)",
-            },
-          }}
-        />
+          <Toaster
+            position="top-center"
+            toastOptions={{
+              duration: 2800,
+              style: {
+                fontSize: "14px",
+                background: "rgba(255,255,255,0.95)",
+                color: "#0f172a",
+                border: "1px solid rgba(56,189,248,0.15)",
+                boxShadow: "0 12px 40px rgba(15,23,42,0.12)",
+              },
+            }}
+          />
+        </PresentationLocaleProvider>
       </body>
     </html>
   );

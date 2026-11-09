@@ -84,10 +84,13 @@ export async function POST(req: Request): Promise<NextResponse> {
         .filter((s) => VALID_SECTION_KEYS.has(s)) as BuildOrderInput['excludedSections']
     : undefined;
 
+  const mode = parseMode(body.mode);
   const input: BuildOrderInput = {
     branchIds,
-    mode: parseMode(body.mode),
-    supplierMin: parseInt32(body.supplierMin, 500) || 500,
+    mode,
+    // «Своя цель» — сознательное решение владельца заказать меньше 500.
+    // Для остальных режимов стандартная минималка остаётся обязательной.
+    supplierMin: mode === 'custom' ? 0 : Math.max(parseInt32(body.supplierMin, 500) || 500, 500),
     customTarget: parseInt32(body.customTarget, 0),
     excludedSections,
   };

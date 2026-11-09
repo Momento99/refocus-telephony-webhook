@@ -1,11 +1,14 @@
 // app/api/dashboard/branches/route.ts
 import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabaseServer';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const gate = await requireCrmPermission('statistics');
+    if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
     const supabase = getSupabaseServerClient();
     // RLS пускает аутентифицированных читать branches
     const { data, error } = await supabase

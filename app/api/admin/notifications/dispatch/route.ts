@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +90,15 @@ export async function OPTIONS() {
 
 export async function POST(req: NextRequest) {
   try {
+    const cronSecret = process.env.NOTIFICATIONS_CRON_SECRET;
+    const cronAuthorized = !!cronSecret && (
+      req.headers.get('x-cron-secret') === cronSecret ||
+      req.headers.get('authorization') === `Bearer ${cronSecret}`
+    );
+    if (!cronAuthorized) {
+      const gate = await requireCrmPermission('mobileApp');
+      if (!gate.ok) return jsonCors({ ok: false, error: gate.error }, { status: gate.status });
+    }
     const sb = getSupabaseAdmin();
 
     const body = await req.json().catch(() => ({}));

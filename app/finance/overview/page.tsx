@@ -7,6 +7,8 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import type { EChartsOption } from 'echarts';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
+import { hasCrmPermission } from '@/lib/crmAccess';
+import { fetchPayrollFinancialSummary } from '@/lib/payrollFinancialSummary';
 import {
   CircleDollarSign,
   Undo2,
@@ -389,6 +391,7 @@ type PeriodMode = 'month' | 'year' | 'range' | 'all';
 
 export default function FinanceOverviewPage() {
   const [branchId, setBranchId] = useState<number>(1);
+  const [financeRole, setFinanceRole] = useState<string | null>(null);
 
   // Период
   const [periodMode, setPeriodMode] = useState<PeriodMode>('month');
@@ -477,6 +480,13 @@ export default function FinanceOverviewPage() {
 
     try {
       const sb = getBrowserSupabase();
+      const { data: auth, error: authError } = await sb.auth.getUser();
+      if (authError || !auth.user || !hasCrmPermission(auth.user.app_metadata?.role, 'finance')) {
+        setFinanceRole(null);
+        throw new Error('Доступ к финансам не предоставлен');
+      }
+      setFinanceRole(auth.user.app_metadata?.role ?? null);
+      const isManager = auth.user.app_metadata?.role === 'manager';
 
       /* 1) сводка (как вернул SQL) — сохраняем для диагностики (avg checks берём отсюда) */
       const { data: sumRaw, error: sErr } = await sb
@@ -529,7 +539,7 @@ export default function FinanceOverviewPage() {
 
         if (nErr) setError(`Ошибка детализации по дням: ${normalizeError(nErr)}`);
 
-        netLocal = (netRaw ?? []).map((r: any) => ({
+        netLocal = (Array.isArray(netRaw) ? netRaw : []).map((r: any) => ({
           day: String(r.day ?? '').slice(0, 10),
           branch_id: branchId,
           branch_name: branchName,
@@ -560,7 +570,7 @@ export default function FinanceOverviewPage() {
               return [] as NetRow[];
             }
 
-            return (data ?? []).map((r: any) => ({
+            return (Array.isArray(data) ? data : []).map((r: any) => ({
               day: String(r.day ?? '').slice(0, 10),
               branch_id: b.id,
               branch_name: b.name,
@@ -633,7 +643,9 @@ export default function FinanceOverviewPage() {
         // Используем canonical как единый источник зарплатных чисел (см. payroll_daily_canonical).
         // Fallback на старые v_payroll_daily_v2 / v_payroll_daily оставлен на случай регресса.
         let payRows: PayrollDailyRow[] = [];
-        {
+        if (isManager) {
+          payRows = await fetchPayrollFinancialSummary(sb, fromDate, toDate, branchId > 0 ? [branchId] : null);
+        } else {
           const { data: d0, error: e0 } = await fetchPayrollView('v_payroll_daily_canonical');
           if (!e0) {
             payRows = d0 ?? [];
@@ -985,13 +997,13 @@ export default function FinanceOverviewPage() {
                 Воскресенье исключено
               </span>
 
-              <Link
+              {financeRole === 'owner' && <Link
                 href={`/finance/settings?branch=${branchId}`}
                 className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium bg-white/85 hover:bg-white text-teal-700 ring-1 ring-teal-200 shadow-[0_14px_40px_rgba(15,23,42,0.12)] transition focus:outline-none focus:ring-2 focus:ring-teal-300/60"
               >
                 <Settings2 className="h-4 w-4" />
                 Настройки ставок
-              </Link>
+              </Link>}
 
               <SoftPrimaryButton onClick={exportNetCsv} disabled={netRows.length === 0}>
                 <Download className="h-4 w-4" />

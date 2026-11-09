@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Brain, BookOpen, Building2, Bot, MessageCircleHeart, ShieldAlert } from 'lucide-react';
+import { Brain, BookOpen, Building2, Bot, MessageCircleHeart, ShieldAlert, Trophy } from 'lucide-react';
 
 const TABS = [
-  { href: '/admin/ai-employee-messages',               label: 'AI контроль',         icon: Bot },
+  { href: '/admin/ai-employee-messages',               label: 'Обзор',               icon: Bot },
+  { href: '/admin/ai-employee-messages/weekly-recap',  label: 'Отчёты на кассу',     icon: Trophy },
   { href: '/admin/ai-employee-messages/advisor',       label: 'Бизнес-советник',     icon: Brain },
   { href: '/admin/ai-employee-messages/branch-notes',  label: 'Заметки по филиалам', icon: Building2 },
   { href: '/admin/ai-employee-messages/feedback',      label: 'Фидбэк сотрудников',  icon: MessageCircleHeart },

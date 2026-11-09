@@ -149,6 +149,7 @@ const UI_ITEMS: Array<{ key: ConsumableKey; label: string; Icon: any }> = [
 ];
 
 export default function WarehousePage() {
+  const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -218,7 +219,14 @@ export default function WarehousePage() {
   }
 
   useEffect(() => {
+    let active = true;
+    void sb.auth.getUser().then(({ data, error }) => {
+      if (active) setIsOwner(!error && data.user?.app_metadata?.role === "owner");
+    }).catch(() => {
+      if (active) setIsOwner(false);
+    });
     void load();
+    return () => { active = false; };
   }, []);
 
   function openFix(c: LocationCard) {
@@ -288,7 +296,7 @@ export default function WarehousePage() {
       </div>
 
       {/* Навигация по складским разделам */}
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {isOwner && <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Link
           href="/warehouse/suppliers"
           className="group flex items-center gap-4 rounded-2xl px-5 py-4 bg-white ring-1 ring-sky-100 shadow-[0_8px_30px_rgba(15,23,42,0.45)] transition hover:ring-cyan-300/40"
@@ -316,7 +324,7 @@ export default function WarehousePage() {
           </div>
           <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-cyan-500 transition-colors" />
         </Link>
-      </div>
+      </div>}
 
       {error ? (
         <div className="mb-5 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">

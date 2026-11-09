@@ -1,6 +1,7 @@
 // app/api/payroll/daily/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { requireOwner } from "@/app/api/admin/_requireOwner";
 
 function range(monthYYYYMM: string) {
   const [y, m] = monthYYYYMM.split("-").map(Number);
@@ -12,6 +13,9 @@ function range(monthYYYYMM: string) {
 }
 
 export async function GET(req: Request) {
+  const auth = await requireOwner();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   const { searchParams } = new URL(req.url);
   const employeeId = Number(searchParams.get("employeeId"));
   const branchId = Number(searchParams.get("branchId") || 0);

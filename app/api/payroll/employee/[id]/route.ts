@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import type { RoleT } from "@/app/settings/payroll/usePayrollMonthly";
+import { requireOwner } from "@/app/api/admin/_requireOwner";
 
 // PATCH body: частичное обновление
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireOwner();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   const id = Number(params.id);
   if (!id) return NextResponse.json({ error: "bad request" }, { status: 400 });
 
@@ -61,6 +65,9 @@ export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireOwner();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   const id = Number(params.id);
   const supa = getSupabaseAdmin();
 

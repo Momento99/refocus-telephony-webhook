@@ -41,6 +41,7 @@ export default function ReceiptPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [branch, setBranch] = useState<Branch | null>(null);
+  const [refunded, setRefunded] = useState(0);
 
   useEffect(() => {
     if (!orderId || Number.isNaN(orderId)) return;
@@ -61,7 +62,7 @@ export default function ReceiptPage() {
 
       setOrder(o as any);
 
-      const [it, pay, cu, br] = await Promise.all([
+      const [it, pay, cu, br, rf] = await Promise.all([
         sb
           .from('order_items')
           .select('item_type,eye,lens_type,price,qty')
@@ -78,6 +79,7 @@ export default function ReceiptPage() {
           .select('name')
           .eq('id', (o as any).branch_id)
           .single(),
+        sb.from('refunds').select('amount,status').eq('order_id', orderId),
       ]);
 
       if (!alive) return;
@@ -86,6 +88,12 @@ export default function ReceiptPage() {
       setPayments(((pay as any).data || []) as Payment[]);
       setCustomer(((cu as any).data || null) as Customer);
       setBranch(((br as any).data || null) as Branch);
+      const rfRows = ((rf as any).data || []) as Array<{ amount: number; status: string }>;
+      setRefunded(
+        rfRows
+          .filter((r) => (r.status ?? 'done') === 'done')
+          .reduce((s, r) => s + (Number(r.amount) || 0), 0)
+      );
 
       // Браузерный запасной режим: ?print=1
       if ((sp.get('print') ?? '0') === '1') {
@@ -101,8 +109,9 @@ export default function ReceiptPage() {
     };
   }, [orderId, sp]);
 
+  // Брутто-оплата: только положительные платежи (возврат показываем отдельной строкой)
   const paid = useMemo(
-    () => (payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0),
+    () => (payments || []).reduce((s, p) => s + Math.max(0, Number(p.amount) || 0), 0),
     [payments]
   );
 
@@ -183,6 +192,13 @@ export default function ReceiptPage() {
               <span>{fmt.format(due)} с</span>
             </div>
           </>
+        )}
+
+        {refunded > 0 && (
+          <div className="flex justify-between font-bold">
+            <span>Возврат</span>
+            <span>- {fmt.format(refunded)} с</span>
+          </div>
         )}
 
         <div className="my-2 border-t border-black" />

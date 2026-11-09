@@ -14,6 +14,7 @@ import AdmZip from 'adm-zip';
 import { getSupabaseServerClient } from '@/lib/supabaseServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { annotateImage, type AnnotationMark } from '@/lib/frameAnnotate';
+import type { ManualDraft } from '@/lib/frameManualProcurement';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,7 +51,7 @@ export async function GET(
   // Загружаем заказ + items + связанные записи каталога
   const { data: order, error: ordErr } = await admin
     .from('frame_procurement_orders')
-    .select('id, branch_id, total_qty, recognized_by, created_at')
+    .select('id, branch_id, total_qty, recognized_by, created_at, manual_draft')
     .eq('id', orderId)
     .maybeSingle();
   if (ordErr || !order) {
@@ -59,7 +60,7 @@ export async function GET(
 
   const { data: items, error: itErr } = await admin
     .from('frame_procurement_order_items')
-    .select('catalog_id, color_label, color_name, qty, bbox')
+    .select('catalog_id, color_label, color_name, qty, bbox, click_point')
     .eq('order_id', orderId);
   if (itErr) {
     return NextResponse.json({ error: itErr.message }, { status: 500 });
@@ -68,6 +69,9 @@ export async function GET(
   const itemList = items || [];
   if (itemList.length === 0) {
     return NextResponse.json({ error: 'В заказе нет позиций' }, { status: 400 });
+  }
+  if (order.manual_draft && itemList.reduce((sum, item) => sum + Number(item.qty), 0) !== Number(order.total_qty)) {
+    return NextResponse.json({ error: 'Итог заказа не совпадает с позициями. Откройте и сохраните заказ.' }, { status: 409 });
   }
 
   // Сначала загружаем catalog (с colors[]) — нужен для свежих click_point
@@ -81,6 +85,13 @@ export async function GET(
   }
   const catalogById = new Map<string, any>();
   for (const r of catalogRows || []) catalogById.set(r.id, r);
+  // Manual orders render the exact saved snapshot, even after AI reruns.
+  const snapshot = order.manual_draft as ManualDraft | null;
+  for (const model of snapshot?.models || []) {
+    const row = catalogById.get(model.catalogId);
+    if (row) catalogById.set(model.catalogId, { ...row, supplier_model: model.supplierModel,
+      type_code: model.typeCode, gender: model.gender });
+  }
 
   // Группируем items по catalog_id и собираем marks с click_point из каталога
   type Group = {
@@ -118,7 +129,7 @@ export async function GET(
 
     let clickPoint: [number, number] | undefined;
     const cat = catalogById.get(it.catalog_id);
-    if (cat?.colors && Array.isArray(cat.colors)) {
+    if (!snapshot && cat?.colors && Array.isArray(cat.colors)) {
       const matched = cat.colors.find((c: any) => c?.label === it.color_label);
       if (
         matched?.click_point
@@ -154,6 +165,12 @@ export async function GET(
       clickPoint = [safeCx, safeCy];
     }
 
+    if (snapshot) {
+      if (!Array.isArray(it.click_point) || it.click_point.length !== 2) {
+        return NextResponse.json({ error: 'В заказе отсутствует положение цифры. Откройте и сохраните карточку.' }, { status: 409 });
+      }
+      clickPoint = it.click_point as [number, number];
+    }
     const mark: AnnotationMark = {
       bbox,
       qty: Number(it.qty) || 0,
@@ -169,12 +186,12 @@ export async function GET(
 
   for (const g of groups.values()) {
     const cat = catalogById.get(g.catalogId);
-    if (!cat) continue;
+    if (!cat) return NextResponse.json({ error: 'Фото одной из моделей не найдено. Архив не создан.' }, { status: 409 });
 
     const { data: blob, error: dlErr } = await admin.storage
       .from(BUCKET)
       .download(cat.storage_path);
-    if (dlErr || !blob) continue;
+    if (dlErr || !blob) return NextResponse.json({ error: 'Не удалось загрузить все фото. Повторите выгрузку.' }, { status: 502 });
 
     const sourceBuf = Buffer.from(await blob.arrayBuffer());
 
@@ -183,7 +200,7 @@ export async function GET(
       annotated = await annotateImage(sourceBuf, g.marks);
     } catch (e) {
       console.warn('annotate fail:', e);
-      continue;
+      return NextResponse.json({ error: 'Не удалось нанести цифры на фото. Архив не создан.' }, { status: 500 });
     }
 
     // Имя файла: артикул-поставщика_тип_пол_итоговое.png

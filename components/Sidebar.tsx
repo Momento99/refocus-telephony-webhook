@@ -9,11 +9,11 @@ import {
   LogOut, LogIn, Boxes, FileText, Settings2,
   PackageCheck, Smartphone, BrainCircuit, Globe,
   Landmark, Map, MessageCircle, UsersRound, BookOpen,
-  Glasses, CalendarDays, PiggyBank, Package,
+  Glasses, CalendarDays, PiggyBank, Package, Undo2,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
-import { Role } from "@/lib/getUserRole";
+import { canAccessCrmPage, normalizeCrmRole, type Role } from "@/lib/crmAccess";
 
 
 type MenuItem = { label: string; href: string; icon: ElementType };
@@ -32,6 +32,7 @@ const MENU_SECTIONS: MenuSection[] = [
     title: "Персонал",
     items: [
       { label: "Зарплаты и посещаемость", href: "/settings/payroll", icon: WalletCards },
+      { label: "Команда 360", href: "/admin/team", icon: UsersRound },
     ],
   },
   {
@@ -51,8 +52,8 @@ const MENU_SECTIONS: MenuSection[] = [
   {
     title: "Аналитика",
     items: [
-      { label: "Команда 360°", href: "/admin/team", icon: UsersRound },
       { label: "Статистика и финансы", href: "/admin/stats", icon: LineChart },
+      { label: "Возвраты и замены", href: "/admin/returns", icon: Undo2 },
       { label: "AI-центр", href: "/admin/ai-employee-messages", icon: BrainCircuit },
       { label: "WhatsApp контроль", href: "/admin/whatsapp-control", icon: MessageCircle },
       { label: "Карта системы", href: "/admin/system-map", icon: Map },
@@ -62,6 +63,7 @@ const MENU_SECTIONS: MenuSection[] = [
     title: "Франшиза",
     items: [
       { label: "Карта и управление", href: "/admin/franchise-map", icon: Globe },
+      { label: "Материалы HQ", href: "/admin/franchise-hq", icon: BookOpen },
       { label: "Брендбук",            href: "/admin/brandbook",     icon: BookOpen },
     ],
   },
@@ -82,26 +84,42 @@ const MENU_SECTIONS: MenuSection[] = [
   },
 ];
 
-export default function Sidebar({ role }: { role: Role }) {
-  void role;
+export default function Sidebar({ role }: { role: Role | null }) {
   const pathname = usePathname();
   const router = useRouter();
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [verifiedRole, setVerifiedRole] = useState<Role | null>(role);
   const [unreadFranchise, setUnreadFranchise] = useState(0);
+  const [pendingLens, setPendingLens] = useState(0);
+  const visibleSections = useMemo(() => MENU_SECTIONS.map(section => ({
+    ...section,
+    title: verifiedRole === 'manager' && section.title === 'Настройки' ? 'Приложение' : section.title,
+    items: section.items.filter(item => canAccessCrmPage(verifiedRole, item.href)),
+  })).filter(section => section.items.length > 0), [verifiedRole]);
+
+  useEffect(() => { setVerifiedRole(role); }, [role]);
 
   // Закрываем мобильный drawer при переходе на другую страницу
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   useEffect(() => {
     const supabase = getBrowserSupabase();
-    supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null));
+    let active = true;
+    const refreshUser = () => supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      setUserEmail(data.user?.email ?? null);
+      setVerifiedRole(data.user ? normalizeCrmRole(data.user.app_metadata?.role) || 'seller' : null);
+    });
+    void refreshUser();
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, sess) => {
       setUserEmail(sess?.user?.email ?? null);
+      if (!sess) setVerifiedRole(null);
+      else queueMicrotask(() => { if (active) void refreshUser(); });
     });
-    return () => sub.subscription.unsubscribe();
+    return () => { active = false; sub.subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -116,6 +134,7 @@ export default function Sidebar({ role }: { role: Role }) {
 
   // Unread franchise messages
   useEffect(() => {
+    if (verifiedRole !== 'owner') return;
     const s = getBrowserSupabase();
     (async () => {
       const { count } = await s.from("franchise_messages").select("id", { count: "exact", head: true }).eq("sender", "franchise").eq("is_read", false);
@@ -130,14 +149,34 @@ export default function Sidebar({ role }: { role: Role }) {
       })
       .subscribe();
     return () => { s.removeChannel(ch); };
-  }, []);
+  }, [verifiedRole]);
+
+  // Линзы "под заказ": сколько ещё нужно закупить. RPC сам гейтит по is_owner()
+  // (для не-владельца вернёт 0 → бейдж скрыт). Пересчёт при новых заказах с кассы
+  // и по событию "lens-ondemand-changed" со страницы закупки (кнопка «Заказано»).
+  useEffect(() => {
+    if (verifiedRole !== 'owner') return;
+    const s = getBrowserSupabase();
+    const recount = async () => {
+      const { data, error } = await s.rpc("lens_ondemand_pending_count");
+      if (!error) setPendingLens(typeof data === "number" ? data : Number(data) || 0);
+    };
+    recount();
+    const ch = s.channel("crm-sidebar-lens-ondemand")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "order_items" }, () => recount())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, () => recount())
+      .subscribe();
+    const onChanged = () => recount();
+    window.addEventListener("lens-ondemand-changed", onChanged);
+    return () => { s.removeChannel(ch); window.removeEventListener("lens-ondemand-changed", onChanged); };
+  }, [verifiedRole]);
 
   function isActive(href: string) {
     if (pathname === href) return true;
     if (href === "/settings/barcodes/overview" && pathname.startsWith("/settings/barcodes")) return true;
     if (href === "/admin/mobile-app" && pathname.startsWith("/admin/mobile-app")) return true;
     if (href === "/admin/ai-employee-messages" && pathname.startsWith("/admin/ai-employee-messages")) return true;
-    if (href === "/admin/franchise-map" && pathname.startsWith("/admin/franchise")) return true;
+    if (href === "/admin/franchise-map" && pathname.startsWith("/admin/franchise") && !pathname.startsWith('/admin/franchise-hq')) return true;
     if (href === "/taxes" && pathname.startsWith("/taxes")) return true;
     return false;
   }
@@ -213,7 +252,7 @@ export default function Sidebar({ role }: { role: Role }) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2">
-        {MENU_SECTIONS.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.title} className="mb-3">
             {!collapsed && (
               <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
@@ -224,6 +263,7 @@ export default function Sidebar({ role }: { role: Role }) {
               const active = isActive(item.href);
               const Icon = item.icon;
               const showBadge = item.href === "/admin/franchise-map" && unreadFranchise > 0;
+              const showLensBadge = item.href === "/admin/lens-procurement" && pendingLens > 0;
               return (
                 <Link
                   key={item.href}
@@ -242,6 +282,11 @@ export default function Sidebar({ role }: { role: Role }) {
                   {showBadge && (
                     <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white px-1.5 shadow-[0_0_8px_rgba(239,68,68,0.4)]">
                       {unreadFranchise}
+                    </span>
+                  )}
+                  {showLensBadge && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white px-1.5 shadow-[0_0_8px_rgba(245,158,11,0.45)]">
+                      {pendingLens}
                     </span>
                   )}
                 </Link>

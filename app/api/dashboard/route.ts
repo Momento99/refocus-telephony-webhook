@@ -1,6 +1,7 @@
 // app/api/dashboard/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseServerClient } from '@/lib/supabaseServer';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,8 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
   try {
+    const gate = await requireCrmPermission('statistics');
+    if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
     // 1) Читаем тело
     let payload: any = null;
     try {
@@ -24,16 +27,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2) Создаем серверный клиент
-    const supabase = getSupabaseServerClient();
-
-    // 3) Проверка роли на сервере (owner-only)
-    const rp = await supabase.from('profiles').select('role').single();
-    if (rp.error) {
-      return NextResponse.json({ error: rp.error.message }, { status: 401 });
-    }
-    if (rp.data?.role !== 'owner') {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-    }
+    const supabase = getSupabaseAdmin();
 
     // 4) Вызов RPC
     const { data, error } = await supabase.rpc('rpc_dashboard', {
@@ -55,5 +49,7 @@ export async function POST(req: NextRequest) {
 
 /** Временный GET, чтобы быстро проверить, что маршрут жив. Можно удалить. */
 export async function GET() {
+  const gate = await requireCrmPermission('statistics');
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   return NextResponse.json({ ok: true, methods: ['GET', 'POST'] });
 }

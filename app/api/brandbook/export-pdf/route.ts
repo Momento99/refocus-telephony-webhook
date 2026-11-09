@@ -3,6 +3,7 @@ import puppeteer, { type Browser } from 'puppeteer-core';
 import fs from 'fs';
 import path from 'path';
 import { buildBrandbookHtml } from '@/lib/brandbookHtml';
+import { requireCrmPermission } from '@/lib/crmAccessServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -79,6 +80,8 @@ async function launchBrowser(): Promise<Browser> {
 export async function POST() {
   let browser: Browser | null = null;
   try {
+    const gate = await requireCrmPermission('brandbook');
+    if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
     const html = buildBrandbookHtml({
       logoBlack: fileDataUri('brand/logos/mark-black.png'),
       logoWhite: fileDataUri('brand/logos/mark-white.png'),
