@@ -83,7 +83,10 @@ function n0(x: any) {
   return Number.isFinite(v) ? v : 0;
 }
 
-async function fetchFixedPayroll(month: string, employeeId?: number, branchId?: number): Promise<{ days: any[]; adjustments: any[] }> {
+async function fetchFixedPayroll(month: string, employeeId?: number, branchId?: number): Promise<{
+  days: any[]; adjustments: any[]; cfg: Cfg | null;
+  branches: Branch[]; employees: any[]; profiles: any[];
+}> {
   const params = new URLSearchParams({ month });
   if (employeeId) params.set("employeeId", String(employeeId));
   if (branchId) params.set("branchId", String(branchId));
@@ -123,35 +126,10 @@ export function usePayrollMonthly(month: string) {
     setErrorText(null);
 
     try {
-      // 1) Конфиг
-      const { data: cfgRow, error: cfgErr } = await sb
-        .from("payroll_config")
-        .select("*")
-        .limit(1)
-        .maybeSingle();
-      if (cfgErr) throw cfgErr;
-
-      // 2) Филиалы
-      const { data: bRows, error: bErr } = await sb
-        .from("branches")
-        .select("id, name")
-        .order("id", { ascending: true });
-      if (bErr) throw bErr;
-
-      // 3) Сотрудники (справочник)
-      const { data: eRows, error: eErr } = await sb
-        .from("employees")
-        .select(
-          "id, branch_id, full_name, role, hourly_rate, has_bonus, bonus_percent, is_active"
-        )
-        .order("id", { ascending: true });
-      if (eErr) throw eErr;
-
-      // 3b) Профили оплаты — берём bonus_per_order (фикс. бонус промоутера за заказ).
-      const { data: pRows, error: pErr } = await sb
-        .from("employee_payroll_profiles")
-        .select("employee_id, bonus_per_order, active");
-      if (pErr) throw pErr;
+      const {
+        days: dRows, adjustments: aRows, cfg: cfgRow,
+        branches: bRows, employees: eRows, profiles: pRows,
+      } = await fetchFixedPayroll(month);
       const bonusPerOrderByEmp = new Map<number, number | null>();
       for (const r of pRows || []) {
         if (r && (r as any).active === false) continue;
@@ -173,10 +151,6 @@ export function usePayrollMonthly(month: string) {
           : null,
         is_active: r.is_active ?? true,
       }));
-
-      // 4) Фиксированный расчёт за выбранный месяц, где с 2026-02 plan_premium=0 по дням
-      // (а месячная премия приходит через v_payroll_adjustments_monthly).
-      const { days: dRows, adjustments: aRows } = await fetchFixedPayroll(month);
 
       // Доплата приходит из того же расчёта, который видит управляющая.
       const managementResponse = await fetch("/api/manager/compensation?month=" + month, { cache: "no-store" });

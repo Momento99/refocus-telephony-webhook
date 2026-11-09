@@ -29,12 +29,21 @@ export async function GET(request: Request) {
     .select('employee_id,branch_id,month,adjustments_sum').eq('month', month + '-01');
   if (employeeId) adjustments = adjustments.eq('employee_id', Number(employeeId));
   if (branchId) adjustments = adjustments.eq('branch_id', Number(branchId));
-  const [dailyResult, adjustmentResult] = await Promise.all([
+  const [dailyResult, adjustmentResult, configResult, branchResult, employeeResult, profileResult] = await Promise.all([
     query.order('day', { ascending: true }), adjustments,
+    db.from('payroll_config').select('*').limit(1).maybeSingle(),
+    db.from('branches').select('id,name').order('id', { ascending: true }),
+    db.from('employees').select('id,branch_id,full_name,role,hourly_rate,has_bonus,bonus_percent,is_active').order('id', { ascending: true }),
+    db.from('employee_payroll_profiles').select('employee_id,bonus_per_order,active'),
   ]);
-  const error = dailyResult.error || adjustmentResult.error;
+  const error = dailyResult.error || adjustmentResult.error || configResult.error
+    || branchResult.error || employeeResult.error || profileResult.error;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ days: dailyResult.data || [], adjustments: adjustmentResult.data || [] }, {
+  return NextResponse.json({
+    days: dailyResult.data || [], adjustments: adjustmentResult.data || [],
+    cfg: configResult.data, branches: branchResult.data || [],
+    employees: employeeResult.data || [], profiles: profileResult.data || [],
+  }, {
     headers: { 'Cache-Control': 'private, no-store' },
   });
 }
