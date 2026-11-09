@@ -17,6 +17,9 @@ type CanonicalMonthlyRow = {
   adjustments_sum: number | string | null;
   net_total: number | string | null;
   manual_adjustments: number | string | null;
+  management_fixed: number | string | null;
+  management_bonus: number | string | null;
+  management_total: number | string | null;
 };
 
 function firstDay(monthYYYYMM: string): string | null {
@@ -63,6 +66,9 @@ export async function GET(req: Request) {
         "adjustments_sum",
         "net_total",
         "manual_adjustments",
+        "management_fixed",
+        "management_bonus",
+        "management_total",
       ].join(", ")
     )
     .eq("month", period);
@@ -95,11 +101,14 @@ export async function GET(req: Request) {
     const adjustments = Number(r.adjustments_sum || 0);
     const baseFromHours = Number(r.hour_pay_total || 0);
     const bonusFromSales = Number(r.bonus_total || 0);
+    const managementFixed = Number(r.management_fixed || 0);
+    const managementBonus = Number(r.management_bonus || 0);
     const dailyBonus =
       Number(r.plan_premium_total || 0) +
       Math.max(0, adjustments - Number(r.manual_adjustments || 0));
     const accrued =
-      baseFromHours + bonusFromSales + dailyBonus + Number(r.manual_adjustments || 0);
+      baseFromHours + bonusFromSales + dailyBonus + Number(r.manual_adjustments || 0)
+      + Number(r.management_total || 0);
 
     return {
       id: employeeId,
@@ -110,6 +119,9 @@ export async function GET(req: Request) {
       hoursWorked: Number(r.hours_total || 0),
       baseFromHours,
       bonusFromSales,
+      managementFixed,
+      managementBonus,
+      managementTotal: Number(r.management_total || 0),
       dailyBonus,
       penaltiesMonth: Number(r.penalties_total || 0),
       socialFund: Number(r.social_fund_total || 0),

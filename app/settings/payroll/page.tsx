@@ -10,6 +10,7 @@ import {
 import { Wallet, Building2, KeyRound, User2, Plus, X, BarChart2, Copy, Settings2, ChevronDown } from "lucide-react";
 import PenaltiesTab from "./PenaltiesTab";
 import DisciplinesTab from "./DisciplinesTab";
+import ManagementTab from "./ManagementTab";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
 import toast from "react-hot-toast";
 
@@ -34,7 +35,7 @@ function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
 }
 function fmt(n?: number) {
-  return Math.round(n ?? 0).toLocaleString("ru-RU");
+  return (n ?? 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
 function fmtHM(hours?: number) {
   const totalMin = Math.max(0, Math.round((hours ?? 0) * 60));
@@ -281,8 +282,8 @@ type DailyCanonicalRow = {
 function rowsToNetMap(rows: PeriodCanonicalRow[] | null | undefined) {
   const m = new Map<string, number>();
   for (const r of rows ?? []) {
-    const key = `${Number(r.employee_id)}:${Number(r.branch_id)}`;
-    m.set(key, num(r.net_total));
+    const key = String(Number(r.employee_id));
+    m.set(key, (m.get(key) || 0) + num(r.net_total));
   }
   return m;
 }
@@ -290,8 +291,8 @@ function rowsToNetMap(rows: PeriodCanonicalRow[] | null | undefined) {
 function rowsToAdjMap(rows: any[] | null | undefined) {
   const m = new Map<string, number>();
   for (const r of rows ?? []) {
-    const key = `${Number(r.employee_id)}:${Number(r.branch_id)}`;
-    m.set(key, num(r.adjustments_sum));
+    const key = String(Number(r.employee_id));
+    m.set(key, (m.get(key) || 0) + num(r.adjustments_sum));
   }
   return m;
 }
@@ -535,7 +536,7 @@ function median(arr: number[]) {
    СТРАНИЦА
 =========================================== */
 export default function Page() {
-  const [tab, setTab] = useState<"payroll" | "penalties" | "disciplines">("payroll");
+  const [tab, setTab] = useState<"payroll" | "penalties" | "disciplines" | "management">("payroll");
 
   const [month, setMonth] = useState<string>(() => {
     return currentBusinessMonthKey();
@@ -740,7 +741,7 @@ export default function Page() {
   const [monthDeductMap, setMonthDeductMap] = useState<Map<number, number>>(new Map());
 
   useEffect(() => {
-    if (visibleEmployees.length === 0) {
+    if (employees.length === 0) {
       setMonthPeriodMap(new Map());
       setMonthAdjMap(new Map());
       setMonthLoading(false);
@@ -791,7 +792,7 @@ export default function Page() {
     return () => {
       cancelled = true;
     };
-  }, [monthStart, monthEndInclusive, visibleEmployees, payrollRefreshTick]);
+  }, [monthStart, monthEndInclusive, employees, payrollRefreshTick]);
 
   useEffect(() => {
     if (!activeWeek) {
@@ -799,7 +800,7 @@ export default function Page() {
       setWeekLoading(false);
       return;
     }
-    if (visibleEmployees.length === 0) {
+    if (employees.length === 0) {
       setWeekPeriodMap(new Map());
       return;
     }
@@ -842,7 +843,7 @@ export default function Page() {
     return () => {
       cancelled = true;
     };
-  }, [activeWeek, visibleEmployees, payrollRefreshTick]);
+  }, [activeWeek, employees, payrollRefreshTick]);
 
   /* ===== Бонус за возврат долгов (debt_collection_payout) ===== */
   // Bishkek = UTC+6 без переходов, границы периода строим с офсетом +06:00.
@@ -940,17 +941,21 @@ export default function Page() {
   }, [activeWeek]);
 
   const getMonthNet = (e: any) => {
-    const key = `${e.id}:${e.branchId}`;
-    return (
+    const key = String(e.id);
+    const monthlyNet = e.net ?? (
       (monthPeriodMap?.get(key) ?? 0) +
       (monthAdjMap.get(key) ?? 0) +
+      (e.managementTotal ?? 0)
+    );
+    return (
+      monthlyNet +
       (monthDebtMap.get(e.id) ?? 0) -
       (monthDeductMap.get(e.id) ?? 0)
     );
   };
 
   const getWeekNet = (e: any) => {
-    const key = `${e.id}:${e.branchId}`;
+    const key = String(e.id);
     return (
       (weekPeriodMap?.get(key) ?? 0) +
       (weekDebtMap.get(e.id) ?? 0) -
@@ -990,6 +995,7 @@ export default function Page() {
     netPeriod: number;
     netMonth: number;
     role: string;
+    managementTotal: number;
   }>(null);
   const [dailyRows, setDailyRows] = useState<any[] | null>(null);
   const [dailyBusy, setDailyBusy] = useState(false);
@@ -1014,6 +1020,7 @@ export default function Page() {
     netPeriod: number;
     netMonth: number;
     role: string;
+    managementTotal: number;
   }) {
     setDailyMeta({
       id: e.id,
@@ -1022,6 +1029,7 @@ export default function Page() {
       netPeriod: e.netPeriod,
       netMonth: e.netMonth,
       role: e.role,
+      managementTotal: e.managementTotal,
     });
     setDailyRows(null);
     setDailyAdj(0);
@@ -1041,7 +1049,7 @@ export default function Page() {
       const { data: rows, error } = await sb.rpc("payroll_daily_canonical", {
         p_from: rangeStart,
         p_to: rangeEndInclusive,
-        p_branch_id: e.branchId,
+        p_branch_id: null,
         p_employee_id: e.id,
       });
 
@@ -1059,9 +1067,8 @@ export default function Page() {
       try {
         const { data: sessRows } = await sb
           .from("attendance_sessions")
-          .select("started_at, ended_at")
+          .select("started_at, ended_at, branch_id")
           .eq("employee_id", e.id)
-          .eq("branch_id", e.branchId)
           .gte("started_at", `${shiftYmd(rangeStart, -1)}T00:00:00`)
           .lte("started_at", `${shiftYmd(rangeEndInclusive, 1)}T23:59:59`)
           .order("started_at", { ascending: true });
@@ -1069,8 +1076,9 @@ export default function Page() {
         const shiftByDay = new Map<string, { inAt: Date | null; outAt: Date | null }>();
         for (const s of (sessRows ?? []) as any[]) {
           if (!s.started_at) continue;
-          const dayKey = bishkekDayAuto(s.ended_at ?? s.started_at);
-          if (!dayKey) continue;
+          const day = bishkekDayAuto(s.ended_at ?? s.started_at);
+          if (!day) continue;
+          const dayKey = `${day}:${Number(s.branch_id)}`;
           const inAt = toLocalDate(s.started_at);
           const outAt = s.ended_at ? toLocalDate(s.ended_at) : null;
           const cur = shiftByDay.get(dayKey) ?? { inAt: null, outAt: null };
@@ -1079,7 +1087,7 @@ export default function Page() {
           shiftByDay.set(dayKey, cur);
         }
         for (const r of daily) {
-          const sh = shiftByDay.get(String((r as any).day));
+          const sh = shiftByDay.get(`${String((r as any).day)}:${Number(r.branch_id)}`);
           (r as any).shift_in = sh?.inAt ? bishkekHMfromDate(sh.inAt) : null;
           (r as any).shift_out = sh?.outAt ? bishkekHMfromDate(sh.outAt) : null;
         }
@@ -1141,20 +1149,15 @@ export default function Page() {
         }
       }
 
-      const { data: adjRow, error: errAdj } = await sb
+      const { data: adjustmentRows, error: errAdj } = await sb
         .from("v_payroll_adjustments_monthly_with_plan")
         .select("adjustments_sum")
         .eq("employee_id", e.id)
-        .eq("branch_id", e.branchId)
-        .eq("month", monthStart)
-        .maybeSingle();
+        .eq("month", monthStart);
 
       if (errAdj) throw errAdj;
 
-      const adj =
-        adjRow && (adjRow as any).adjustments_sum != null
-          ? Number((adjRow as any).adjustments_sum)
-          : 0;
+      const adj = (adjustmentRows || []).reduce((sum, row) => sum + num(row.adjustments_sum), 0);
 
       setDailyRows(daily);
       setDailyAdj(adj);
@@ -2697,6 +2700,17 @@ export default function Page() {
           >
             Дисциплинарные взыскания
           </button>
+          <button
+            onClick={() => setTab("management")}
+            className={cx(
+              "min-h-11 whitespace-nowrap rounded-xl px-5 py-2 text-sm font-semibold transition",
+              tab === "management"
+                ? "bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]"
+                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+            )}
+          >
+            Управляющая
+          </button>
         </div>
         </div>
 
@@ -2707,6 +2721,10 @@ export default function Page() {
 
         {/* ===== Вкладка «Дисциплинарные взыскания» ===== */}
         {tab === "disciplines" && <DisciplinesTab />}
+        {tab === "management" && <ManagementTab month={month} branches={branches} employees={employees.map(employee => ({
+          id: employee.id, hours: employee.hoursWorked || 0,
+          shiftNet: getMonthNet(employee) - (employee.managementTotal || 0),
+        }))} />}
 
         {/* ===== Вкладка «Зарплаты» (всё что было ниже) ===== */}
         {tab === "payroll" && (
@@ -3137,7 +3155,7 @@ export default function Page() {
                               <div className="flex justify-end items-center gap-1.5">
                                 <button
                                   title="Детали по дням"
-                                  onClick={() => openDaily({ id: e.id, fullName: e.fullName, branchId: b.id, netPeriod, netMonth, role: e.role })}
+                                  onClick={() => openDaily({ id: e.id, fullName: e.fullName, branchId: b.id, netPeriod, netMonth, role: e.role, managementTotal: e.managementTotal || 0 })}
                                   className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-medium text-slate-700 bg-white ring-1 ring-slate-200 hover:bg-slate-50 transition"
                                 >
                                   <BarChart2 className="h-3.5 w-3.5" />
@@ -3299,8 +3317,10 @@ export default function Page() {
                         const sys = r.system_count == null ? null : Number(r.system_count);
                         const diverges = pairs != null && sys != null && pairs !== sys;
                         return (
-                        <tr key={r.day} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
-                          <td className="px-3 py-2 text-slate-800">{r.day}</td>
+                        <tr key={`${r.day}:${r.branch_id}`} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
+                          <td className="px-3 py-2 text-slate-800">{r.day}
+                            {Number(r.branch_id) !== dailyMeta.branchId && <div className="mt-0.5 text-xs text-slate-500">{branches.find(branch => branch.id === Number(r.branch_id))?.name || `Филиал ${r.branch_id}`}</div>}
+                          </td>
                           <td className={cx("px-3 py-2 tabular-nums", r.shift_in ? "text-slate-700" : "text-slate-300")}>
                             {r.shift_in ? `${r.shift_in} – ${r.shift_out ?? "…"}` : "—"}
                           </td>
@@ -3349,8 +3369,10 @@ export default function Page() {
                         const isPromoter = dailyMeta?.role === "promoter";
                         const hasPenalty = !isPromoter && num(r.penalties) > 0;
                         return (
-                        <tr key={r.day} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
-                          <td className="px-3 py-2 text-slate-800">{r.day}</td>
+                        <tr key={`${r.day}:${r.branch_id}`} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
+                          <td className="px-3 py-2 text-slate-800">{r.day}
+                            {Number(r.branch_id) !== dailyMeta.branchId && <div className="mt-0.5 text-xs text-slate-500">{branches.find(branch => branch.id === Number(r.branch_id))?.name || `Филиал ${r.branch_id}`}</div>}
+                          </td>
                           <td className={cx("px-3 py-2 tabular-nums", r.shift_in ? "text-slate-700" : "text-slate-300")}>
                             {r.shift_in ? `${r.shift_in} – ${r.shift_out ?? "…"}` : "—"}
                           </td>
@@ -3375,6 +3397,10 @@ export default function Page() {
                 )}
               </div>
 
+              {!activeWeek && dailyMeta.managementTotal > 0 && <div className="flex flex-wrap items-center justify-between gap-2 border-t border-cyan-100 bg-cyan-50 px-4 py-3 text-sm text-cyan-900">
+                <span>Доплата и премия за управление сетью</span>
+                <span className="font-semibold tabular-nums">{fmt(dailyMeta.managementTotal)} сом</span>
+              </div>}
               {showDailyFooter ? (
                 <div className="border-t border-slate-100 px-4 py-3 bg-slate-50/80">
                   <div className="flex items-center justify-between gap-3">

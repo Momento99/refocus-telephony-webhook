@@ -33,6 +33,7 @@ const MENU_SECTIONS: MenuSection[] = [
     items: [
       { label: "Зарплаты и посещаемость", href: "/settings/payroll", icon: WalletCards },
       { label: "Команда 360", href: "/admin/team", icon: UsersRound },
+      { label: "План управляющей", href: "/manager-plan", icon: WalletCards },
     ],
   },
   {

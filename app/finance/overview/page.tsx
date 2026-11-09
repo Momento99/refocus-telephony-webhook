@@ -112,12 +112,6 @@ type NetRow = {
 
 type ExpCat = { category: string; sum: number };
 
-type PayrollDailyRow = {
-  branch_id: number | null;
-  day: string;
-  net_day: number;
-};
-
 /* ---------- Константы ---------- */
 
 const BRANCHES = [
@@ -486,7 +480,6 @@ export default function FinanceOverviewPage() {
         throw new Error('Доступ к финансам не предоставлен');
       }
       setFinanceRole(auth.user.app_metadata?.role ?? null);
-      const isManager = auth.user.app_metadata?.role === 'manager';
 
       /* 1) сводка (как вернул SQL) — сохраняем для диагностики (avg checks берём отсюда) */
       const { data: sumRaw, error: sErr } = await sb
@@ -627,38 +620,11 @@ export default function FinanceOverviewPage() {
             - патчим net_profit = income - refunds - opex - cogs - payroll
             - если “Общие” => после патча агрегируем в 1 строку на день
       */
-      try {
-        async function fetchPayrollView(viewName: string) {
-          let q = sb
-            .from(viewName)
-            .select('branch_id, day, net_day')
-            .gte('day', fromDate)
-            .lte('day', toDate);
-
-          if (branchId > 0) q = q.eq('branch_id', branchId);
-
-          return q.returns<PayrollDailyRow[]>();
-        }
-
-        // Используем canonical как единый источник зарплатных чисел (см. payroll_daily_canonical).
-        // Fallback на старые v_payroll_daily_v2 / v_payroll_daily оставлен на случай регресса.
-        let payRows: PayrollDailyRow[] = [];
-        if (isManager) {
-          payRows = await fetchPayrollFinancialSummary(sb, fromDate, toDate, branchId > 0 ? [branchId] : null);
-        } else {
-          const { data: d0, error: e0 } = await fetchPayrollView('v_payroll_daily_canonical');
-          if (!e0) {
-            payRows = d0 ?? [];
-          } else {
-            const { data: d1, error: e1 } = await fetchPayrollView('v_payroll_daily_v2');
-            if (!e1) {
-              payRows = d1 ?? [];
-            } else {
-              const { data: d2, error: e2 } = await fetchPayrollView('v_payroll_daily');
-              payRows = e2 ? [] : d2 ?? [];
-            }
-          }
-        }
+      let sundayManagementPayroll = 0;
+      {
+        const payRows = await fetchPayrollFinancialSummary(fromDate, toDate, branchId > 0 ? [branchId] : null);
+        sundayManagementPayroll = payRows.filter(row => isSunday(row.day))
+          .reduce((sum, row) => sum + toNum(row.management_day), 0);
 
         const keyDayBranch = (day: string, bid: number | null | undefined) => `${day.slice(0, 10)}__${bid ?? 'null'}`;
 
@@ -692,9 +658,6 @@ export default function FinanceOverviewPage() {
         }
 
         if (branchId === 0) netLocal = aggregateNetRowsByDay(netLocal);
-      } catch (e) {
-        console.warn('payroll patch error (ignored)', e);
-        if (branchId === 0) netLocal = aggregateNetRowsByDay(netLocal);
       }
 
       /* 4) воскресенье исключаем из дневных рядов, но аренду (OPEX) за воскресенье
@@ -717,6 +680,8 @@ export default function FinanceOverviewPage() {
       // Аренда за воскресенья → в общий OPEX и минус из чистой прибыли
       recomputed.opex_total += sundayOpexSum;
       recomputed.net_profit -= sundayOpexSum;
+      recomputed.payroll_total += sundayManagementPayroll;
+      recomputed.net_profit -= sundayManagementPayroll;
 
       /* В режиме 'gross' пересчитываем средние чеки по ВСЕМ заказам за период
          (а не только по оплаченным, как делает fn_finance_summary_todate_v2). */

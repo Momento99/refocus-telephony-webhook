@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
+import type { ManagerCompensationResponse } from "@/lib/managerCompensation";
 
 /** ===== Типы ===== */
 export type RoleDb = "seller" | "promoter" | "master";
@@ -32,6 +33,7 @@ type Employee = {
   accrued?: number;
   net?: number; // К ВЫПЛАТЕ за месяц
   adjustments?: number;
+  managementTotal?: number;
   is_active?: boolean;
 };
 
@@ -52,15 +54,17 @@ type Cfg = {
   master_piece_rate?: number;
 };
 
-/** Локальный диапазон месяца: [start; end) */
 function monthRangeLocal(ym: string) {
-  const [y, m] = ym.split("-").map(Number);
-  const d1 = new Date(y, m - 1, 1);
-  const d2 = new Date(y, m, 1);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const toYYYYMMDD = (d: Date) =>
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  return { start: toYYYYMMDD(d1), end: toYYYYMMDD(d2) };
+  const [year, monthNumber] = ym.split("-").map(Number);
+  const format = (value: Date) => {
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${value.getFullYear()}-${month}-${day}`;
+  };
+  return {
+    start: format(new Date(year, monthNumber - 1, 1)),
+    end: format(new Date(year, monthNumber, 1)),
+  };
 }
 
 function toMsg(err: any) {
@@ -77,6 +81,16 @@ function toMsg(err: any) {
 function n0(x: any) {
   const v = Number(x);
   return Number.isFinite(v) ? v : 0;
+}
+
+async function fetchFixedPayroll(month: string, employeeId?: number, branchId?: number): Promise<{ days: any[]; adjustments: any[] }> {
+  const params = new URLSearchParams({ month });
+  if (employeeId) params.set("employeeId", String(employeeId));
+  if (branchId) params.set("branchId", String(branchId));
+  const response = await fetch("/api/payroll/fixed?" + params, { cache: "no-store" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Не удалось загрузить расчёт зарплаты");
+  return data;
 }
 
 export function usePayrollMonthly(month: string) {
@@ -107,8 +121,6 @@ export function usePayrollMonthly(month: string) {
     if (!sb) return;
     setIsLoading(true);
     setErrorText(null);
-
-    const { start, end } = monthRangeLocal(month);
 
     try {
       // 1) Конфиг
@@ -162,56 +174,22 @@ export function usePayrollMonthly(month: string) {
         is_active: r.is_active ?? true,
       }));
 
-      const activeIds = employeesDict.map((e) => e.id).filter(Boolean);
-      const branchIds = Array.from(
-        new Set(employeesDict.map((e) => e.branchId).filter(Boolean))
-      );
-
-      // 4) Дни за месяц — ВАЖНО: берём фикс-вьюху, где с 2026-02 plan_premium=0 по дням
+      // 4) Фиксированный расчёт за выбранный месяц, где с 2026-02 plan_premium=0 по дням
       // (а месячная премия приходит через v_payroll_adjustments_monthly).
-      let dQuery = sb
-        .from("v_payroll_daily_fixed")
-        .select(
-          "employee_id, branch_id, day, hours, hour_pay, bonus, penalties, social_fund_day, income_tax_day, plan_premium, net_day"
-        )
-        .gte("day", start)
-        .lt("day", end);
-      if (activeIds.length) dQuery = dQuery.in("employee_id", activeIds);
-      if (branchIds.length) dQuery = dQuery.in("branch_id", branchIds);
-      const { data: dRows, error: dErr } = await dQuery;
-      if (dErr) throw dErr;
+      const { days: dRows, adjustments: aRows } = await fetchFixedPayroll(month);
 
-      // 5) Месячные корректировки (сюда же у тебя попадает месячная премия с 2026-02)
-      let aQuery = sb
-        .from("v_payroll_adjustments_monthly")
-        .select("employee_id, branch_id, month, adjustments_sum")
-        .eq("month", start);
-      if (activeIds.length) aQuery = aQuery.in("employee_id", activeIds);
-      if (branchIds.length) aQuery = aQuery.in("branch_id", branchIds);
-      const { data: aRows, error: aErr } = await aQuery;
-      if (aErr) throw aErr;
+      // Доплата приходит из того же расчёта, который видит управляющая.
+      const managementResponse = await fetch("/api/manager/compensation?month=" + month, { cache: "no-store" });
+      const managementData = await managementResponse.json();
+      if (!managementResponse.ok) throw new Error(managementData.error || "Не удалось загрузить управленческую доплату");
 
-      // 6) v_payroll_monthly — если эта вьюха уже учитывает корректировки, берём её.
-      // Если не учитывает (часто так бывает), берём computed = sum(net_day)+adjustments.
-      let mQuery = sb
-        .from("v_payroll_monthly")
-        .select("employee_id, branch_id, month, net_total")
-        .eq("month", start);
-      if (activeIds.length) mQuery = mQuery.in("employee_id", activeIds);
-      if (branchIds.length) mQuery = mQuery.in("branch_id", branchIds);
-      const { data: mRows, error: mErr } = await mQuery;
-      if (mErr) throw mErr;
-
-      // ── Агрегаты по дням: ключ — eid:bid
+      // Месячная выплата сотрудника объединяет смены во всех филиалах.
       type Agg = { hours: number; accrued: number; netDaySum: number };
-      const byEmpBranch = new Map<string, Agg>();
-      const keyOf = (eid: number, bid: number) => `${eid}:${bid}`;
+      const byEmployee = new Map<number, Agg>();
 
       for (const r of dRows || []) {
         const eid = Number((r as any).employee_id);
-        const bid = Number((r as any).branch_id);
-        const key = keyOf(eid, bid);
-        const acc = byEmpBranch.get(key) || { hours: 0, accrued: 0, netDaySum: 0 };
+        const acc = byEmployee.get(eid) || { hours: 0, accrued: 0, netDaySum: 0 };
 
         acc.hours += n0((r as any).hours);
         // начислено по дням (информативно)
@@ -224,50 +202,35 @@ export function usePayrollMonthly(month: string) {
         // net_day уже включает налоги/соцфонд/премии дня (для месяцев < 2026-02)
         acc.netDaySum += n0((r as any).net_day);
 
-        byEmpBranch.set(key, acc);
+        byEmployee.set(eid, acc);
       }
 
       // Корректировки (в т.ч. месячная премия с 2026-02)
-      const adjByEmpBranch = new Map<string, number>();
+      const adjustmentsByEmployee = new Map<number, number>();
       for (const r of aRows || []) {
         const eid = Number((r as any).employee_id);
-        const bid = Number((r as any).branch_id);
-        adjByEmpBranch.set(keyOf(eid, bid), n0((r as any).adjustments_sum));
+        adjustmentsByEmployee.set(eid, (adjustmentsByEmployee.get(eid) || 0) + n0((r as any).adjustments_sum));
       }
 
-      // Нетто из месячной вьюхи
-      const netByEmpBranch = new Map<string, number>();
-      for (const r of mRows || []) {
-        const eid = Number((r as any).employee_id);
-        const bid = Number((r as any).branch_id);
-        netByEmpBranch.set(keyOf(eid, bid), n0((r as any).net_total));
+      const managementByEmployee = new Map<number, number>();
+      for (const row of (managementData as ManagerCompensationResponse).rows) {
+        managementByEmployee.set(Number(row.employee_id), n0(row.total_accrued));
       }
 
       const employees: Employee[] = employeesDict.map((e) => {
-        const key = keyOf(e.id, e.branchId);
-        const agg = byEmpBranch.get(key) || { hours: 0, accrued: 0, netDaySum: 0 };
-        const adj = adjByEmpBranch.get(key) || 0;
+        const agg = byEmployee.get(e.id) || { hours: 0, accrued: 0, netDaySum: 0 };
+        const adj = adjustmentsByEmployee.get(e.id) || 0;
+        const management = managementByEmployee.get(e.id) || 0;
 
-        const computedNet = Math.round(agg.netDaySum + adj);
-        const netFromView =
-          netByEmpBranch.has(key) ? netByEmpBranch.get(key)! : null;
-
-        // Защита от ситуации, когда v_payroll_monthly НЕ учитывает adjustments:
-        // если отличается заметно — берём computed.
-        let netFinal = 0;
-        if (typeof netFromView === "number") {
-          const diff = Math.abs(Math.round(netFromView) - computedNet);
-          netFinal = diff <= 1 ? netFromView : computedNet;
-        } else {
-          netFinal = computedNet;
-        }
+        const computedNet = Math.round((agg.netDaySum + adj + management) * 100) / 100;
 
         return {
           ...e,
           hoursWorked: agg.hours,
-          accrued: Math.round(agg.accrued + adj),
-          net: netFinal,
-          adjustments: Math.round(adj),
+          accrued: Math.round((agg.accrued + adj + management) * 100) / 100,
+          net: computedNet,
+          adjustments: Math.round(adj * 100) / 100,
+          managementTotal: management,
         };
       });
 
@@ -301,18 +264,7 @@ export function usePayrollMonthly(month: string) {
       month: string;
     }) => {
       if (!sb) throw new Error("supabase not ready");
-      const { start, end } = monthRangeLocal(month);
-
-      const { data: rows, error } = await sb
-        .from("v_payroll_daily_fixed")
-        .select("*")
-        .eq("employee_id", employeeId)
-        .eq("branch_id", branchId)
-        .gte("day", start)
-        .lt("day", end)
-        .order("day", { ascending: true });
-
-      if (error) throw error;
+      const { days: rows } = await fetchFixedPayroll(month, employeeId, branchId);
       return { days: rows || [] };
     },
     [sb]

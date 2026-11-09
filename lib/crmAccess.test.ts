@@ -6,7 +6,7 @@ import { getManagerRpcPermission, getManagerRpcTarget } from './crmManagerRpc';
 test('manager sees only the requested sections and operational receipt pages', () => {
   for (const path of ['/orders', '/new-order', '/receipt/123', '/print/receipt', '/warehouse',
     '/finance/reconciliation', '/finance/overview', '/admin/stats', '/admin/team',
-    '/admin/franchise-hq', '/admin/brandbook', '/admin/mobile-app', '/admin/employee-calendar']) {
+    '/admin/franchise-hq', '/admin/brandbook', '/admin/mobile-app', '/admin/employee-calendar', '/manager-plan']) {
     assert.equal(canAccessCrmPage('manager', path), true, path);
   }
   for (const path of ['/settings', '/settings/users', '/settings/payroll', '/taxes',
@@ -36,8 +36,10 @@ test('URL variants cannot broaden manager permissions or redirect outside CRM', 
 
 test('API permissions restrict endpoints and methods', () => {
   assert.equal(getCrmApiPermission('/api/dashboard', 'POST'), 'statistics');
+  assert.equal(getCrmApiPermission('/api/manager/compensation', 'GET'), 'managerPlan');
+  assert.equal(canAccessCrmPage('seller', '/manager-plan'), false);
   assert.equal(getCrmApiPermission('/api/admin/team/42', 'GET'), 'team360');
-  for (const [path, method] of [['/api/payroll/data', 'GET'], ['/api/admin/set-role', 'POST'],
+  for (const [path, method] of [['/api/payroll/data', 'GET'], ['/api/payroll/fixed', 'GET'], ['/api/admin/set-role', 'POST'],
     ['/api/admin/team/ai-comment', 'POST'], ['/api/employees', 'GET'], ['/api/dashboard', 'DELETE']]) {
     assert.equal(getCrmApiPermission(path, method), null);
   }
@@ -51,7 +53,7 @@ test('privileged manager RPC proxy excludes administration and raw payroll', () 
   assert.equal(getManagerRpcTarget('admin_soft_delete_order'), 'crm_manager_admin_soft_delete_order');
   assert.equal(getManagerRpcTarget('warehouse_accessory_set_counts'), 'crm_manager_warehouse_set_counts');
   assert.equal(getManagerRpcTarget('admin_period_by_branch'), 'admin_period_by_branch');
-  for (const name of ['payroll_daily_canonical', 'payroll_period_canonical', 'admin_users_list',
+  for (const name of ['payroll_daily_canonical', 'payroll_period_canonical', 'owner_payroll_daily_fixed', 'admin_users_list',
     'admin_hard_delete_order', 'lens_ondemand_pending_count', '__proto__', 'constructor']) {
     assert.equal(getManagerRpcPermission(name), null, name);
   }

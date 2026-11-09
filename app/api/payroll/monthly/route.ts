@@ -17,6 +17,9 @@ type Row = {
   social_fund: number;
   income_tax: number;
   net_total: number;
+  management_fixed: number;
+  management_bonus: number;
+  management_total: number;
 };
 
 type CanonicalRow = {
@@ -33,6 +36,9 @@ type CanonicalRow = {
   adjustments_sum: number | string | null;
   net_total: number | string | null;
   manual_adjustments: number | string | null;
+  management_fixed: number | string | null;
+  management_bonus: number | string | null;
+  management_total: number | string | null;
 };
 
 function ymToDate(ym: string) {
@@ -70,6 +76,9 @@ export async function GET(req: Request) {
           "adjustments_sum",
           "net_total",
           "manual_adjustments",
+          "management_fixed",
+          "management_bonus",
+          "management_total",
         ].join(",")
       )
       .eq("month", monthDate);
@@ -84,7 +93,8 @@ export async function GET(req: Request) {
         Number(row.plan_premium_total ?? 0) +
         Math.max(0, Number(row.adjustments_sum ?? 0) - Number(row.manual_adjustments ?? 0));
       const manualAdjustment = Number(row.manual_adjustments ?? 0);
-      const totalBonus = salesBonus + planBonus + manualAdjustment;
+      const managementBonus = Number(row.management_bonus ?? 0);
+      const totalBonus = salesBonus + planBonus + manualAdjustment + managementBonus;
       const gross =
         Number(row.net_total ?? 0) +
         Number(row.penalties_total ?? 0) +
@@ -98,12 +108,15 @@ export async function GET(req: Request) {
         hourly_rate: hours > 0 ? base / hours : 0,
         base_from_hours: base,
         bonus_from_sales: salesBonus,
-        daily_bonus: planBonus + manualAdjustment,
+        daily_bonus: planBonus + manualAdjustment + managementBonus,
         bonus_total: totalBonus,
         gross_total: gross,
         social_fund: Number(row.social_fund_total ?? 0),
         income_tax: Number(row.income_tax_total ?? 0),
         net_total: Number(row.net_total ?? 0),
+        management_fixed: Number(row.management_fixed ?? 0),
+        management_bonus: managementBonus,
+        management_total: Number(row.management_total ?? 0),
       };
     });
     return NextResponse.json({ month: monthYM, rows });

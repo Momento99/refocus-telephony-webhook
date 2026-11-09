@@ -10,7 +10,8 @@ export type CrmPermission =
   | 'hqMaterials'
   | 'brandbook'
   | 'mobileApp'
-  | 'employeeCalendar';
+  | 'employeeCalendar'
+  | 'managerPlan';
 
 const PAGE_PERMISSIONS: Record<string, CrmPermission> = {
   '/orders': 'orders',
@@ -25,6 +26,7 @@ const PAGE_PERMISSIONS: Record<string, CrmPermission> = {
   '/admin/brandbook': 'brandbook',
   '/admin/mobile-app': 'mobileApp',
   '/admin/employee-calendar': 'employeeCalendar',
+  '/manager-plan': 'managerPlan',
 };
 
 const API_PERMISSIONS: Record<string, Partial<Record<string, CrmPermission>>> = {
@@ -37,6 +39,7 @@ const API_PERMISSIONS: Record<string, Partial<Record<string, CrmPermission>>> = 
   '/api/brandbook/export-pdf': { POST: 'brandbook' },
   '/api/franchise-hq/export-pdf': { POST: 'hqMaterials' },
   '/api/security/heartbeat': { GET: 'orders' },
+  '/api/manager/compensation': { GET: 'managerPlan' },
 };
 
 export function normalizeCrmRole(value: unknown): Role | null {

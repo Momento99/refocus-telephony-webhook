@@ -697,36 +697,8 @@ export default function AdminStatsPage() {
         // показывает "прибыль" БЕЗ учёта ЗП — не сходится с KPI).
         let npPatched = np;
         let totalPayroll = 0;
-        try {
-          const sb = getSupabase();
-          let rows: { day: string; net_day: number }[];
-          if (statisticsRole === 'manager') {
-            rows = await fetchPayrollFinancialSummary(sb, from, to, branchIds);
-          } else {
-            let payErr: any = null;
-            rows = await fetchAllPaged<any>((a, bb) => {
-              let q = sb
-                .from('v_payroll_daily_canonical')
-                .select('day, net_day')
-                .gte('day', from)
-                .lte('day', to)
-                .range(a, bb);
-              if (branchIds) q = q.in('branch_id', branchIds);
-              return q;
-            }).catch((e) => { payErr = e; return [] as any[]; });
-            if (payErr || rows.length === 0) {
-              rows = await fetchAllPaged<any>((a, bb) => {
-                let q2 = sb
-                  .from('v_payroll_daily')
-                  .select('day, net_day')
-                  .gte('day', from)
-                  .lte('day', to)
-                  .range(a, bb);
-                if (branchIds) q2 = q2.in('branch_id', branchIds);
-                return q2;
-              }).catch(() => [] as any[]);
-            }
-          }
+        {
+          const rows = await fetchPayrollFinancialSummary(from, to, branchIds);
           // Карта day → сумма net_day (по всем сотрудникам выбранных филиалов)
           const payByDay = new Map<string, number>();
           for (const r of rows) {
@@ -757,8 +729,6 @@ export default function AdminStatsPage() {
           // Сумма ЗП за весь период, включая воскресенья — симметрично воскресной аренде
           // в OPEX (в выходные бывают бонусы/корректировки net_day).
           totalPayroll = rows.reduce((s: number, r: any) => s + (Number(r.net_day) || 0), 0);
-        } catch {
-          /* фолбэк — оставляем np как есть */
         }
         if (isStale()) return;
         setRealPayroll(totalPayroll);
@@ -1000,24 +970,14 @@ export default function AdminStatsPage() {
         try {
           const sb = getSupabase();
           // Часы и брутто-ФОТ по филиалам за период (постранично — обход лимита 1000)
-          const spRows = statisticsRole === 'manager'
-            ? await fetchPayrollFinancialSummary(sb, from, to, branchIds)
-            : await fetchAllPaged<any>((a, bb) => {
-                let qsp = sb
-                  .from('v_payroll_daily_canonical')
-                  .select('branch_id, hours, hour_pay, bonus, penalties')
-                  .gte('day', from)
-                  .lte('day', to)
-                  .range(a, bb);
-                if (branchIds) qsp = qsp.in('branch_id', branchIds);
-                return qsp;
-              });
+          const spRows = await fetchPayrollFinancialSummary(from, to, branchIds);
           const payByBr = new Map<number, { hours: number; gross: number }>();
           for (const r of spRows) {
             const bid = Number(r.branch_id);
             const prev = payByBr.get(bid) ?? { hours: 0, gross: 0 };
             prev.hours += Number(r.hours) || 0;
-            prev.gross += (Number(r.hour_pay) || 0) + (Number(r.bonus) || 0) - (Number(r.penalties) || 0);
+            prev.gross += (Number(r.hour_pay) || 0) + (Number(r.bonus) || 0)
+              - (Number(r.penalties) || 0) + (Number(r.management_day) || 0);
             payByBr.set(bid, prev);
           }
           // branch_id ↔ name
