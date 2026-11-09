@@ -46,11 +46,11 @@ export default function BrandbookPage() {
   }
 
   return (
-    <div className="pb-10">
+    <div className="min-w-0 max-w-full pb-10">
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
             <BookOpen className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -139,7 +139,7 @@ export default function BrandbookPage() {
           </div>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-1">Email бренда</div>
-            <div className="text-[14px] font-semibold text-slate-900">refocus.kg@gmail.com</div>
+            <div className="break-all text-[14px] font-semibold text-slate-900">refocus.kg@gmail.com</div>
             <div className="text-[11px] text-slate-500">5 рабочих дней на согласование</div>
           </div>
         </div>

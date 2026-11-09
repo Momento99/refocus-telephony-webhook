@@ -234,7 +234,7 @@ function SoftPrimaryButton({
       onClick={onClick}
       disabled={disabled}
       className={[
-        'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white',
+        'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white sm:min-h-0',
         'bg-gradient-to-r from-teal-400 via-cyan-400 to-sky-400',
         'shadow-[0_18px_55px_rgba(34,197,235,0.55)]',
         'hover:opacity-95 active:opacity-90',
@@ -264,7 +264,7 @@ function SoftGhostButton({
       onClick={onClick}
       disabled={disabled}
       className={[
-        'inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium',
+        'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium sm:min-h-0',
         'bg-white/85 hover:bg-white text-teal-700',
         'ring-1 ring-teal-200',
         'shadow-[0_14px_40px_rgba(15,23,42,0.12)]',
@@ -304,7 +304,7 @@ function GlassSection({
   return (
     <div
       className={[
-        'rounded-3xl bg-gradient-to-br',
+        'min-w-0 max-w-full rounded-3xl bg-gradient-to-br',
         toneBg,
         'ring-1',
         toneRing,
@@ -957,20 +957,20 @@ export default function FinanceOverviewPage() {
   const netPositive = (summary?.net_profit ?? 0) >= 0;
 
   return (
-    <div className="min-h-[100dvh] bg-transparent text-slate-900">
-      <div className="mx-auto w-full max-w-7xl px-5 pt-8 pb-10 space-y-5">
+    <div className="min-h-[100dvh] min-w-0 max-w-full bg-transparent text-slate-900">
+      <div className="mx-auto w-full min-w-0 max-w-7xl pt-2 pb-10 space-y-5 sm:px-5 sm:pt-8">
         {/* Header */}
         <GlassSection className="px-5 py-5 sm:px-6" tone="money">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="relative">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+              <div className="relative shrink-0">
                 <div className="absolute -inset-2 rounded-3xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 blur-xl opacity-35" />
                 <div className="relative grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-white shadow-[0_18px_55px_rgba(34,197,235,0.70)]">
                   <CircleDollarSign className="h-5 w-5" />
                 </div>
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <h1 className="text-[22px] md:text-[30px] font-semibold leading-tight text-slate-900 drop-shadow-[0_2px_18px_rgba(34,197,235,0.25)]">
                   Финансовый обзор
                 </h1>
@@ -1015,11 +1015,11 @@ export default function FinanceOverviewPage() {
 
         {/* Фильтры */}
         <GlassSection className="px-5 py-4 sm:px-6" tone="neutral">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex flex-col">
+          <div className="grid min-w-0 grid-cols-1 items-end gap-3 sm:flex sm:flex-wrap sm:gap-4">
+            <div className="flex min-w-0 flex-col">
               <label className="text-[11px] font-medium text-slate-500">Филиал</label>
               <select
-                className="mt-1 w-full sm:w-56 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                className="mt-1 w-full sm:w-56 rounded-[14px] bg-white/90 px-3 py-2 text-base sm:text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                 value={branchId}
                 onChange={(e) => setBranchId(Number(e.target.value))}
               >
@@ -1032,10 +1032,10 @@ export default function FinanceOverviewPage() {
             </div>
 
             {/* Режим периода */}
-            <div className="flex flex-col">
+            <div className="flex min-w-0 flex-col">
               <label className="text-[11px] font-medium text-slate-500">Период</label>
               <select
-                className="mt-1 w-full sm:w-48 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                className="mt-1 w-full sm:w-48 rounded-[14px] bg-white/90 px-3 py-2 text-base sm:text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                 value={periodMode}
                 onChange={(e) => setPeriodMode(e.target.value as PeriodMode)}
               >
@@ -1048,12 +1048,12 @@ export default function FinanceOverviewPage() {
 
             {/* Ввод периода */}
             {periodMode === 'month' && (
-              <div className="flex flex-col">
+              <div className="flex min-w-0 flex-col">
                 <label className="text-[11px] font-medium text-slate-500">Месяц</label>
                 <div className="relative mt-1">
                   <input
                     type="month"
-                    className="w-full sm:w-52 rounded-[14px] bg-white/90 pl-9 pr-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                    className="w-full sm:w-52 rounded-[14px] bg-white/90 pl-9 pr-3 py-2 text-base sm:text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                     value={month}
                     onChange={(e) => setMonth(e.target.value)}
                   />
@@ -1063,7 +1063,7 @@ export default function FinanceOverviewPage() {
             )}
 
             {periodMode === 'year' && (
-              <div className="flex flex-col">
+              <div className="flex min-w-0 flex-col">
                 <label className="text-[11px] font-medium text-slate-500">Год</label>
                 <div className="relative mt-1">
                   <input
@@ -1071,7 +1071,7 @@ export default function FinanceOverviewPage() {
                     inputMode="numeric"
                     min={2000}
                     max={dayjs().year()}
-                    className="w-full sm:w-36 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                    className="w-full sm:w-36 rounded-[14px] bg-white/90 px-3 py-2 text-base sm:text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                     value={year}
                     onChange={(e) => setYear(e.target.value)}
                   />
@@ -1081,20 +1081,20 @@ export default function FinanceOverviewPage() {
 
             {periodMode === 'range' && (
               <>
-                <div className="flex flex-col">
+                <div className="flex min-w-0 flex-col">
                   <label className="text-[11px] font-medium text-slate-500">С</label>
                   <input
                     type="date"
-                    className="mt-1 w-full sm:w-44 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                    className="mt-1 w-full sm:w-44 rounded-[14px] bg-white/90 px-3 py-2 text-base sm:text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                     value={rangeFrom}
                     onChange={(e) => setRangeFrom(e.target.value)}
                   />
                 </div>
-                <div className="flex flex-col">
+                <div className="flex min-w-0 flex-col">
                   <label className="text-[11px] font-medium text-slate-500">По</label>
                   <input
                     type="date"
-                    className="mt-1 w-full sm:w-44 rounded-[14px] bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
+                    className="mt-1 w-full sm:w-44 rounded-[14px] bg-white/90 px-3 py-2 text-base sm:text-sm text-slate-900 shadow-[0_18px_55px_rgba(15,23,42,0.10)] outline-none ring-1 ring-sky-200 focus:ring-2 focus:ring-cyan-400"
                     value={rangeTo}
                     onChange={(e) => setRangeTo(e.target.value)}
                   />
@@ -1109,7 +1109,7 @@ export default function FinanceOverviewPage() {
             {/* Переключатель: По выручке (вкл. долг) / По поступлениям.
                 Влияет на доход, маржу, чистую прибыль и средние чеки оправ/линз. */}
             <div
-              className="inline-flex items-center rounded-xl bg-white ring-1 ring-slate-200 p-0.5 text-xs font-medium self-end"
+              className="inline-flex w-full items-center rounded-xl bg-white ring-1 ring-slate-200 p-0.5 text-xs font-medium self-end sm:w-auto"
               title="Доходы, маржа и средние чеки считаются от выручки (включая долги) или только от поступивших платежей"
             >
               <button
@@ -1117,7 +1117,7 @@ export default function FinanceOverviewPage() {
                 onClick={() => setRevenueMode('gross')}
                 disabled={loading}
                 className={[
-                  'px-3 py-1.5 rounded-lg transition',
+                  'min-h-11 flex-1 px-3 py-1.5 rounded-lg transition sm:min-h-0 sm:flex-none',
                   revenueMode === 'gross'
                     ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
                     : 'text-slate-600 hover:bg-slate-50',
@@ -1130,7 +1130,7 @@ export default function FinanceOverviewPage() {
                 onClick={() => setRevenueMode('cash')}
                 disabled={loading}
                 className={[
-                  'px-3 py-1.5 rounded-lg transition',
+                  'min-h-11 flex-1 px-3 py-1.5 rounded-lg transition sm:min-h-0 sm:flex-none',
                   revenueMode === 'cash'
                     ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
                     : 'text-slate-600 hover:bg-slate-50',
@@ -1170,7 +1170,7 @@ export default function FinanceOverviewPage() {
             </SoftGhostButton>
 
             {branchId === 0 && (
-              <label className="ml-2 inline-flex items-center gap-2 text-xs text-slate-700 select-none">
+              <label className="inline-flex min-h-11 items-center gap-2 text-xs text-slate-700 select-none sm:ml-2 sm:min-h-0">
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-slate-300"
@@ -1232,7 +1232,7 @@ export default function FinanceOverviewPage() {
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
               <KpiCard label="Маржа (%)" value={`${kpis?.margin ?? 0}%`} />
               <KpiCard label="Средний чек оправы" value={fmt(kpis?.frameAvg ?? 0)} />
               <KpiCard label="Средний чек линз" value={fmt(kpis?.lensAvg ?? 0)} />
@@ -1271,8 +1271,8 @@ export default function FinanceOverviewPage() {
               <div className="ml-4 h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
             </div>
 
-            <div className="p-5 overflow-auto">
-              <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200 bg-white/70 backdrop-blur-xl shadow-[0_18px_60px_rgba(15,23,42,0.12)]">
+            <div className="min-w-0 p-3 sm:p-5">
+              <div className="w-full max-w-full overflow-x-auto rounded-2xl ring-1 ring-slate-200 bg-white/70 backdrop-blur-xl shadow-[0_18px_60px_rgba(15,23,42,0.12)]">
                 <table className="w-full text-sm">
                   <thead className="bg-white/90">
                     <tr>

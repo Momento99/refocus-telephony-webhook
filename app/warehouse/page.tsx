@@ -77,7 +77,7 @@ function SoftPrimaryButton(
     <button
       {...rest}
       className={cx(
-        "inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white sm:min-h-0",
         "shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400",
         "focus:outline-none focus:ring-2 focus:ring-cyan-300/70",
         "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -132,7 +132,7 @@ function QtyInput(props: {
         onChange(Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
       }}
       className={cx(
-        "w-28 rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900",
+        "w-24 sm:w-28 rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900",
         "ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70",
         "placeholder:text-slate-400",
         "disabled:opacity-60 disabled:cursor-not-allowed"
@@ -365,7 +365,7 @@ export default function WarehousePage() {
         ) : (
           cards.map((c) => (
             <Card key={c.locationId}>
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col items-stretch gap-3 min-[420px]:flex-row min-[420px]:items-start min-[420px]:justify-between">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <Building2 className="h-4 w-4 text-cyan-600" />
@@ -418,8 +418,11 @@ export default function WarehousePage() {
           onClick={busy ? undefined : closeFix}
         >
           <div
-            className="w-full max-w-[640px] rounded-3xl bg-white p-6 ring-1 ring-sky-100 shadow-[0_30px_80px_rgba(0,0,0,0.4)]"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-[640px] overflow-y-auto overscroll-contain rounded-3xl bg-white p-4 sm:p-6 ring-1 ring-sky-100 shadow-[0_30px_80px_rgba(0,0,0,0.4)]"
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Фиксация остатков"
           >
             <div className="mb-5 flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
@@ -438,8 +441,8 @@ export default function WarehousePage() {
 
               <button
                 onClick={closeFix}
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
-                aria-label="close"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 sm:h-8 sm:w-8"
+                aria-label="Закрыть фиксацию остатков"
                 disabled={busy}
               >
                 <X className="h-5 w-5" />
@@ -474,7 +477,7 @@ export default function WarehousePage() {
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 rows={2}
-                className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:opacity-60"
+                className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:opacity-60"
                 placeholder="Например: пересчёт за неделю"
                 disabled={busy}
               />

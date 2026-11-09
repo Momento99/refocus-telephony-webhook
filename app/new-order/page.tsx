@@ -64,10 +64,10 @@ function formatPhoneView(raw: string | null | undefined): string {
 const fmt = new Intl.NumberFormat('ru-RU');
 
 const baseInput =
-  'w-full rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/70';
+  'min-h-11 sm:min-h-0 w-full rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/70';
 
 const cardBase =
-  'rounded-2xl border border-slate-200 bg-white/90 backdrop-blur shadow-sm';
+  'rounded-2xl border border-slate-200 bg-white/90 text-slate-900 backdrop-blur shadow-sm';
 
 function useCardClass() {
   return cardBase;
@@ -266,7 +266,7 @@ const PhoneField = React.memo(function PhoneField({
   onAccept,
 }: { value: string; onAccept: (v: string) => void }) {
   return (
-    <div className="relative">
+    <div className="relative min-w-0 flex-1">
       <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500">
         <PhoneIcon size={18} />
       </div>
@@ -274,7 +274,9 @@ const PhoneField = React.memo(function PhoneField({
         mask="+996 (000) 000-000"
         value={value}
         onAccept={(val: unknown) => onAccept(String(val))}
-        className={`${baseInput} tabular-nums tracking-wide text-[15px] pl-10 pr-2 py-2`}
+        className={`${baseInput} tabular-nums tracking-wide text-base sm:text-[15px] pl-10 pr-2 py-2`}
+        inputMode="tel"
+        autoComplete="tel"
         placeholder="+996 (___) ***-***"
       />
     </div>
@@ -337,7 +339,7 @@ const DobField = React.memo(function DobField({
               onChange('');
             }
           }}
-          className={`${baseInput} tabular-nums tracking-wide text-[15px] pl-3 pr-3 py-2`}
+          className={`${baseInput} tabular-nums tracking-wide text-base sm:text-[15px] pl-3 pr-3 py-2`}
         />
         {invalid && (
           <div className="mt-1 text-xs leading-snug text-rose-600">
@@ -1140,7 +1142,7 @@ export default function NewOrderPage(): JSX.Element {
     <button
       type="button"
       onClick={onClick}
-      className={`w-full px-4 py-2 border-b border-slate-200 flex items-center justify-between
+      className={`min-h-11 sm:min-h-0 w-full px-4 py-2 border-b border-slate-200 flex items-center justify-between
       ${active ? 'bg-gradient-to-r from-indigo-50 via-blue-50 to-white' : 'bg-slate-50 hover:bg-slate-100'}`}
     >
       <div className="flex items-center gap-3">
@@ -1172,11 +1174,11 @@ export default function NewOrderPage(): JSX.Element {
 
   return (
     <div className="min-h-[calc(100vh-64px)] bg-[radial-gradient(1200px_600px_at_50%_-100px,rgba(99,102,241,0.08),transparent)]">
-      <div className="mx-auto max-w-6xl px-4 py-6 space-y-5">
+      <div className="mx-auto max-w-6xl py-6 space-y-5 sm:px-4 [&_button]:min-h-11 sm:[&_button]:min-h-0">
         {/* Заголовок страницы */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900">
+            <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-50">
               <Layers className="text-indigo-600" size={20} />
               <span>Новый заказ</span>
             </h1>
@@ -1187,7 +1189,7 @@ export default function NewOrderPage(): JSX.Element {
           <button
             type="button"
             onClick={smartRefresh}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
             title="Обновить данные и очистить форму"
           >
             <RefreshCw size={16} className="text-indigo-600" />
@@ -1270,7 +1272,7 @@ export default function NewOrderPage(): JSX.Element {
                   <div>
                     <label className="hint">Пол клиента *</label>
                     <div className="flex items-center gap-4">
-                      <label className="inline-flex items-center gap-2">
+                      <label className="inline-flex min-h-11 items-center gap-2 sm:min-h-0">
                         <input
                           type="radio"
                           name="gender"
@@ -1281,7 +1283,7 @@ export default function NewOrderPage(): JSX.Element {
                         />
                         <span>Муж</span>
                       </label>
-                      <label className="inline-flex items-center gap-2">
+                      <label className="inline-flex min-h-11 items-center gap-2 sm:min-h-0">
                         <input
                           type="radio"
                           name="gender"

@@ -388,7 +388,7 @@ export default function PresentationLocaleProvider({ children }: { children: Rea
         <div
           data-i18n-ignore
           data-presentation-locale-switch
-          className="fixed bottom-4 right-4 z-[100] flex items-center gap-1 rounded-full border border-cyan-400/20 bg-slate-950/90 p-1 text-[11px] font-bold shadow-2xl backdrop-blur"
+          className="fixed bottom-4 right-4 z-[30] flex items-center gap-1 rounded-full border border-cyan-400/20 bg-slate-950/90 p-1 text-[11px] font-bold shadow-2xl backdrop-blur"
           aria-label="Interface language"
         >
           {(['ru', 'en'] as const).map((item) => (

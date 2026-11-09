@@ -402,13 +402,13 @@ function VideoAddForm({ onAdd }: { onAdd: (title: string, url: string) => void }
         value={url}
         onChange={e => setUrl(e.target.value)}
         placeholder="Ссылка на видео (YouTube, youtu.be…)"
-        className="w-full text-[13px] bg-white ring-1 ring-rose-200 focus:ring-rose-400 focus:outline-none rounded-lg px-3 py-2 placeholder:text-slate-300"
+        className="w-full text-base sm:text-[13px] bg-white ring-1 ring-rose-200 focus:ring-rose-400 focus:outline-none rounded-lg px-3 py-2 placeholder:text-slate-300"
       />
       <input
         value={title}
         onChange={e => setTitle(e.target.value)}
         placeholder="Название (необязательно)"
-        className="w-full text-[13px] bg-white ring-1 ring-rose-200 focus:ring-rose-400 focus:outline-none rounded-lg px-3 py-2 placeholder:text-slate-300"
+        className="w-full text-base sm:text-[13px] bg-white ring-1 ring-rose-200 focus:ring-rose-400 focus:outline-none rounded-lg px-3 py-2 placeholder:text-slate-300"
         onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
       />
       <div className="flex gap-2">
@@ -529,7 +529,7 @@ function ContentModal({ item, initialContent, isSaving, onClose, onCommit, onSav
         className="shrink-0 flex flex-wrap items-center gap-3 px-5 py-2.5"
         onMouseDown={e => e.stopPropagation()}
       >
-        <div className="flex-1 min-w-0 flex items-center gap-2">
+        <div className="w-full min-w-0 flex items-center gap-2 sm:w-auto sm:flex-1">
           <span className="text-[10px] font-mono text-white/30 shrink-0">{item.id}</span>
           <span className="text-[13px] font-semibold text-white/65 truncate">{item.title}</span>
         </div>
@@ -1514,11 +1514,11 @@ export default function FranchiseHQPage() {
 
                         <div className="flex-1 min-w-0">
                           {/* Title row */}
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 sm:flex-nowrap">
                             <span className="inline-flex items-center justify-center min-w-[40px] h-6 px-1.5 rounded-md bg-slate-100 text-slate-500 text-[11px] font-bold font-mono tabular-nums shrink-0">
                               {item.id}
                             </span>
-                            <span className="text-[16px] font-semibold leading-snug tracking-tight text-slate-900 min-w-0">
+                            <span className="order-first w-full min-w-0 text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:order-none sm:w-auto sm:text-[16px]">
                               {item.title}
                             </span>
                             {(isDirty || isSaving) && (

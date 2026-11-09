@@ -303,7 +303,7 @@ function GlassCard({
 }
 
 const btnBase =
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap select-none transition ' +
+  'inline-flex min-h-11 sm:min-h-0 items-center justify-center gap-2 whitespace-nowrap select-none transition ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ' +
   'disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -343,7 +343,7 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={[
-        'w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400',
+        'w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 placeholder:text-slate-400',
         'ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70',
         props.className || '',
       ].join(' ')}
@@ -356,7 +356,7 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={[
-        'w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900',
+        'w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900',
         'ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70',
         props.className || '',
       ].join(' ')}
@@ -537,7 +537,7 @@ const Th = ({
 
 /* ---------- Кнопки-«пилюли» (Refocus) ---------- */
 const pillBase =
-  'h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-full text-[12px] font-semibold tracking-wide ' +
+  'h-11 sm:h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-full text-[12px] font-semibold tracking-wide ' +
   'transition select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ' +
   'disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -632,7 +632,7 @@ function MobileCards({
           ].join(' ')}
         >
           <div className="flex items-start justify-between gap-3">
-            <button onClick={() => onOpen(r.order_no)} className="text-left">
+            <button onClick={() => onOpen(r.order_no)} className="min-h-11 min-w-0 flex-1 break-words text-left">
               <div className="font-semibold leading-tight text-slate-900">
                 {r.customer_name ?? '—'}
               </div>
@@ -697,7 +697,7 @@ function MobileCards({
             </button>
             <a
               href={r.phone ? `tel:${r.phone.replace(/\D/g, '')}` : '#'}
-              className="h-8 col-span-2 rounded-full bg-white ring-1 ring-slate-200 flex items-center justify-center gap-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              className="h-11 sm:h-8 col-span-2 rounded-full bg-white ring-1 ring-slate-200 flex items-center justify-center gap-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               <Phone className="h-4 w-4" />
               Звонок
@@ -1607,9 +1607,9 @@ function DetailsDrawer({
       <div className="fixed inset-0 z-[70]">
         <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
 
-        <div className="absolute right-0 top-0 h-full w-full sm:w-[480px] overflow-y-auto">
-          <div className="h-full bg-white ring-1 ring-sky-100 shadow-[0_30px_120px_rgba(0,0,0,0.4)]">
-            <div className="p-5 border-b border-slate-100 bg-white">
+        <div className="absolute right-0 top-0 h-[100dvh] w-full sm:h-full sm:w-[480px] overflow-y-auto overscroll-contain">
+          <div className="min-h-full bg-white ring-1 ring-sky-100 shadow-[0_30px_120px_rgba(0,0,0,0.4)]">
+            <div className="sticky top-0 z-10 p-4 sm:p-5 border-b border-slate-100 bg-white">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.3)]">
@@ -1631,9 +1631,9 @@ function DetailsDrawer({
                   </div>
                 </div>
 
-                <button onClick={onClose} className={SoftGhost}>
+                <button onClick={onClose} className={SoftGhost} aria-label="Закрыть детали заказа">
                   <X className="h-4 w-4" />
-                  Закрыть
+                  <span className="hidden sm:inline">Закрыть</span>
                 </button>
               </div>
             </div>
@@ -1990,7 +1990,7 @@ function PayModal({
   return (
     <Portal>
       <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm" onClick={onClose}>
-        <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
+        <div onClick={(e) => e.stopPropagation()} className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain">
           <GlassCard className="p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -2099,7 +2099,7 @@ function EditPaymentMethodModal({
   return (
     <Portal>
       <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm" onClick={onClose}>
-        <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
+        <div onClick={(e) => e.stopPropagation()} className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain">
           <GlassCard className="p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -2145,7 +2145,7 @@ function EditPaymentMethodModal({
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="Например: клиент оплатил картой, кассир ошибся и выбрал наличные"
-                  className="mt-2 w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 min-h-[92px] resize-none"
+                  className="mt-2 w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 placeholder:text-slate-400 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 min-h-[92px] resize-none"
                 />
                 {!reason.trim() && (
                   <div className="mt-1 text-[11px] text-amber-700 flex items-center gap-1.5">

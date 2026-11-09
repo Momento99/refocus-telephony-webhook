@@ -401,11 +401,14 @@ export default function ReturnExchangeModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="return-exchange-title"
     >
       <div
-        className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100 max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg rounded-3xl bg-white p-4 sm:p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
@@ -415,7 +418,7 @@ export default function ReturnExchangeModal({
               <RotateCcw className="h-5 w-5 text-white" />
             </div>
             <div>
-              <div className="text-lg font-bold tracking-tight text-slate-900">
+              <div id="return-exchange-title" className="text-lg font-bold tracking-tight text-slate-900">
                 Возврат / замена
               </div>
               <div className="text-[12px] text-slate-500">
@@ -426,7 +429,8 @@ export default function ReturnExchangeModal({
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 sm:h-8 sm:w-8"
+            aria-label="Закрыть возврат или замену"
           >
             <X className="h-5 w-5" />
           </button>
@@ -632,7 +636,7 @@ export default function ReturnExchangeModal({
                         onChange={(e) => setCancelAmount(e.target.value)}
                         inputMode="decimal"
                         placeholder="Введите фактическую сумму"
-                        className="min-w-0 flex-1 rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+                        className="min-w-0 flex-1 rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
                       />
                       <button
                         type="button"
@@ -672,7 +676,7 @@ export default function ReturnExchangeModal({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 inputMode="numeric"
-                className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+                className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
               />
             </div>
             <div>
@@ -714,7 +718,7 @@ export default function ReturnExchangeModal({
                 value={svcOther}
                 onChange={(e) => setSvcOther(e.target.value)}
                 placeholder="что сделали"
-                className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
+                className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400"
               />
             </div>
             <Footer
@@ -798,7 +802,7 @@ function CommentField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={required ? 'опишите причину' : 'необязательно'}
         className={
-          'w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 ring-1 ' +
+          'w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 ring-1 ' +
           (required && !value.trim() ? 'ring-amber-300' : 'ring-sky-200')
         }
       />
@@ -947,15 +951,15 @@ function MenuItem({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left ring-1 ring-sky-100 transition hover:bg-sky-50/50 hover:ring-sky-200 disabled:opacity-40 disabled:hover:bg-white"
+      className="grid w-full grid-cols-[40px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 rounded-2xl bg-white p-3 text-left ring-1 ring-sky-100 transition hover:bg-sky-50/50 hover:ring-sky-200 disabled:opacity-40 disabled:hover:bg-white sm:grid-cols-[40px_minmax(0,1fr)_auto]"
     >
       <span className={`grid h-10 w-10 place-items-center rounded-xl ring-1 ${toneCls}`}>{icon}</span>
-      <span className="flex-1">
+      <span className="min-w-0">
         <span className="block text-sm font-semibold text-slate-900">{title}</span>
         <span className="block text-[12px] text-slate-500">{desc}</span>
       </span>
       {money && (
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${moneyCls}`}>
+        <span className={`col-start-2 justify-self-start rounded-full px-2.5 py-1 text-[11px] font-semibold sm:col-start-auto ${moneyCls}`}>
           {money.text}
         </span>
       )}
@@ -990,12 +994,12 @@ function Footer({
   danger?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 pt-1">
+    <div className="flex flex-col-reverse items-stretch gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between">
       <button
         type="button"
         onClick={onBack}
         disabled={busy}
-        className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
+        className="min-h-11 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
       >
         Назад
       </button>
@@ -1004,7 +1008,7 @@ function Footer({
         onClick={onConfirm}
         disabled={busy}
         className={
-          'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ' +
+          'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ' +
           (danger
             ? 'bg-rose-500 shadow-[0_4px_16px_rgba(244,63,94,0.28)] hover:bg-rose-400'
             : 'bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.28)] hover:bg-cyan-400')

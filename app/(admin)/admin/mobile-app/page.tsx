@@ -16,11 +16,11 @@ export default function MobileAppPage() {
   const [tab, setTab] = useState<Tab>('overview');
 
   return (
-    <div className="text-slate-50">
+    <div className="min-w-0 max-w-full text-slate-50">
       {/* Header (бренд-стандарт) */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
             <Smartphone className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -30,7 +30,7 @@ export default function MobileAppPage() {
         </div>
 
         {/* Сегментные вкладки */}
-        <div className="inline-flex rounded-xl bg-slate-800/60 p-1 ring-1 ring-slate-700/60">
+        <div className="inline-flex w-full rounded-xl bg-slate-800/60 p-1 ring-1 ring-slate-700/60 sm:w-auto">
           {TABS.map((t) => {
             const active = tab === t.id;
             const Icon = t.icon;
@@ -40,7 +40,7 @@ export default function MobileAppPage() {
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={
-                  'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ' +
+                  'inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition sm:min-h-0 sm:flex-none ' +
                   (active
                     ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
                     : 'text-slate-300 hover:bg-slate-700/50')

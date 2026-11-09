@@ -167,7 +167,7 @@ function SoftPrimaryButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:cursor-not-allowed disabled:opacity-50',
+        'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition sm:min-h-0 hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:cursor-not-allowed disabled:opacity-50',
         className
       )}
     >
@@ -195,7 +195,7 @@ function SoftGhostButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'rounded-xl ring-1 ring-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50',
+        'min-h-11 rounded-xl ring-1 ring-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition sm:min-h-0 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50',
         className
       )}
     >
@@ -269,7 +269,7 @@ function Input({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
+        className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
       />
     </label>
   );
@@ -296,7 +296,7 @@ function Textarea({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
+        className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
       />
     </label>
   );
@@ -1043,7 +1043,7 @@ export default function NotificationsTab() {
                           <summary className="px-3 py-2 text-[11px] text-slate-500 cursor-pointer hover:text-slate-300 transition-colors select-none">Тестовая отправка</summary>
                           <div className="space-y-3 px-3 pb-3">
                             <Input label="customer_id" value={testCustomerId} onChange={setTestCustomerId} type="number" min={1} />
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <SoftGhostButton onClick={() => void sendCheckupTest()} disabled={checkupTesting}>
                                 <Send className="mr-1.5 inline h-3.5 w-3.5" />
                                 {checkupTesting ? 'Отправка…' : 'Тест'}
@@ -1072,7 +1072,7 @@ export default function NotificationsTab() {
                         </details>
                       )}
 
-                      <div className="flex gap-2 pt-1">
+                      <div className="flex flex-wrap gap-2 pt-1">
                         <SoftPrimaryButton
                           onClick={() => void saveRule(code)}
                           disabled={savingRule === code}
@@ -1123,7 +1123,7 @@ export default function NotificationsTab() {
                         kind: e.target.value as 'news' | 'promo',
                       }))
                     }
-                    className="w-full rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-cyan-500/50 focus:bg-white"
+                    className="w-full rounded-xl bg-slate-50 px-3 py-2 text-base sm:text-sm text-slate-900 ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-cyan-500/50 focus:bg-white"
                   >
                     <option value="news">Новость</option>
                     <option value="promo">Акция</option>
@@ -1140,7 +1140,7 @@ export default function NotificationsTab() {
                         status: e.target.value as 'draft' | 'scheduled',
                       }))
                     }
-                    className="w-full rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-cyan-500/50 focus:bg-white"
+                    className="w-full rounded-xl bg-slate-50 px-3 py-2 text-base sm:text-sm text-slate-900 ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-cyan-500/50 focus:bg-white"
                   >
                     <option value="draft">Черновик</option>
                     <option value="scheduled">Запланировать</option>
@@ -1181,7 +1181,7 @@ export default function NotificationsTab() {
                             | 'branches_only',
                         }))
                       }
-                      className="w-full rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-cyan-500/50 focus:bg-white"
+                      className="w-full rounded-xl bg-slate-50 px-3 py-2 text-base sm:text-sm text-slate-900 ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-cyan-500/50 focus:bg-white"
                     >
                       <option value="all_opted_in">Все, кто включил новости</option>
                       <option value="branches_only">Только выбранные филиалы</option>
@@ -1202,7 +1202,7 @@ export default function NotificationsTab() {
                             send_at: e.target.value,
                           }))
                         }
-                        className="w-full rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-cyan-500/50 focus:bg-white"
+                        className="w-full rounded-xl bg-slate-50 px-3 py-2 text-base sm:text-sm text-slate-900 ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-cyan-500/50 focus:bg-white"
                       />
                     </label>
                   ) : null}

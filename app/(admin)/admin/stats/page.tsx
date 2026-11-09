@@ -2171,7 +2171,7 @@ export default function AdminStatsPage() {
 
   /* ========== UI ========== */
   return (
-    <div className="text-slate-50">
+    <div className="min-w-0 max-w-full text-slate-50">
       <div>
         {gate === 'pending' && (
           <Section tone="neutral">
@@ -2244,7 +2244,7 @@ export default function AdminStatsPage() {
                   </FilterGroup>
 
                   <FilterGroup label="Даты">
-                    <div className="flex items-center gap-2">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:flex">
                       <DateField ariaLabel="Дата начала периода" value={fromISO} max={toISO || todayISO()} onChange={applyFrom} />
                       <span className="text-slate-400 text-xs">—</span>
                       <DateField ariaLabel="Дата конца периода" value={toISO} min={fromISO} max={todayISO()} onChange={applyTo} />
@@ -2260,7 +2260,7 @@ export default function AdminStatsPage() {
                         type="button"
                         onClick={() => applyRevenueMode('gross')}
                         className={[
-                          'px-3 py-1.5 rounded-lg transition',
+                          'min-h-11 px-3 py-1.5 rounded-lg transition sm:min-h-0',
                           revenueMode === 'gross'
                             ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
                             : 'text-slate-600 hover:bg-slate-50',
@@ -2272,7 +2272,7 @@ export default function AdminStatsPage() {
                         type="button"
                         onClick={() => applyRevenueMode('cash')}
                         className={[
-                          'px-3 py-1.5 rounded-lg transition',
+                          'min-h-11 px-3 py-1.5 rounded-lg transition sm:min-h-0',
                           revenueMode === 'cash'
                             ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
                             : 'text-slate-600 hover:bg-slate-50',
@@ -2327,7 +2327,7 @@ export default function AdminStatsPage() {
             </Section>
 
             {/* KPI */}
-            <div className="mt-6 grid gap-4 md:grid-cols-4">
+            <div className="mt-6 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-4">
               <KPI
                 label="Выручка"
                 value={nf(totals.revenue)}
@@ -2360,7 +2360,7 @@ export default function AdminStatsPage() {
             </div>
 
             {/* Finance KPIs */}
-            <div className="mt-4 grid gap-4 md:grid-cols-5">
+            <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-5">
               <KPI label="Доходы" value={loading ? '…' : nf(financeTotals.income)} icon={HandCoins} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
               <KPI label="OPEX" value={loading ? '…' : nf(financeTotals.opex)} icon={CreditCard} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-slate-200/40" />
               <KPI label="Себестоимость" value={loading ? '…' : nf(financeTotals.cogs)} icon={CreditCard} iconTone="money" accent="from-slate-200/55 via-sky-200/45 to-cyan-200/40" />
@@ -2368,7 +2368,7 @@ export default function AdminStatsPage() {
               <KPI label="Чистая прибыль" value={loading ? '…' : nf(financeTotals.netProfit)} icon={TrendingUp} iconTone="money" accent="from-cyan-200/55 via-sky-200/45 to-teal-200/40" />
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-4">
+            <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-4">
               <KPI label="Маржа" value={loading ? '…' : `${financeTotals.margin}%`} icon={Percent} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
               <KPI
                 label="Чистая прибыль / день"
@@ -2544,7 +2544,7 @@ export default function AdminStatsPage() {
               }
               aside={<span className="text-xs text-slate-600/80">SPLH = выручка / трудочас · ФОТ брутто (до налогов сотрудника)</span>}
             >
-              <div className="mb-4 grid gap-4 md:grid-cols-2">
+              <div className="mb-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
                 <StatBox label="Выручка на трудочас (выбранные)" value={`${nf(splhTotals.splh)} сом`} icon={TrendingUp} tone="neutral" />
                 <StatBox label="ФОТ / выручка" value={`${splhTotals.lcr}%`} icon={Percent} tone={splhTotals.lcr > 25 ? 'warn' : 'ok'} />
               </div>
@@ -2664,7 +2664,7 @@ export default function AdminStatsPage() {
             >
               {custKpis ? (
                 <>
-                  <div className="grid gap-4 md:grid-cols-4">
+                  <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-4">
                     <StatBox label="Средний чек" value={nf(Math.round(custKpis.avg_check))} icon={CreditCard} tone="neutral" />
                     <StatBox label="Медианный чек" value={nf(Math.round(custKpis.median_check))} icon={CreditCard} tone="neutral" />
                     <StatBox
@@ -2681,7 +2681,7 @@ export default function AdminStatsPage() {
                     />
                   </div>
 
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
                     <ChartFrame height={320} title="Новые vs Вернувшиеся" icon={PieChart}>
                       <ReactECharts option={optionNewReturning} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
                     </ChartFrame>
@@ -2709,7 +2709,7 @@ export default function AdminStatsPage() {
               }
               aside={<span className="text-xs text-slate-600/80">Срез по продажам</span>}
             >
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
                 <ChartFrame height={560} title="По видам линз" icon={BarChart3}>
                   <ReactECharts option={optionLensTypes} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
                 </ChartFrame>
@@ -2733,7 +2733,7 @@ export default function AdminStatsPage() {
               }
               aside={<span className="text-xs text-slate-600/80">Себестоимость из каталога · только линзы (оправы не учитываются)</span>}
             >
-              <div className="mb-4 grid gap-4 md:grid-cols-3">
+              <div className="mb-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
                 <StatBox label="Выручка по линзам" value={nf(lensMarginView.totalRevenue)} icon={HandCoins} tone="neutral" />
                 <StatBox label="Маржа по линзам" value={nf(lensMarginView.totalMargin)} icon={TrendingUp} tone="ok" />
                 <StatBox label="Средняя маржа" value={`${Math.round(lensMarginView.avgMarginPct)}%`} icon={Percent} tone="neutral" />
@@ -2849,7 +2849,7 @@ export default function AdminStatsPage() {
               }
               aside={<span className="text-xs text-slate-600/80">Кривые по корзинам сумм (по {revenueMode === 'gross' ? 'выручке' : 'поступлениям'})</span>}
             >
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
                 <ChartFrame height={340} title="Чеки по оправам" icon={BarChart3}>
                   <ReactECharts option={optionFrameBins} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
                 </ChartFrame>
@@ -2902,7 +2902,7 @@ function Section({
 
   return (
     <section
-      className={`mt-5 rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.45)] ring-1 ${toneRing}`}
+      className={`mt-5 min-w-0 max-w-full rounded-2xl bg-white p-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)] ring-1 sm:p-5 ${toneRing}`}
     >
       {hasHeader && (
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -2929,7 +2929,7 @@ function ChartFrame({
   const Icon = icon;
   return (
     <div
-      className="rounded-2xl bg-white p-2 ring-1 ring-sky-100"
+      className="min-w-0 max-w-full rounded-2xl bg-white p-2 ring-1 ring-sky-100"
       style={{ height } as React.CSSProperties}
     >
       {title && (
@@ -2949,7 +2949,7 @@ function ChartFrame({
 
 function GlassTable({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-2xl bg-white ring-1 ring-sky-100">
+    <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-2xl bg-white ring-1 ring-sky-100">
       {children}
     </div>
   );
@@ -3052,7 +3052,7 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 /** Подпись-группа фильтра: маленький заголовок над контролом. */
 function FilterGroup({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="min-w-0 max-w-full flex flex-col gap-1.5">
       <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
       {children}
     </div>
@@ -3088,7 +3088,7 @@ function DateField({
     }
   };
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <input
         ref={ref}
         type="date"
@@ -3098,7 +3098,7 @@ function DateField({
         max={max}
         onChange={(e) => onChange(e.target.value)}
         onClick={openPicker}
-        className="w-full min-w-[120px] sm:w-[150px] cursor-pointer rounded-xl bg-white px-3 py-2.5 pr-9 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-y-0 [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
+        className="min-h-11 w-full min-w-0 sm:w-[150px] cursor-pointer rounded-xl bg-white px-2 py-2.5 pr-8 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition sm:px-3 sm:pr-9 focus:ring-2 focus:ring-cyan-400/70 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-y-0 [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
       />
       <button
         type="button"
@@ -3127,7 +3127,7 @@ function Chip({
       type="button"
       onClick={() => void onClick?.()}
       className={[
-        'h-8 rounded-full px-3 text-xs font-semibold transition',
+        'h-11 rounded-full px-3 text-xs font-semibold transition sm:h-8',
         active
           ? 'bg-cyan-500 text-white shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
           : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
@@ -3161,7 +3161,7 @@ function SoftPrimaryButton({
       disabled={disabled || loading}
       onClick={() => void onClick?.()}
       className={[
-        'inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
+        'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition sm:min-h-0 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-cyan-300/70',
         className,
       ].join(' ')}
     >
@@ -3188,7 +3188,7 @@ function SoftGhostButton({
       type="button"
       onClick={() => void onClick?.()}
       title={title}
-      className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
+      className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition sm:min-h-0 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
     >
       {Icon && <Icon className="h-4 w-4 text-cyan-600" />}
       {children}

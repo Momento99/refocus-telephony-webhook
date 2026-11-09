@@ -273,12 +273,12 @@ export default function EmployeeCalendarPage() {
   }
 
   return (
-    <div className="text-slate-50">
+    <div className="min-w-0 max-w-full text-slate-50">
       <div className="space-y-4">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_20px_rgba(34,211,238,0.40)]">
               <CalendarDays className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -292,7 +292,7 @@ export default function EmployeeCalendarPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => void load()}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-300 ring-1 ring-slate-700/60 transition hover:bg-white/5"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 ring-1 ring-slate-700/60 transition sm:h-10 sm:w-10 hover:bg-white/5"
               title="Обновить"
             >
               <RefreshCw className="h-4 w-4" />
@@ -322,7 +322,7 @@ export default function EmployeeCalendarPage() {
             <button
               onClick={() => setFilterBranch('all')}
               className={
-                'inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition ' +
+                'inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition sm:min-h-0 ' +
                 (filterBranch === 'all'
                   ? 'bg-cyan-500 text-white ring-1 ring-cyan-400 shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
                   : 'bg-white text-slate-600 ring-1 ring-sky-200 hover:bg-sky-50')
@@ -337,7 +337,7 @@ export default function EmployeeCalendarPage() {
                   key={b.id}
                   onClick={() => setFilterBranch(b.id)}
                   className={
-                    'rounded-xl px-3 py-1.5 text-sm font-semibold transition ' +
+                    'min-h-11 rounded-xl px-3 py-1.5 text-sm font-semibold transition sm:min-h-0 ' +
                     (active
                       ? 'bg-cyan-500 text-white ring-1 ring-cyan-400 shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
                       : 'bg-white text-slate-600 ring-1 ring-sky-200 hover:bg-sky-50')
@@ -371,7 +371,7 @@ export default function EmployeeCalendarPage() {
             <div className="px-5 py-4 flex items-center justify-between border-b border-sky-100">
               <button
                 onClick={() => shiftMonth(-1)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 ring-1 ring-slate-200 sm:h-9 sm:w-9 hover:bg-slate-50"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
@@ -383,13 +383,13 @@ export default function EmployeeCalendarPage() {
               </button>
               <button
                 onClick={() => shiftMonth(1)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 ring-1 ring-slate-200 sm:h-9 sm:w-9 hover:bg-slate-50"
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="m-3 rounded-2xl bg-slate-100 p-2.5">
+            <div className="m-2 rounded-2xl bg-slate-100 p-1.5 sm:m-3 sm:p-2.5">
               <div className="grid grid-cols-7 mb-1.5">
                 {DAYS_SHORT.map(d => (
                   <div key={d} className="text-center text-[11px] font-bold text-slate-500 py-1.5 uppercase tracking-wider">{d}</div>
@@ -399,7 +399,7 @@ export default function EmployeeCalendarPage() {
               {loading ? (
                 <div className="p-10 text-center text-slate-400">Загрузка…</div>
               ) : (
-                <div className="grid grid-cols-7 gap-1.5">
+                <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
                   {calendarDays.map((day, i) => {
                     const dayEvs = eventsByDate.get(day.date) || [];
                     const isSelected = selectedDate === day.date;
@@ -422,7 +422,9 @@ export default function EmployeeCalendarPage() {
                       <button
                         key={i}
                         onClick={() => setSelectedDate(day.date === selectedDate ? null : day.date)}
-                        className={`relative min-h-[108px] p-2 text-left transition-all rounded-xl ${cls}`}
+                        className={`relative min-h-16 min-w-0 p-1 text-left transition-all rounded-xl sm:min-h-[108px] sm:p-2 ${cls}`}
+                        aria-label={`${day.date}, событий ${dayEvs.length}`}
+                        aria-pressed={isSelected}
                       >
                         <div className="flex items-start justify-between gap-1">
                           {day.isToday ? (
@@ -439,7 +441,12 @@ export default function EmployeeCalendarPage() {
                             </span>
                           )}
                           {hasEvs && (
-                            <div className="flex flex-wrap gap-1 justify-end max-w-[80%]">
+                            <>
+                            <span className="absolute bottom-2 left-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 sm:hidden">
+                              <span className={`h-1.5 w-1.5 rounded-full ${t?.dot ?? 'bg-cyan-500'}`} />
+                              {dayEvs.length}
+                            </span>
+                            <div className="hidden flex-wrap gap-1 justify-end max-w-[80%] sm:flex">
                               {dayEvs.slice(0, 3).map((ev) => {
                                 const Icon = getIconByName(ev.icon);
                                 const cs = getColor(ev.color);
@@ -459,6 +466,7 @@ export default function EmployeeCalendarPage() {
                                 </div>
                               )}
                             </div>
+                            </>
                           )}
                         </div>
                       </button>
@@ -696,13 +704,13 @@ function ScopePicker({
   return (
     <div>
       <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Кому показывать</span>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {opts.map(o => (
           <button
             key={o.key}
             type="button"
             onClick={() => onChange(o.key)}
-            className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+            className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition sm:min-h-0 ${
               value === o.key
                 ? 'bg-cyan-500 text-white ring-1 ring-cyan-400 shadow-[0_4px_12px_rgba(34,211,238,0.25)]'
                 : 'bg-white text-slate-600 ring-1 ring-sky-200 hover:bg-sky-50'
@@ -716,7 +724,7 @@ function ScopePicker({
         <select
           value={branchId ?? ''}
           onChange={(e) => onBranchChange(e.target.value ? Number(e.target.value) : null)}
-          className="mt-2 w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+          className="mt-2 w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
         >
           <option value="">— выберите филиал —</option>
           {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -727,7 +735,7 @@ function ScopePicker({
           <select
             value={branchId ?? ''}
             onChange={(e) => { const b = e.target.value ? Number(e.target.value) : null; onBranchChange(b); onEmployeeChange(null); }}
-            className="rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+            className="rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
           >
             <option value="">Все филиалы</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -735,7 +743,7 @@ function ScopePicker({
           <select
             value={employeeId ?? ''}
             onChange={(e) => onEmployeeChange(e.target.value ? Number(e.target.value) : null)}
-            className="rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+            className="rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
           >
             <option value="">— выберите сотрудника —</option>
             {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
@@ -804,12 +812,12 @@ function ModalShell({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100 max-h-[90vh] overflow-y-auto"
+        className="w-full min-w-0 max-w-2xl rounded-3xl bg-white p-4 shadow-[0_30px_80px_rgba(0,0,0,0.4)] ring-1 ring-sky-100 max-h-[90dvh] overflow-y-auto overscroll-contain sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-start justify-between">
           <div className="flex items-start gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.3)]">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-500 shadow-[0_4px_16px_rgba(34,211,238,0.3)]">
               <Icon className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -892,14 +900,14 @@ function EventFormModal({
             <input
               type="text" value={title} onChange={(e) => setTitle(e.target.value)}
               placeholder={typeDef.label} autoFocus
-              className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+              className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
             />
           </div>
           <div>
             <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Дата</span>
             <input
               type="date" value={date} onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+              className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
             />
           </div>
         </div>
@@ -909,7 +917,7 @@ function EventFormModal({
           <textarea
             value={desc} onChange={(e) => setDesc(e.target.value)} rows={2}
             placeholder="Опционально"
-            className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70 resize-none"
+            className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70 resize-none"
           />
         </div>
 
@@ -1017,14 +1025,14 @@ function TemplateFormModal({
             <input
               type="text" value={title} onChange={(e) => setTitle(e.target.value)}
               placeholder={typeDef.label} autoFocus
-              className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+              className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
             />
           </div>
           <div className="sm:col-span-2">
             <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Описание</span>
             <textarea
               value={desc} onChange={(e) => setDesc(e.target.value)} rows={2}
-              className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70 resize-none"
+              className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70 resize-none"
             />
           </div>
         </div>
@@ -1035,7 +1043,7 @@ function TemplateFormModal({
             <select
               value={recurType}
               onChange={(e) => setRecurType(e.target.value as 'monthly_day' | 'weekly_dow' | 'yearly_md')}
-              className="rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+              className="rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
             >
               <option value="monthly_day">Каждый месяц</option>
               <option value="weekly_dow">Каждую неделю</option>
@@ -1044,7 +1052,7 @@ function TemplateFormModal({
             {recurType === 'monthly_day' && (
               <select
                 value={recurValue} onChange={(e) => setRecurValue(Number(e.target.value))}
-                className="rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+                className="rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
               >
                 <option value={0}>Последний день месяца</option>
                 {Array.from({ length: 28 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}-е число</option>)}
@@ -1053,7 +1061,7 @@ function TemplateFormModal({
             {recurType === 'weekly_dow' && (
               <select
                 value={recurValue} onChange={(e) => setRecurValue(Number(e.target.value))}
-                className="rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+                className="rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
               >
                 {DOW_NAMES_RU.map((d, i) => <option key={i} value={i}>{d}</option>)}
               </select>
@@ -1062,13 +1070,13 @@ function TemplateFormModal({
               <>
                 <select
                   value={recurMonth} onChange={(e) => setRecurMonth(Number(e.target.value))}
-                  className="rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+                  className="rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
                 >
                   {MONTHS_RU.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
                 </select>
                 <select
                   value={recurValue} onChange={(e) => setRecurValue(Number(e.target.value))}
-                  className="rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
+                  className="rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none focus:ring-2 focus:ring-cyan-400/70"
                 >
                   {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}-е число</option>)}
                 </select>

@@ -151,6 +151,7 @@ body.pos-autozoom { zoom: 1; }
   .app-main { margin-left: var(--sidebar-width, 16rem); padding-top: 0; }
 }
 body.pos-mode .app-main { padding-top: 0 !important; }
+body.auth-mode .app-main { padding-top: 0; }
 
 /* === Печать: профили для чека (58 мм) и ценника (70×12 мм) === */
 

@@ -106,6 +106,27 @@ export default function Sidebar({ role }: { role: Role | null }) {
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 768px)');
+    const closeMobileMenu = () => { if (desktop.matches) setMobileOpen(false); };
+    desktop.addEventListener('change', closeMobileMenu);
+    return () => desktop.removeEventListener('change', closeMobileMenu);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [mobileOpen]);
+
+  useEffect(() => {
     const supabase = getBrowserSupabase();
     let active = true;
     const refreshUser = () => supabase.auth.getUser().then(({ data }) => {
@@ -203,7 +224,9 @@ export default function Sidebar({ role }: { role: Role | null }) {
         <button
           onClick={() => setMobileOpen(true)}
           aria-label="Открыть меню"
-          className="grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition hover:bg-white/5 hover:text-slate-100"
+          aria-expanded={mobileOpen}
+          aria-controls="crm-navigation"
+          className="grid h-11 w-11 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition hover:bg-white/5 hover:text-slate-100"
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -219,7 +242,8 @@ export default function Sidebar({ role }: { role: Role | null }) {
       )}
 
       <aside
-        className={`fixed top-0 left-0 z-50 md:z-30 flex h-full flex-col border-r transition-all duration-300 md:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"} ${collapsed ? "w-[4.5rem]" : "w-64"}`}
+        id="crm-navigation"
+        className={`fixed top-0 left-0 z-50 md:z-30 flex h-dvh w-64 flex-col border-r transition-all duration-300 md:translate-x-0 md:visible ${mobileOpen ? "visible translate-x-0" : "invisible -translate-x-full"} ${collapsed ? "md:w-[4.5rem]" : ""}`}
         style={{
           background: "linear-gradient(180deg, #04070e, #030509)",
           borderColor: "rgba(56,189,248,0.04)",
@@ -231,8 +255,7 @@ export default function Sidebar({ role }: { role: Role | null }) {
         <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 shadow-[0_2px_10px_rgba(56,189,248,0.2)] overflow-hidden">
           <Image src="/brand/refocus-logo.png" alt="Refocus" width={48} height={48} priority className="h-12 w-12 object-contain scale-110" />
         </div>
-        {!collapsed && (
-          <div>
+          <div className={collapsed ? 'md:hidden' : undefined}>
             <div className="font-kiona text-[13px] uppercase tracking-[0.25em] text-cyan-400 leading-normal">
               REFOCUS
             </div>
@@ -240,25 +263,22 @@ export default function Sidebar({ role }: { role: Role | null }) {
               CRM · Управление
             </div>
           </div>
-        )}
         <button
           onClick={() => setMobileOpen(false)}
           aria-label="Закрыть меню"
-          className="md:hidden ml-auto grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+          className="md:hidden ml-auto grid h-11 w-11 place-items-center rounded-lg text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2">
+      <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-3 px-2">
         {visibleSections.map((section) => (
           <div key={section.title} className="mb-3">
-            {!collapsed && (
-              <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+              <div className={`mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600 ${collapsed ? 'md:hidden' : ''}`}>
                 {section.title}
               </div>
-            )}
             {section.items.map((item) => {
               const active = isActive(item.href);
               const Icon = item.icon;
@@ -268,7 +288,8 @@ export default function Sidebar({ role }: { role: Role | null }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-150 ${
+                  onClick={() => setMobileOpen(false)}
+                  className={`group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-150 md:min-h-0 ${
                     active
                       ? "bg-cyan-500/10 text-cyan-300 shadow-[inset_3px_0_0_rgb(34,211,238),0_2px_8px_rgba(56,189,248,0.08)]"
                       : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
@@ -278,7 +299,7 @@ export default function Sidebar({ role }: { role: Role | null }) {
                     className={`h-[18px] w-[18px] shrink-0 ${active ? "text-cyan-400" : "text-slate-500 group-hover:text-slate-300"}`}
                     strokeWidth={1.8}
                   />
-                  {!collapsed && <span className="font-medium flex-1 truncate">{item.label}</span>}
+                  <span className={`font-medium flex-1 truncate ${collapsed ? 'md:hidden' : ''}`}>{item.label}</span>
                   {showBadge && (
                     <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white px-1.5 shadow-[0_0_8px_rgba(239,68,68,0.4)]">
                       {unreadFranchise}
@@ -298,30 +319,28 @@ export default function Sidebar({ role }: { role: Role | null }) {
 
       {/* User card + collapse */}
       <div className="border-t p-3" style={{ borderColor: "rgba(56,189,248,0.08)" }}>
-        <div className={`mb-2 flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
+        <div className={`mb-2 flex items-center gap-2 ${collapsed ? "md:justify-center" : ""}`}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 via-cyan-400 to-sky-400 text-xs font-bold text-white shadow-sm">
             {avatarLetter}
           </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
+            <div className={`min-w-0 flex-1 ${collapsed ? 'md:hidden' : ''}`}>
               <div className="truncate text-xs font-semibold text-slate-200">{userEmail || "Гость"}</div>
               <div className="truncate text-[10px] text-slate-500">{userEmail ? "активен" : "войти"}</div>
             </div>
-          )}
         </div>
 
         <div className="flex items-center gap-1">
           {userEmail ? (
             <button onClick={handleLogout}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors">
+              className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors md:min-h-0">
               <LogOut className="h-3.5 w-3.5" />
-              {!collapsed && "Выйти"}
+              <span className={collapsed ? 'md:hidden' : undefined}>Выйти</span>
             </button>
           ) : (
             <Link href="/login"
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-white/5 hover:text-slate-300 transition-colors">
+              className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-white/5 hover:text-slate-300 transition-colors md:min-h-0">
               <LogIn className="h-3.5 w-3.5" />
-              {!collapsed && "Войти"}
+              <span className={collapsed ? 'md:hidden' : undefined}>Войти</span>
             </Link>
           )}
           <button onClick={() => setCollapsed((v) => !v)}

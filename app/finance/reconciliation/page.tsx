@@ -551,35 +551,35 @@ export default function Page() {
         </div>
 
         {/* Навигация по периодам сверки */}
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white ring-1 ring-sky-100 px-4 py-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)]">
+        <div className="grid grid-cols-2 items-center gap-2 rounded-2xl bg-white ring-1 ring-sky-100 px-4 py-3 shadow-[0_8px_30px_rgba(15,23,42,0.45)] sm:flex sm:flex-wrap sm:justify-between">
           <button
             onClick={() => selectWeek(shiftReconciliationPeriodISO(activeWeekRef.current, -1))}
-            className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors sm:min-h-0 sm:px-3.5"
           >
             <ArrowLeft className="h-4 w-4" /> Предыдущая
           </button>
 
-          <div className="text-center">
+          <div className="col-span-2 row-start-1 text-center">
             <div className="text-[13px] font-semibold text-slate-800">{weekLabel}</div>
             <button
               onClick={() => selectWeek(getReconciliationPeriodStart(new Date()))}
-              className="mt-0.5 text-[11px] font-medium text-cyan-600 hover:text-cyan-800 transition-colors"
+              className="mt-0.5 min-h-10 px-2 text-[11px] font-medium text-cyan-600 hover:text-cyan-800 transition-colors sm:min-h-0"
             >
               Текущий период
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-1 sm:gap-2">
             <button
               onClick={() => selectWeek(shiftReconciliationPeriodISO(activeWeekRef.current, +1))}
               disabled={weekStartISO >= currentWeekStartISO}
-              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent sm:min-h-0 sm:px-3.5"
             >
               Следующая <ArrowRight className="h-4 w-4" />
             </button>
             <button
               onClick={manualRefresh}
-              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 transition-colors"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 transition-colors sm:min-h-0 sm:min-w-0"
               title="Обновить"
             >
               <RefreshCw className="h-4 w-4" />
@@ -742,7 +742,7 @@ function SoftPrimaryBtn({
     <button
       {...p}
       className={
-        'inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white ' +
+        'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-white sm:min-h-0 ' +
         'shadow-[0_4px_16px_rgba(34,211,238,0.28)] transition hover:bg-cyan-400 ' +
         'focus:outline-none focus:ring-2 focus:ring-cyan-300/70 ' +
         'disabled:opacity-50 disabled:cursor-not-allowed ' +
@@ -763,7 +763,7 @@ function SoftGhostBtn({
     <button
       {...p}
       className={
-        'inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ' +
+        'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-medium text-slate-700 sm:min-h-0 ' +
         'ring-1 ring-slate-200 transition hover:bg-slate-50 ' +
         'disabled:opacity-50 disabled:cursor-not-allowed ' +
         className
@@ -940,7 +940,7 @@ function BranchCard({
                     onChange={(e) => setInput(e.target.value)}
                     placeholder="После комиссии внесения"
                     inputMode="decimal"
-                    className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
+                    className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
                   />
                 </label>
                 <label>
@@ -952,7 +952,7 @@ function BranchCard({
                     onChange={(e) => setDepositFeeInput(e.target.value)}
                     placeholder="0, если комиссии не было"
                     inputMode="decimal"
-                    className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
+                    className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
                   />
                 </label>
               </div>
@@ -961,7 +961,7 @@ function BranchCard({
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Комментарий"
                 rows={2}
-                className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
+                className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-400/70"
               />
               <SoftPrimaryBtn onClick={handleSave} disabled={saving}>
                 {saving ? 'Сохраняю…' : 'Сохранить факт и комиссию'}
@@ -971,7 +971,7 @@ function BranchCard({
             <div className="text-[11px] text-slate-500">Изменение сверки доступно владельцу и управляющей.</div>
           )}
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
             {canEdit ? (
               <SoftPrimaryBtn
                 onClick={handleFix}
@@ -1129,7 +1129,7 @@ function OnlineCard({
               placeholder="Сколько реально пришло на счёт"
               inputMode="numeric"
               disabled={!canEdit}
-              className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
+              className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
             />
           </div>
 
@@ -1146,11 +1146,11 @@ function OnlineCard({
                   placeholder={String(DEFAULT_ACQUIRING_RATE_PCT)}
                   inputMode="decimal"
                   disabled={!canEdit}
-                  className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
+                  className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
                 />
               </div>
 
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <div className="text-[10px] text-slate-500 mb-1">Сумма, сом</div>
                 <input
                   value={inputCommission}
@@ -1158,7 +1158,7 @@ function OnlineCard({
                   placeholder="Авто от ставки"
                   inputMode="numeric"
                   disabled={!canEdit}
-                  className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
+                  className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
                 />
               </div>
             </div>
@@ -1177,7 +1177,7 @@ function OnlineCard({
             rows={2}
             placeholder="Например: «Много возвратов по онлайну»"
             disabled={!canEdit}
-            className="w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
+            className="w-full rounded-xl bg-white px-3 py-2.5 text-base sm:text-sm text-slate-900 ring-1 ring-sky-200 outline-none transition focus:ring-2 focus:ring-cyan-400/70 placeholder:text-slate-400 disabled:bg-slate-100"
           />
         </div>
         {!canEdit && <div className="text-[11px] text-slate-500">Изменение онлайн-сверки доступно владельцу и управляющей.</div>}

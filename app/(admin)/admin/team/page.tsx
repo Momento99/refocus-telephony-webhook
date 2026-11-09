@@ -662,7 +662,7 @@ function ManagerTeamView({
   onSelect: (employeeId: number | null) => void;
 }) {
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
+    <div className="mx-auto max-w-[1400px] py-6 sm:px-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-50">Команда 360°</h1>
@@ -673,7 +673,7 @@ function ManagerTeamView({
             <button
               key={value}
               onClick={() => onPeriod(value)}
-              className={`rounded-xl px-3 py-2 text-sm ${period === value ? 'bg-cyan-500 text-white' : 'bg-white text-slate-700'}`}
+              className={`min-h-11 rounded-xl px-3 py-2 text-sm sm:min-h-0 ${period === value ? 'bg-cyan-500 text-white' : 'bg-white text-slate-700'}`}
             >
               {value === 'week' ? 'Неделя' : value === 'month' ? 'Месяц' : 'Квартал'}
             </button>
@@ -681,7 +681,7 @@ function ManagerTeamView({
           <button
             onClick={() => void onRefresh()}
             disabled={loading}
-            className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-50"
+            className="min-h-11 rounded-xl bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-50 sm:min-h-0"
           >
             {loading ? 'Загрузка…' : 'Обновить'}
           </button>
@@ -765,13 +765,13 @@ function ManagerEmployeeOrders({ row, from, to, onClose }: { row: Row; from: str
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="manager-employee-orders-title">
-      <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5">
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div>
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-2xl bg-white p-5">
+        <div className="sticky top-0 z-10 mb-5 flex items-start justify-between gap-4 bg-white pb-3">
+          <div className="min-w-0 break-words">
             <h2 id="manager-employee-orders-title" className="text-lg font-semibold text-slate-900">{row.full_name}</h2>
             <p className="text-sm text-slate-500">Последние заказы за выбранный период</p>
           </div>
-          <button onClick={onClose} aria-label="Закрыть" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+          <button onClick={onClose} aria-label="Закрыть" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 sm:h-9 sm:w-9">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -846,13 +846,13 @@ function BigMetric({
     emerald: 'text-emerald-600',
   };
   return (
-    <div className="rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-100">
+    <div className="min-w-0 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-100">
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
         <Icon className={`h-3 w-3 ${iconTone[tone]}`} />
         {label}
       </div>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <div className="text-xl font-bold text-slate-900">{value}</div>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
+        <div className="min-w-0 break-words text-lg font-bold text-slate-900 sm:text-xl">{value}</div>
         {suffix && <div className="text-[10px] font-medium text-slate-500">{suffix}</div>}
       </div>
       {bar != null && bar > 0 && (

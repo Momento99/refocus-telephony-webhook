@@ -45,8 +45,8 @@ export default async function RootLayout({
           <div className="flex relative">
             <PosAwareSidebar role={role} />
 
-            <main className="app-main flex-1 min-h-screen transition-all duration-300">
-              <div className="mx-auto max-w-7xl px-5 pt-8 pb-10">
+            <main className="app-main min-w-0 flex-1 min-h-screen transition-all duration-300">
+              <div className="mx-auto max-w-7xl px-4 pt-6 pb-6 sm:px-5 sm:pt-8 sm:pb-10">
                 <ClientShell>{children}</ClientShell>
               </div>
             </main>

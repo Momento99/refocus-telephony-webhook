@@ -380,9 +380,9 @@ export default function PrintReceiptPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
+    <div className="max-w-3xl mx-auto py-8 sm:px-4">
       <h1 className="text-2xl font-bold mb-2">Печать чека</h1>
-      <p className="text-slate-600 mb-4">Источник данных: параметр {param ? param : '—'}.</p>
+      <p className="text-slate-400 mb-4">Источник данных: параметр {param ? param : '—'}.</p>
 
       {loading ? (
         <div className="text-slate-600">Загружаю заказ из базы…</div>
@@ -390,22 +390,22 @@ export default function PrintReceiptPage() {
         <div className="text-rose-600 text-sm mb-3">{err}</div>
       ) : null}
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-900">
         <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-[1.3]">
 {receiptText}
         </pre>
       </div>
 
-      <div className="mt-4 flex gap-3">
+      <div className="mt-4 flex flex-wrap gap-3">
         <button
           onClick={handlePrint}
-          className="inline-flex items-center rounded-xl px-4 py-2 bg-blue-600 text-white text-sm hover:bg-blue-700 transition"
+          className="inline-flex min-h-11 items-center rounded-xl px-4 py-2 bg-blue-600 text-white text-sm hover:bg-blue-700 transition sm:min-h-0"
         >
           Печать
         </button>
         <button
           onClick={() => navigator.clipboard?.writeText(receiptText)}
-          className="inline-flex items-center rounded-xl px-4 py-2 bg-white border border-slate-300 text-sm hover:bg-slate-50 transition"
+          className="inline-flex min-h-11 items-center rounded-xl px-4 py-2 bg-white border border-slate-300 text-sm text-slate-700 hover:bg-slate-50 transition sm:min-h-0"
         >
           Копировать текст
         </button>

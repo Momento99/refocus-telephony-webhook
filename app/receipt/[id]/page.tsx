@@ -122,16 +122,16 @@ export default function ReceiptPage() {
 
   if (!order) {
     return (
-      <div className="print-area receipt receipt-page p-3 text-[12px]">
+      <div className="print-area receipt receipt-page bg-white p-3 text-sm text-slate-900 print:text-[12px]">
         Загрузка чека…
       </div>
     );
   }
 
   return (
-    <div className="print-area receipt">
-      <div className="receipt-page mx-auto px-2 py-2 text-[12px] leading-[1.25] text-black">
-        <div className="text-center font-bold text-[14px]">
+    <div className="print-area receipt rounded-xl bg-white p-3 text-slate-900 sm:p-5 print:rounded-none print:p-0">
+      <div className="receipt-page mx-auto px-2 py-2 text-sm leading-snug text-black print:text-[12px] print:leading-[1.25]">
+        <div className="text-center font-bold text-base print:text-[14px]">
           {branch?.name || 'REFocus'}
         </div>
         <div className="text-center">Квитанция #{order.order_no}</div>

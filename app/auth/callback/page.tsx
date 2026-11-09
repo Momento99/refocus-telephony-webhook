@@ -63,7 +63,7 @@ export default function AuthCallback() {
       <div className="max-w-md rounded-2xl bg-white p-6 text-slate-900 ring-1 ring-sky-100">
         {error ? <>
           <p className="mb-4 text-sm text-rose-600">{error}</p>
-          <Link href="/login?mode=email" className="inline-flex rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500">Получить новую ссылку</Link>
+          <Link href="/login?mode=email" className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-cyan-600 px-4 py-2.5 text-base font-semibold text-white hover:bg-cyan-500 sm:w-auto sm:text-sm">Получить новую ссылку</Link>
         </> : <p>Подтверждаем вход…</p>}
       </div>
     </div>
