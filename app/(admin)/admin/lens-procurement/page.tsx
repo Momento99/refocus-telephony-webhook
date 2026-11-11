@@ -8,6 +8,7 @@ import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 import Link from 'next/link';
 import LensOnDemandCard from './LensOnDemandCard';
 import LensCostCard from './LensCostCard';
+import LensAutoArrivalSettings from './LensAutoArrivalSettings';
 import {
   AlertTriangle,
   BarChart3,
@@ -1488,6 +1489,8 @@ type BatchRow = {
   status: string;
   ordered_at?: string | null;
   received_at?: string | null;
+  auto_receive_at?: string | null;
+  auto_received_at?: string | null;
   comment?: string | null;
   to_location_id: string;
   lens_family: string;
@@ -2633,7 +2636,7 @@ export default function LensProcurementPage() {
       const { data: b, error: be } = await sb
         .from('lens_purchase_batches')
         .select(
-          'id,created_at,status,ordered_at,received_at,comment,to_location_id,lens_family,plan_days,safety,min_each,apply_min_to_all',
+          'id,created_at,status,ordered_at,received_at,auto_receive_at,auto_received_at,comment,to_location_id,lens_family,plan_days,safety,min_each,apply_min_to_all',
         )
         .eq('lens_family', selectedRpc)
         .eq('to_location_id', locationId)
@@ -2649,6 +2652,8 @@ export default function LensProcurementPage() {
             status: String(x.status ?? ''),
             ordered_at: x.ordered_at ?? null,
             received_at: x.received_at ?? null,
+            auto_receive_at: x.auto_receive_at ?? null,
+            auto_received_at: x.auto_received_at ?? null,
             comment: x.comment ?? null,
             to_location_id: String(x.to_location_id),
             lens_family: String(x.lens_family),
@@ -3519,6 +3524,23 @@ export default function LensProcurementPage() {
     setCommentOpen(true);
   }
 
+  async function deferAutoArrival(batchId: string) {
+    setBusyBatchId(batchId);
+    setErr(null);
+    try {
+      const { error } = await getBrowserSupabase().rpc('lens_purchase_auto_arrival_defer', {
+        p_batch_id: batchId,
+        p_days: 7,
+      });
+      if (error) throw error;
+      await loadBatches();
+    } catch (error) {
+      setErr(prettifyRpcError(error));
+    } finally {
+      setBusyBatchId('');
+    }
+  }
+
   async function confirmCommentModal() {
     const batchId = commentBatchId;
     const comment = commentText?.trim() ? commentText.trim() : null;
@@ -4346,6 +4368,8 @@ export default function LensProcurementPage() {
                 </div>
               </div>
 
+              {locationId && <LensAutoArrivalSettings key={locationId} locationId={locationId} />}
+
               {/* ✅ create panel */}
               {createOpen && (
                 <div className="mt-3 rounded-2xl bg-sky-500/5 ring-1 ring-sky-200/70 p-4">
@@ -4416,6 +4440,9 @@ export default function LensProcurementPage() {
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="text-sm font-semibold text-slate-900">{new Date(b.created_at).toLocaleString('ru-RU')}</div>
                             <StatusPill status={b.status} />
+                            {b.auto_received_at && (
+                              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 ring-1 ring-sky-200">Отмечено автоматически</span>
+                            )}
                             <div className="text-[11px] text-slate-500">
                               Строк: <span className="font-medium text-slate-700">{nf(b.items_cnt ?? 0)}</span> · Шт:{' '}
                               <span className="font-medium text-slate-700">{nf(b.qty_total ?? 0)}</span>
@@ -4427,6 +4454,12 @@ export default function LensProcurementPage() {
                             {' · '}
                             {b.received_at ? `Прибыло: ${new Date(b.received_at).toLocaleDateString('ru-RU')}` : 'Прибыло: —'}
                           </div>
+
+                          {b.status === 'in_transit' && b.auto_receive_at && (
+                            <div className="mt-1 text-xs text-sky-700">
+                              Автоприбытие {new Date(b.auto_receive_at).toLocaleDateString('ru-RU', { timeZone: 'Asia/Bishkek' })}
+                            </div>
+                          )}
 
                           {(() => {
                             const c = parseBatchComment(b.comment);
@@ -4473,6 +4506,12 @@ export default function LensProcurementPage() {
                             title="Ещё"
                             align="right"
                             items={[
+                              ...(b.status === 'in_transit' && b.auto_receive_at ? [{
+                                label: 'Продлить автоприбытие на 7 дней',
+                                onClick: () => void deferAutoArrival(b.id),
+                                icon: <Truck className="h-4 w-4" />,
+                                disabled: isBusy,
+                              }] : []),
                               {
                                 label: 'Excel по партии',
                                 onClick: () => void exportExcelForBatch(b.id),
