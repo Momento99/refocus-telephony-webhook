@@ -13,6 +13,8 @@ import DisciplinesTab from "./DisciplinesTab";
 import ManagementTab from "./ManagementTab";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
 import toast from "react-hot-toast";
+import { addDatedBonusesToPeriod, allocateDatedBonuses, datedPayrollBonuses, unallocatedMonthlyAdjustments,
+  type PayrollBonusAdjustment } from "@/lib/payrollDailyBonus";
 
 /* ---------- Supabase клиент (с сессией пользователя — нужен для UPDATE под RLS) ---------- */
 const sb = getBrowserSupabase();
@@ -295,6 +297,16 @@ function rowsToAdjMap(rows: any[] | null | undefined) {
     m.set(key, (m.get(key) || 0) + num(r.adjustments_sum));
   }
   return m;
+}
+
+async function fetchDatedPayrollBonuses(from: string, endExclusive: string, employeeId?: number) {
+  let query = sb.from("payroll_adjustments")
+    .select("id,employee_id,branch_id,period,amount,kind,reason")
+    .eq("kind", "bonus").gte("period", from).lt("period", endExclusive);
+  if (employeeId !== undefined) query = query.eq("employee_id", employeeId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return datedPayrollBonuses((data || []) as PayrollBonusAdjustment[], from, endExclusive);
 }
 
 /* ---------- элементы управления ---------- */
@@ -820,9 +832,10 @@ export default function Page() {
         });
 
         if (error) throw error;
+        const bonuses = await fetchDatedPayrollBonuses(activeWeek!.start, activeWeek!.endExclusive);
         if (cancelled) return;
 
-        setWeekPeriodMap(rowsToNetMap((data ?? []) as PeriodCanonicalRow[]));
+        setWeekPeriodMap(addDatedBonusesToPeriod(rowsToNetMap((data ?? []) as PeriodCanonicalRow[]), bonuses));
       } catch (err: any) {
         console.error("loadWeekCanonical error", err);
         if (!cancelled) {
@@ -1055,13 +1068,16 @@ export default function Page() {
 
       if (error) throw error;
 
-      const daily = ((rows ?? []) as DailyCanonicalRow[])
+      const canonicalDaily = ((rows ?? []) as DailyCanonicalRow[])
         .slice()
         .sort((a, b) => String(a.day).localeCompare(String(b.day)))
         .map((r) => ({
           ...r,
           plan_premium: 0,
         }));
+
+      const datedBonuses = await fetchDatedPayrollBonuses(rangeStart, shiftYmd(rangeEndInclusive, 1), e.id);
+      const { days: daily } = allocateDatedBonuses(canonicalDaily, datedBonuses, e.id, e.fullName);
 
       // Время смены (вход–выход) по дням — из attendance_sessions
       try {
@@ -1158,9 +1174,14 @@ export default function Page() {
       if (errAdj) throw errAdj;
 
       const adj = (adjustmentRows || []).reduce((sum, row) => sum + num(row.adjustments_sum), 0);
+      const monthBonuses = activeWeek
+        ? await fetchDatedPayrollBonuses(monthStart, monthEndExcl, e.id)
+        : datedBonuses;
 
       setDailyRows(daily);
-      setDailyAdj(adj);
+      // The monthly total already includes this ledger amount once. Its daily
+      // allocation changes presentation, while the week map adds only its week.
+      setDailyAdj(unallocatedMonthlyAdjustments(adj, monthBonuses, e.id));
 
       // Бонус за возврат долгов (Беловодск): сумма за период + разбивка по заказам.
       setDailyDebtBonus((activeWeek ? weekDebtMap : monthDebtMap).get(e.id) ?? 0);
@@ -3385,7 +3406,10 @@ export default function Page() {
                           </td>
                           <td className="px-3 py-2 text-right text-slate-800">{fmtHM(r.hours)}</td>
                           <td className="px-3 py-2 text-right text-slate-800">{fmt(r.hour_pay)}</td>
-                          <td className="px-3 py-2 text-right text-slate-800">{fmt(r.bonus)}</td>
+                          <td className="px-3 py-2 text-right text-slate-800" title={r.dated_bonus_reason || undefined}>
+                            {fmt(r.bonus)}
+                            {num(r.dated_bonus) !== 0 && <div className="mt-0.5 text-[10px] text-slate-500">Ручное начисление</div>}
+                          </td>
                           <td className={cx("px-3 py-2 text-right", isPromoter ? "text-slate-300" : hasPenalty ? "text-rose-600 font-medium" : "text-slate-800")}>
                             {isPromoter ? "—" : fmt(r.penalties)}
                           </td>
