@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { orderReadySkipReason, reconcileWhatsappQueue } from '@/lib/whatsappDelivery';
+import { orderReadySkipReason, reconcileWhatsappQueue, reconcileWhatsappThread, replayWhatsappDeliveryReceipts, pruneWhatsappDeliveryReceipts } from '@/lib/whatsappDelivery';
+import { sendPendingWhatsappText } from '@/lib/whatsappSend';
+import { expireStaleWhatsappFollowups, sendPendingWhatsappFollowup, type WhatsappFollowupItem as QueueItem } from '@/lib/whatsappFollowup';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -16,22 +18,7 @@ export const maxDuration = 60;
  * Security: требует заголовок `authorization: bearer <WHATSAPP_CRON_SECRET>`.
  */
 
-const CLOUD_API_BASE = 'https://graph.facebook.com/v21.0';
 const BATCH_SIZE = 25;
-
-type QueueItem = {
-  id: string;
-  customer_id: number;
-  order_id: number;
-  branch_id: number;
-  phone_number: string;
-  scenario: string;
-  template_name: string;
-  template_language: string;
-  template_variables: Record<string, string> | null;
-  attempts: number;
-  created_at: string;
-};
 
 type Config = {
   phone_number_id: string | null;
@@ -47,55 +34,6 @@ async function loadConfig(): Promise<Config | null> {
     .eq('id', 1)
     .maybeSingle();
   return (data as Config | null) ?? null;
-}
-
-async function sendTemplate(
-  cfg: Config,
-  item: QueueItem,
-): Promise<{ ok: true; waMessageId: string } | { ok: false; error: string }> {
-  if (!cfg.phone_number_id || !cfg.access_token) {
-    return { ok: false, error: 'Config missing phone_number_id or access_token' };
-  }
-
-  const vars = item.template_variables ?? {};
-  const params = Object.keys(vars)
-    .sort((a, b) => Number(a) - Number(b))
-    .map((k) => ({ type: 'text', text: String(vars[k] ?? '') }));
-
-  const body = {
-    messaging_product: 'whatsapp',
-    to: item.phone_number,
-    type: 'template',
-    template: {
-      name: item.template_name,
-      language: { code: item.template_language || 'ru' },
-      components: params.length ? [{ type: 'body', parameters: params }] : [],
-    },
-  };
-
-  try {
-    const r = await fetch(`${CLOUD_API_BASE}/${cfg.phone_number_id}/messages`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${cfg.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-    const data: any = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const err = data?.error;
-      return {
-        ok: false,
-        error: `${r.status} ${err?.code ?? ''} ${err?.message ?? JSON.stringify(data)}`,
-      };
-    }
-    const waMessageId: string | undefined = data?.messages?.[0]?.id;
-    if (!waMessageId) return { ok: false, error: 'No message id in response' };
-    return { ok: true, waMessageId };
-  } catch (e: any) {
-    return { ok: false, error: `Fetch error: ${e?.message ?? e}` };
-  }
 }
 
 async function createOutboundThreadAndMessage(
@@ -172,9 +110,17 @@ async function createOutboundThreadAndMessage(
 
   await admin
     .from('whatsapp_threads')
-    .update({ last_message_at: now, status: 'waiting_customer' })
+    .update({ last_message_at: now })
     .eq('id', threadId);
 
+  try {
+    await replayWhatsappDeliveryReceipts(admin, waMessageId);
+    await reconcileWhatsappThread(admin, threadId);
+  } catch (error) {
+    // The provider already accepted this template. Recording the queue result must
+    // still finish so a metadata reconciliation error cannot trigger another send.
+    console.error('[wa scheduler] thread state reconciliation failed', { threadId, error: String(error) });
+  }
   return (msg?.id as string) ?? null;
 }
 
@@ -195,8 +141,7 @@ async function markSlaBreaches(admin: ReturnType<typeof getSupabaseAdmin>): Prom
     .update({ sla_breached: true })
     .eq('status', 'waiting_seller')
     .eq('sla_breached', false)
-    .lte('first_customer_message_at', cutoff)
-    .is('first_seller_response_at', null)
+    .lte('last_customer_message_at', cutoff)
     .select('id');
   if (error) {
     console.error('[wa scheduler] mark sla breach failed', error);
@@ -210,8 +155,14 @@ async function runScheduler(req: Request) {
   if (authErr) return NextResponse.json({ error: authErr }, { status: 401 });
 
   const admin = getSupabaseAdmin();
+  const workDeadline = Date.now() + 40_000;
+
+  // Bounded cleanup also runs while outbound messaging is disabled.
+  try { await pruneWhatsappDeliveryReceipts(admin); }
+  catch (error) { console.error('[wa scheduler] receipt cleanup failed', String(error)); }
 
   // SLA breach detection — работает всегда, независимо от конфига.
+  const staleFollowups = await expireStaleWhatsappFollowups(admin);
   const breached = await markSlaBreaches(admin);
 
   const cfg = await loadConfig();
@@ -241,15 +192,13 @@ async function runScheduler(req: Request) {
     .limit(BATCH_SIZE);
 
   if (eSel) return NextResponse.json({ error: eSel.message }, { status: 500 });
-  if (!items || items.length === 0) {
-    return NextResponse.json({ ok: true, processed: 0 });
-  }
 
   let sent = 0;
   let failed = 0;
   let skipped = 0;
 
-  for (const raw of items) {
+  for (const raw of items || []) {
+    if (Date.now() >= workDeadline) break;
     const item = raw as QueueItem;
 
     if (item.scenario === 'order_ready') {
@@ -272,46 +221,13 @@ async function runScheduler(req: Request) {
     // Note (2026-04-25): consent re-check removed per business decision —
     // we send Utility templates to all customers without explicit opt-in.
     // See migration 20260425b_drop_whatsapp_optin_requirement.sql.
-    const result = await sendTemplate(cfg, item);
-
-    if (result.ok) {
-      const msgId = await createOutboundThreadAndMessage(item, result.waMessageId);
-      const { error: queueError } = await admin
-        .from('whatsapp_followup_queue')
-        .update({
-          // Meta accepted the request; do not resend if local recording failed.
-          status: msgId ? 'sent' : 'failed',
-          sent_at: new Date().toISOString(),
-          sent_message_id: msgId,
-          error_message: msgId ? null : `Meta accepted ${result.waMessageId}; local message recording failed; verify before retrying`,
-          attempts: (item.attempts ?? 0) + 1,
-        })
-        .eq('id', item.id);
-      if (queueError) {
-        console.error('[wa scheduler] accepted message queue update failed', {
-          queueId: item.id, waMessageId: result.waMessageId, error: queueError.message,
-        });
-        return NextResponse.json({ error: 'Failed to record accepted WhatsApp message' }, { status: 500 });
-      }
-      if (msgId) {
-        await reconcileWhatsappQueue(admin, msgId);
-        sent++;
-      } else {
-        failed++;
-      }
-    } else {
-      const nextAttempts = (item.attempts ?? 0) + 1;
-      const tooMany = nextAttempts >= 3;
-      await admin
-        .from('whatsapp_followup_queue')
-        .update({
-          status: tooMany ? 'failed' : 'pending',
-          error_message: result.error,
-          attempts: nextAttempts,
-        })
-        .eq('id', item.id);
-      failed++;
-    }
+    const outcome = await sendPendingWhatsappFollowup(admin, item, cfg, {
+      recordAccepted: createOutboundThreadAndMessage,
+    });
+    if (outcome.messageId) await reconcileWhatsappQueue(admin, outcome.messageId);
+    if (outcome.state === 'sent') sent++;
+    else if (outcome.state === 'skipped') skipped++;
+    else failed++;
   }
 
   // === 2. Отправка свободного текста (pending outbound, созданные в POS inbox) ===
@@ -319,8 +235,7 @@ async function runScheduler(req: Request) {
     .from('whatsapp_messages')
     .select('id, thread_id, body')
     .eq('direction', 'outbound')
-    .eq('status', 'pending')
-    .is('wa_message_id', null)
+    .in('status', ['pending', 'sending'])
     .eq('message_type', 'text')
     .order('created_at', { ascending: true })
     .limit(BATCH_SIZE);
@@ -329,208 +244,32 @@ async function runScheduler(req: Request) {
   let textsFailed = 0;
 
   for (const raw of pendingTexts ?? []) {
-    const msg = raw as { id: string; thread_id: string; body: string | null };
-    if (!msg.body) {
-      await admin
-        .from('whatsapp_messages')
-        .update({ status: 'failed', error_message: 'empty body' })
-        .eq('id', msg.id);
-      textsFailed++;
-      continue;
-    }
-    const { data: thread } = await admin
-      .from('whatsapp_threads')
-      .select('phone_number, first_seller_response_at')
-      .eq('id', msg.thread_id)
-      .maybeSingle();
-    if (!thread) {
-      await admin
-        .from('whatsapp_messages')
-        .update({ status: 'failed', error_message: 'thread not found' })
-        .eq('id', msg.id);
-      textsFailed++;
-      continue;
-    }
-
-    try {
-      const r = await fetch(`${CLOUD_API_BASE}/${cfg.phone_number_id}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${cfg.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: thread.phone_number,
-          type: 'text',
-          text: { body: msg.body, preview_url: false },
-        }),
-      });
-      const data: any = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const err = data?.error;
-        await admin
-          .from('whatsapp_messages')
-          .update({
-            status: 'failed',
-            error_code: String(err?.code ?? r.status),
-            error_message: err?.message ?? JSON.stringify(data),
-          })
-          .eq('id', msg.id);
-        textsFailed++;
-        continue;
-      }
-      const waId: string | undefined = data?.messages?.[0]?.id;
-      await admin
-        .from('whatsapp_messages')
-        .update({ status: 'sent', wa_message_id: waId ?? null })
-        .eq('id', msg.id);
-      if (!thread.first_seller_response_at) {
-        await admin
-          .from('whatsapp_threads')
-          .update({ first_seller_response_at: new Date().toISOString() })
-          .eq('id', msg.thread_id);
-      }
-      textsSent++;
-    } catch (e: any) {
-      await admin
-        .from('whatsapp_messages')
-        .update({ status: 'failed', error_message: `fetch: ${e?.message ?? e}` })
-        .eq('id', msg.id);
-      textsFailed++;
-    }
+    if (Date.now() >= workDeadline) break;
+    const outcome = await sendPendingWhatsappText(admin, raw.id as string, { config: cfg });
+    if (outcome.body.ok && outcome.body.status !== 'sending') textsSent++;
+    else if (!outcome.body.ok) textsFailed++;
   }
 
   // === 3. Instagram Direct — отправка pending outbound сообщений ===
-  const ig = await runInstagramOutbound(admin);
+  const ig = await markInstagramSlaBreaches(admin);
 
   return NextResponse.json({
     ok: true,
     sla_breaches_marked: breached,
-    followups: { processed: items.length, sent, failed, skipped },
+    followups: { processed: sent + failed + skipped, sent, failed, skipped, stale_failed: staleFollowups },
     texts: { sent: textsSent, failed: textsFailed },
     instagram: ig,
   });
 }
 
-type IgConfig = {
-  ig_business_account_id: string | null;
-  page_access_token: string | null;
-  is_active: boolean | null;
-};
-
-async function runInstagramOutbound(
-  admin: ReturnType<typeof getSupabaseAdmin>,
-): Promise<{ sent: number; failed: number; skipped?: string }> {
-  // SLA breach detection for IG — same logic as WhatsApp.
+/** Instagram sending remains owned by the existing one-minute database safety net. */
+async function markInstagramSlaBreaches(admin: ReturnType<typeof getSupabaseAdmin>) {
   const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
-  await admin
-    .from('instagram_threads')
-    .update({ sla_breached: true })
-    .eq('status', 'waiting_seller')
-    .eq('sla_breached', false)
-    .lte('first_customer_message_at', cutoff)
-    .is('first_seller_response_at', null);
-
-  const { data: cfgRow } = await admin
-    .from('instagram_api_config')
-    .select('ig_business_account_id, page_access_token, is_active')
-    .eq('id', 1)
-    .maybeSingle();
-  const cfg = (cfgRow as IgConfig | null) ?? null;
-
-  if (!cfg || !cfg.is_active) return { sent: 0, failed: 0, skipped: 'instagram inactive' };
-  if (!cfg.ig_business_account_id || !cfg.page_access_token) {
-    return { sent: 0, failed: 0, skipped: 'instagram credentials missing' };
-  }
-
-  const { data: pending } = await admin
-    .from('instagram_messages')
-    .select('id, thread_id, body, message_type')
-    .eq('direction', 'outbound')
-    .eq('status', 'pending')
-    .is('ig_message_id', null)
-    .eq('message_type', 'text')
-    .order('created_at', { ascending: true })
-    .limit(BATCH_SIZE);
-
-  let sent = 0;
-  let failed = 0;
-
-  for (const raw of pending ?? []) {
-    const msg = raw as { id: string; thread_id: string; body: string | null; message_type: string };
-    if (!msg.body) {
-      await admin
-        .from('instagram_messages')
-        .update({ status: 'failed', error_message: 'empty body' })
-        .eq('id', msg.id);
-      failed++;
-      continue;
-    }
-    const { data: thread } = await admin
-      .from('instagram_threads')
-      .select('ig_user_id, first_seller_response_at')
-      .eq('id', msg.thread_id)
-      .maybeSingle();
-    if (!thread) {
-      await admin
-        .from('instagram_messages')
-        .update({ status: 'failed', error_message: 'thread not found' })
-        .eq('id', msg.id);
-      failed++;
-      continue;
-    }
-
-    try {
-      // Instagram Login path — endpoint is graph.instagram.com/me/messages,
-      // not graph.facebook.com/{ig-id}/messages as in the old FB Login flow.
-      const r = await fetch(
-        `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(cfg.page_access_token)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recipient: { id: thread.ig_user_id },
-            message: { text: msg.body },
-          }),
-        },
-      );
-      const data: any = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const err = data?.error;
-        await admin
-          .from('instagram_messages')
-          .update({
-            status: 'failed',
-            error_code: String(err?.code ?? r.status),
-            error_message: err?.message ?? JSON.stringify(data),
-          })
-          .eq('id', msg.id);
-        failed++;
-        continue;
-      }
-      const mid: string | undefined = data?.message_id;
-      await admin
-        .from('instagram_messages')
-        .update({ status: 'sent', ig_message_id: mid ?? null })
-        .eq('id', msg.id);
-      if (!thread.first_seller_response_at) {
-        await admin
-          .from('instagram_threads')
-          .update({ first_seller_response_at: new Date().toISOString() })
-          .eq('id', msg.thread_id);
-      }
-      sent++;
-    } catch (e: any) {
-      await admin
-        .from('instagram_messages')
-        .update({ status: 'failed', error_message: `fetch: ${e?.message ?? e}` })
-        .eq('id', msg.id);
-      failed++;
-    }
-  }
-
-  return { sent, failed };
+  const { error } = await admin.from('instagram_threads').update({ sla_breached: true })
+    .eq('status', 'waiting_seller').eq('sla_breached', false)
+    .lte('first_customer_message_at', cutoff).is('first_seller_response_at', null);
+  if (error) console.error('[wa scheduler] Instagram SLA check failed', error.message);
+  return { sent: 0, failed: 0, skipped: 'Instagram sending is handled by the database safety net' };
 }
 
 export async function POST(req: Request) {

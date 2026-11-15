@@ -6,12 +6,17 @@ import { applyWhatsappDeliveryStatus, orderReadySkipReason, reconcileWhatsappQue
 type Reply = { data: unknown; status?: number };
 function fixture(replies: Reply[]) {
   const requests: Array<{ url: URL; method: string; body: Record<string, unknown> | null }> = [];
+  const receiptRequests: Array<{ url: URL; method: string; body: Record<string, unknown> | null }> = [];
   const pending = [...replies];
   const admin = createClient('https://delivery-test.invalid', 'test-service-key', {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { fetch: async (input, init) => {
       const request = new Request(input, init);
       const body = request.method === 'GET' ? null : await request.json();
+      if (new URL(request.url).pathname.endsWith('/whatsapp_delivery_receipts')) {
+        receiptRequests.push({ url: new URL(request.url), method: request.method, body });
+        return new Response('[]', { headers: { 'content-type': 'application/json' } });
+      }
       requests.push({ url: new URL(request.url), method: request.method, body });
       const reply = pending.shift();
       assert.ok(reply, 'Unexpected database request');
@@ -20,7 +25,7 @@ function fixture(replies: Reply[]) {
       });
     } },
   });
-  return { admin, requests, done: () => assert.equal(pending.length, 0) };
+  return { admin, requests, receiptRequests, done: () => assert.equal(pending.length, 0) };
 }
 
 const failure = {
@@ -76,13 +81,15 @@ test('a payment rejection marks the linked queue failed and does not schedule a 
   assert.equal('attempts' in queue.body!, false);
   assert.equal('scheduled_at' in queue.body!, false);
   assert.ok(f.requests.every(r => r.method === 'GET' || r.method === 'PATCH'));
+  assert.equal(f.receiptRequests.length, 1);
+  assert.equal(f.receiptRequests[0].body?.wa_message_id, failure.id);
 });
 
 test('a delayed sent callback cannot overwrite an existing failed, delivered, or read status', async () => {
   const f = fixture([{ data: [] }, { data: { id: 'msg-1' } }, { data: failedRow }, { data: [] }]);
   await applyWhatsappDeliveryStatus(f.admin, { id: 'wamid.payment', status: 'sent' });
   f.done();
-  assert.equal(f.requests[0].url.searchParams.get('status'), 'in.(pending,sent)');
+  assert.equal(f.requests[0].url.searchParams.get('status'), 'in.(pending,sending,sent)');
   assert.equal(f.requests[3].body?.status, 'failed');
 });
 
@@ -91,7 +98,7 @@ test('read is not downgraded by a delayed delivered callback', async () => {
     { data: { status: 'read', error_code: null, error_message: null } }, { data: [] }]);
   await applyWhatsappDeliveryStatus(f.admin, { id: 'wamid.payment', status: 'delivered' });
   f.done();
-  assert.equal(f.requests[0].url.searchParams.get('status'), 'in.(pending,sent,failed,delivered)');
+  assert.equal(f.requests[0].url.searchParams.get('status'), 'in.(pending,sending,sent,failed,delivered)');
   // Only a previous provider delivery failure is cleared; cancelled rows remain untouched.
   assert.equal(f.requests[3].url.searchParams.get('status'), 'eq.failed');
   assert.equal(f.requests[3].url.searchParams.get('error_message'), 'like.WhatsApp delivery %');
@@ -124,4 +131,27 @@ test('duplicate callbacks retry queue synchronization when the prior queue write
     { status: 403, data: { message: 'Queue write denied', code: '42501' } }]);
   await assert.rejects(applyWhatsappDeliveryStatus(f.admin, failure), /Save WhatsApp queue delivery: Queue write denied/);
   f.done();
+});
+
+test('late provider failure reopens the unanswered customer request and removes false SLA response', async () => {
+  const customerTime = '2026-11-15T09:00:00Z';
+  const f = fixture([
+    { data: [] }, { data: { id: 'msg-1', thread_id: 'thread-1' } }, { data: failedRow }, { data: [] },
+    { data: { auto_welcome_text: null } },
+    { data: { id: 'thread-1', status: 'waiting_customer', updated_at: '2026-11-15T09:01:00Z',
+      first_customer_message_at: customerTime, first_seller_response_at: '2026-11-15T09:01:00Z',
+      last_customer_message_at: null, last_message_at: '2026-11-15T09:01:00Z', farewell_sent_at: null, closed_at: null } },
+    { data: [
+      { id: 'in-1', direction: 'inbound', message_type: 'text', body: 'Когда готов заказ?', status: 'delivered', created_at: customerTime },
+      { id: 'msg-1', direction: 'outbound', message_type: 'text', body: 'Заказ готов завтра', status: 'failed', created_at: '2026-11-15T09:01:00Z' },
+    ] },
+    { data: { id: 'thread-1' } },
+  ]);
+  await applyWhatsappDeliveryStatus(f.admin, failure);
+  f.done();
+  const patch = f.requests.at(-1)!;
+  assert.equal(patch.url.pathname, '/rest/v1/whatsapp_threads');
+  assert.equal(patch.body?.status, 'waiting_seller');
+  assert.equal(patch.body?.last_customer_message_at, customerTime);
+  assert.equal(patch.body?.first_seller_response_at, null);
 });

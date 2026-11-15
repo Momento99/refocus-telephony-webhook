@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { isLikelyFarewell } from '@/lib/farewellDetect';
-import { applyWhatsappDeliveryStatus, type WhatsappDeliveryStatus } from '@/lib/whatsappDelivery';
+import { isCustomerAcknowledgementOrPositiveClosure } from '@/lib/farewellDetect';
+import { applyWhatsappDeliveryStatus, reconcileWhatsappThread, type WhatsappDeliveryStatus } from '@/lib/whatsappDelivery';
+import { archiveWhatsappMediaAfterReceive, incomingWhatsappMedia, WhatsappMediaError } from '@/lib/whatsappMedia';
+import { verifyWhatsappWebhookSignature } from '@/lib/whatsappWebhookVerification';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 60;
+let warnedAboutMissingAppSecret = false;
 
 /**
  * WhatsApp Cloud API Webhook
@@ -150,7 +154,7 @@ async function findOrCreateThread(phone: string): Promise<string | null> {
 
   if (error) {
     console.error('[whatsapp webhook] failed to create thread', error);
-    return null;
+    throw new Error('WhatsApp thread could not be created');
   }
   return newThread.id as string;
 }
@@ -182,42 +186,71 @@ async function ingestMessage(m: MetaMessage) {
     return;
   }
 
+  // Meta retries deliveries. Resolve an existing row before creating another thread,
+  // especially if a cashier closed the original thread between two webhook attempts.
+  const prior = await admin.from('whatsapp_messages')
+    .select('id,thread_id,media_url,media_mime_type').eq('wa_message_id', m.id).maybeSingle();
+  if (prior.error) throw new Error('WhatsApp duplicate lookup failed');
+  if (prior.data) {
+    const media = incomingWhatsappMedia(m);
+    if (media && !prior.data.media_url) {
+      const repaired = await admin.from('whatsapp_messages').update(media).eq('id', prior.data.id).is('media_url', null);
+      if (repaired.error) throw new Error('WhatsApp media reference could not be saved');
+      prior.data.media_url = media.media_url;
+      prior.data.media_mime_type = media.media_mime_type;
+    }
+    if (media) await archiveIncomingMedia(prior.data);
+    await reconcileWhatsappThread(admin, prior.data.thread_id);
+    return;
+  }
+
   const threadId = await findOrCreateThread(phone);
   if (!threadId) return;
 
   const body = messageBody(m);
   const mType = messageTypeMap(m.type);
   const createdAt = new Date(Number(m.timestamp) * 1000).toISOString();
+  const media = incomingWhatsappMedia(m);
 
-  const { error: eMsg } = await admin.from('whatsapp_messages').insert({
+  const { data: savedMessage, error: eMsg } = await admin.from('whatsapp_messages').insert({
     thread_id: threadId,
     direction: 'inbound',
     wa_message_id: m.id,
     message_type: mType,
     body,
+    ...(media || {}),
     status: 'delivered',
     created_at: createdAt,
-  });
+  }).select('id,thread_id,media_url,media_mime_type').single();
 
   if (eMsg) {
-    if ((eMsg as any).code !== '23505') {
-      console.error('[whatsapp webhook] msg insert error', eMsg);
+    if (eMsg.code === '23505') {
+      // A concurrent webhook won the insert. Its row is the canonical message;
+      // do not increment unread a second time, but still retry media preservation.
+      const duplicate = await admin.from('whatsapp_messages')
+        .select('id,thread_id,media_url,media_mime_type').eq('wa_message_id', m.id).single();
+      if (duplicate.error) throw new Error('WhatsApp duplicate message could not be read');
+      if (media) await archiveIncomingMedia(duplicate.data);
+      await reconcileWhatsappThread(admin, duplicate.data.thread_id);
+      return;
     }
-    return; // duplicate или ошибка
+    console.error('[whatsapp webhook] msg insert error', eMsg);
+    throw new Error('WhatsApp message could not be saved');
   }
 
   // Обновить тред: first_customer_message_at если не стоит, last_message_at, unread_count++
-  const { data: thread } = await admin
+  const { data: thread, error: threadError } = await admin
     .from('whatsapp_threads')
     .select('first_customer_message_at, unread_count, farewell_sent_at')
     .eq('id', threadId)
     .maybeSingle();
+  if (threadError || !thread) throw new Error('WhatsApp thread could not be read');
 
   // Если продавец уже попрощался и входящее — просто ack (спасибо/хорошего дня),
   // не поднимаем SLA-маркеры и не вспыхиваем в inbox'е. Тред остаётся «закрытым
   // по смыслу», но сообщение всё равно сохраняется для истории.
   const postFarewellAck =
-    !!thread?.farewell_sent_at && isLikelyFarewell(body);
+    !!thread.farewell_sent_at && (mType === 'text' || mType === 'reaction') && isCustomerAcknowledgementOrPositiveClosure(body);
 
   const patch: Record<string, unknown> = {
     last_message_at: createdAt,
@@ -235,7 +268,15 @@ async function ingestMessage(m: MetaMessage) {
     if (thread?.farewell_sent_at) patch.farewell_sent_at = null;
   }
 
-  await admin.from('whatsapp_threads').update(patch).eq('id', threadId);
+  const threadUpdate = await admin.from('whatsapp_threads').update(patch).eq('id', threadId);
+  if (threadUpdate.error) throw new Error('WhatsApp thread could not be updated');
+  await reconcileWhatsappThread(admin, threadId);
+  if (media) await archiveIncomingMedia(savedMessage);
+}
+
+async function archiveIncomingMedia(message: { id: string; media_url: string | null; media_mime_type: string | null }) {
+  const result = await archiveWhatsappMediaAfterReceive(getSupabaseAdmin(), message);
+  if (!result.archived) console.error('[whatsapp webhook] media unavailable', { messageId: message.id, code: result.permanentError });
 }
 
 async function ingestStatus(s: MetaStatus) {
@@ -245,13 +286,21 @@ async function ingestStatus(s: MetaStatus) {
 export async function POST(req: Request) {
   let payload: MetaPayload;
   try {
-    payload = await req.json();
+    const rawBody = new Uint8Array(await req.arrayBuffer());
+    const verification = verifyWhatsappWebhookSignature(rawBody, req.headers.get('x-hub-signature-256'), process.env.WHATSAPP_APP_SECRET);
+    if (!verification.ok) return NextResponse.json({ ok: false, error: 'BAD_SIGNATURE' }, { status: 403 });
+    if (!verification.configured && !warnedAboutMissingAppSecret) {
+      warnedAboutMissingAppSecret = true;
+      console.warn('[whatsapp webhook] WHATSAPP_APP_SECRET is not configured; signature verification is unavailable');
+    }
+    payload = JSON.parse(new TextDecoder().decode(rawBody));
   } catch {
     return NextResponse.json({ ok: true });
   }
 
-  let statusSaveFailed = false;
-  // Return a retriable response if a delivery status could not be persisted.
+  let saveFailed = false;
+  // Acknowledge only after durable persistence. Otherwise Meta must retry rather
+  // than silently lose a customer question or a media identifier.
   try {
     const entries = payload.entry ?? [];
     for (const entry of entries) {
@@ -263,7 +312,8 @@ export async function POST(req: Request) {
           try {
             await ingestMessage(m);
           } catch (e) {
-            console.error('[whatsapp webhook] ingestMessage fail', e);
+            console.error('[whatsapp webhook] ingestMessage fail', e instanceof WhatsappMediaError ? e.code : 'message_save_failed');
+            saveFailed = true;
           }
         }
         for (const s of value.statuses ?? []) {
@@ -271,15 +321,16 @@ export async function POST(req: Request) {
             await ingestStatus(s);
           } catch (e) {
             console.error('[whatsapp webhook] ingestStatus fail', e);
-            statusSaveFailed = true;
+            saveFailed = true;
           }
         }
       }
     }
   } catch (e) {
     console.error('[whatsapp webhook] processing error', e);
+    saveFailed = true;
   }
 
-  if (statusSaveFailed) return NextResponse.json({ ok: false }, { status: 503 });
+  if (saveFailed) return NextResponse.json({ ok: false }, { status: 503 });
   return NextResponse.json({ ok: true });
 }

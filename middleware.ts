@@ -13,6 +13,9 @@ const PUBLIC_ASSET_PATH = /^\/(?:brand|fonts|franchise|franchise-schemas|geo|pos
 const WEBHOOKS = new Set(['/api/whatsapp/webhook', '/api/instagram/webhook', '/api/telephony/zadarma']);
 // Installed POS clients trigger delivery of an already queued message by UUID.
 const LEGACY_POS_SEND_ROUTES = new Set(['/api/whatsapp/send', '/api/instagram/send']);
+// This endpoint validates a PIN-issued POS capability (or owner bearer) itself.
+// Installed cashiers do not carry CRM cookies; do not intercept their media/preflight requests.
+const POS_MEDIA_ROUTE = '/api/whatsapp/media';
 const MACHINE_ROUTES: Record<string, string[]> = {
   '/api/cron/weekly-recap': ['CRON_SECRET'],
   '/api/cron/weather-sync': ['CRON_SECRET'],
@@ -45,6 +48,9 @@ function hasMachineCredential(request: NextRequest): boolean {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname.replace(/\/+$/, '') || '/';
+  if (pathname === POS_MEDIA_ROUTE && ['GET', 'OPTIONS'].includes(request.method)) {
+    return NextResponse.next();
+  }
   if (PUBLIC_FILES.has(pathname) || PUBLIC_ASSET_PATH.test(pathname) || pathname === '/pos/login' || pathname === '/pos/customer' || WEBHOOKS.has(pathname) || hasMachineCredential(request)) {
     return NextResponse.next();
   }

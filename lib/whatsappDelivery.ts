@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { reconcileWhatsappThread } from './whatsappThreadState';
+export { reconcileWhatsappThread } from './whatsappThreadState';
 
 export type WhatsappDeliveryStatus = {
   id: string;
   status: 'sent' | 'delivered' | 'read' | 'failed';
+  timestamp?: string;
   errors?: Array<{
     code?: number;
     title?: string;
@@ -12,10 +15,10 @@ export type WhatsappDeliveryStatus = {
 };
 
 const PREVIOUS_STATUSES: Record<WhatsappDeliveryStatus['status'], string[]> = {
-  sent: ['pending', 'sent'],
-  failed: ['pending', 'sent', 'failed'],
-  delivered: ['pending', 'sent', 'failed', 'delivered'],
-  read: ['pending', 'sent', 'failed', 'delivered', 'read'],
+  sent: ['pending', 'sending', 'sent'],
+  failed: ['pending', 'sending', 'sent', 'failed'],
+  delivered: ['pending', 'sending', 'sent', 'failed', 'delivered'],
+  read: ['pending', 'sending', 'sent', 'failed', 'delivered', 'read'],
 };
 
 export function orderReadySkipReason(
@@ -71,17 +74,89 @@ export async function reconcileWhatsappQueue(admin: SupabaseClient, messageId: s
   if (queueError) throw new Error(`Save WhatsApp queue delivery: ${queueError.message}`);
 }
 
-export async function applyWhatsappDeliveryStatus(admin: SupabaseClient, event: WhatsappDeliveryStatus) {
+type DeliveryPatch = ReturnType<typeof whatsappDeliveryPatch>;
+type DeliveryReceipt = DeliveryPatch & { wa_message_id: string; provider_timestamp: string | null };
+const RECEIPT_PRIORITY: Record<WhatsappDeliveryStatus['status'], number> = { sent: 0, failed: 1, delivered: 2, read: 3 };
+let receiptSchemaWarningLogged = false;
+
+function receiptSchemaUnavailable(error: { code?: string; message?: string }): boolean {
+  if (!['42P01', 'PGRST205', 'PGRST204', 'PGRST202'].includes(error.code || '')) return false;
+  if (!receiptSchemaWarningLogged) {
+    console.warn('[whatsapp delivery] receipt migration is not available; using existing delivery path');
+    receiptSchemaWarningLogged = true;
+  }
+  return true;
+}
+
+export async function persistWhatsappDeliveryReceipt(admin: SupabaseClient, event: WhatsappDeliveryStatus): Promise<boolean> {
+  const seconds = event.timestamp == null ? NaN : Number(event.timestamp);
+  const providerTime = Number.isFinite(seconds) && seconds > 0 && seconds < 253402300800
+    ? new Date(seconds * 1000).toISOString() : null;
+  const { error } = await admin.from('whatsapp_delivery_receipts').upsert({
+    wa_message_id: event.id,
+    ...whatsappDeliveryPatch(event),
+    provider_timestamp: providerTime,
+    received_at: new Date().toISOString(),
+  }, { onConflict: 'wa_message_id,status' });
+  if (error) {
+    if (receiptSchemaUnavailable(error)) return false;
+    throw new Error(`Persist WhatsApp delivery receipt: ${error.message}`);
+  }
+  return true;
+}
+
+async function applyDeliveryPatch(admin: SupabaseClient, providerId: string, patch: DeliveryPatch) {
   // A delayed 'sent' must never replace 'failed', 'delivered', or 'read'.
   const { error } = await admin.from('whatsapp_messages')
-    .update(whatsappDeliveryPatch(event)).eq('wa_message_id', event.id)
-    .in('status', PREVIOUS_STATUSES[event.status]);
+    .update(patch).eq('wa_message_id', providerId)
+    .in('status', PREVIOUS_STATUSES[patch.status]);
   if (error) throw new Error(`Save WhatsApp delivery: ${error.message}`);
 
   // Re-read even for duplicate/older events to retry a previously failed queue update.
   const { data: message, error: readError } = await admin.from('whatsapp_messages')
-    .select('id').eq('wa_message_id', event.id).maybeSingle();
+    .select('id,thread_id').eq('wa_message_id', providerId).maybeSingle();
   if (readError) throw new Error(`Find WhatsApp delivery: ${readError.message}`);
   // The same WABA can send non-retail messages without a whatsapp_messages row.
-  if (message) await reconcileWhatsappQueue(admin, message.id);
+  if (message) {
+    await reconcileWhatsappQueue(admin, message.id);
+    if (message.thread_id) await reconcileWhatsappThread(admin, message.thread_id);
+  }
+}
+
+export async function applyWhatsappDeliveryStatus(admin: SupabaseClient, event: WhatsappDeliveryStatus) {
+  if (!Object.hasOwn(RECEIPT_PRIORITY, event.status)) return;
+  // Persist first, including unknown IDs (e.g. a callback that beat the send HTTP response).
+  // Franchise IDs contain no retail message row; they remain metadata only until retention cleanup.
+  await persistWhatsappDeliveryReceipt(admin, event);
+  await applyDeliveryPatch(admin, event.id, whatsappDeliveryPatch(event));
+}
+
+/** Called after wa_message_id is committed, including API, template and retry paths. */
+export async function replayWhatsappDeliveryReceipts(admin: SupabaseClient, providerId: string): Promise<boolean> {
+  const { data, error } = await admin.from('whatsapp_delivery_receipts')
+    .select('wa_message_id,status,provider_timestamp,error_code,error_message')
+    .eq('wa_message_id', providerId).limit(4);
+  if (error) {
+    if (receiptSchemaUnavailable(error)) return false;
+    throw new Error(`Read WhatsApp delivery receipts: ${error.message}`);
+  }
+  const receipts = ((data || []) as DeliveryReceipt[]).filter(r => Object.hasOwn(RECEIPT_PRIORITY, r.status))
+    .sort((a, b) => RECEIPT_PRIORITY[a.status] - RECEIPT_PRIORITY[b.status]);
+  const receipt = receipts.at(-1);
+  if (!receipt) return false;
+  // Apply the strongest recorded receipt; later 'failed' must not downgrade delivered/read.
+  await applyDeliveryPatch(admin, providerId, {
+    status: receipt.status, error_code: receipt.status === 'failed' ? receipt.error_code : null,
+    error_message: receipt.status === 'failed' ? receipt.error_message : null,
+  });
+  return true;
+}
+
+export async function pruneWhatsappDeliveryReceipts(admin: SupabaseClient): Promise<number> {
+  const { data, error } = await admin.rpc('whatsapp_prune_delivery_receipts', { p_limit: 500 });
+  if (error) {
+    if (receiptSchemaUnavailable(error)) return 0;
+    throw new Error(`Prune WhatsApp delivery receipts: ${error.message}`);
+  }
+  return typeof data === 'number' ? data : 0;
 }
