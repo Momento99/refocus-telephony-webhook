@@ -1257,7 +1257,7 @@ export default function Page() {
       color?: (r: any) => string;
     };
     const cols: Col[] = [
-      { title: "Дата", w: 78, align: "left", get: (r) => fmtDay(r.day) },
+      { title: "Дата / филиал", w: 110, align: "left", get: (r) => fmtDay(r.day) },
       {
         title: "Смена",
         w: 110,
@@ -1318,7 +1318,7 @@ export default function Page() {
     const yTop = 22;
     const titleH = 62;
     const headH = 34;
-    const rowH = 30;
+    const rowH = 44;
     const divGap = 18;
     const H = yTop + titleH + headH + dailyRows.length * rowH + divGap + foot.length * 26 + 30;
 
@@ -1377,7 +1377,14 @@ export default function Page() {
       cols.forEach((c, i) => {
         ctx.fillStyle = c.color ? c.color(r) : COL_SLATE;
         ctx.textAlign = c.align;
-        ctx.fillText(c.get(r), c.align === "left" ? colX[i] + 10 : colX[i] + c.w - 10, y + rowH / 2);
+        const x = c.align === "left" ? colX[i] + 10 : colX[i] + c.w - 10;
+        ctx.fillText(c.get(r), x, y + (i === 0 ? 14 : rowH / 2));
+        if (i === 0) {
+          ctx.fillStyle = "#64748b";
+          ctx.font = `400 11px ${FONT}`;
+          ctx.fillText(branches.find(branch => branch.id === Number(r.branch_id))?.name || `Филиал ${r.branch_id}`, x, y + 31, c.w - 20);
+          ctx.font = `400 13px ${FONT}`;
+        }
       });
       y += rowH;
     });
@@ -3319,7 +3326,7 @@ export default function Page() {
                         return (
                         <tr key={`${r.day}:${r.branch_id}`} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
                           <td className="px-3 py-2 text-slate-800">{r.day}
-                            {Number(r.branch_id) !== dailyMeta.branchId && <div className="mt-0.5 text-xs text-slate-500">{branches.find(branch => branch.id === Number(r.branch_id))?.name || `Филиал ${r.branch_id}`}</div>}
+                            <div className="mt-0.5 text-xs text-slate-500">{branches.find(branch => branch.id === Number(r.branch_id))?.name || `Филиал ${r.branch_id}`}</div>
                           </td>
                           <td className={cx("px-3 py-2 tabular-nums", r.shift_in ? "text-slate-700" : "text-slate-300")}>
                             {r.shift_in ? `${r.shift_in} – ${r.shift_out ?? "…"}` : "—"}
@@ -3371,7 +3378,7 @@ export default function Page() {
                         return (
                         <tr key={`${r.day}:${r.branch_id}`} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
                           <td className="px-3 py-2 text-slate-800">{r.day}
-                            {Number(r.branch_id) !== dailyMeta.branchId && <div className="mt-0.5 text-xs text-slate-500">{branches.find(branch => branch.id === Number(r.branch_id))?.name || `Филиал ${r.branch_id}`}</div>}
+                            <div className="mt-0.5 text-xs text-slate-500">{branches.find(branch => branch.id === Number(r.branch_id))?.name || `Филиал ${r.branch_id}`}</div>
                           </td>
                           <td className={cx("px-3 py-2 tabular-nums", r.shift_in ? "text-slate-700" : "text-slate-300")}>
                             {r.shift_in ? `${r.shift_in} – ${r.shift_out ?? "…"}` : "—"}
