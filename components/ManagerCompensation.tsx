@@ -3,13 +3,15 @@
 import { useEffect, useState } from 'react';
 import { CalendarDays, RefreshCw, Target, WalletCards } from 'lucide-react';
 import type { ManagerCompensationResponse } from '@/lib/managerCompensation';
+import { formatPayrollAmount } from '@/lib/payrollAmountFormat';
 
-const money = (value: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value || 0));
+const moneyWithDecimals = (value: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value || 0));
 const date = (value: string) => new Date(value + 'T00:00:00+06:00').toLocaleDateString('ru-RU', {
   timeZone: 'Asia/Bishkek', day: 'numeric', month: 'long',
 });
 
-export default function ManagerCompensation({ month }: { month?: string }) {
+export default function ManagerCompensation({ month, wholeSom = false }: { month?: string; wholeSom?: boolean }) {
+  const money = wholeSom ? formatPayrollAmount : moneyWithDecimals;
   const [localMonth, setLocalMonth] = useState(() => new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Bishkek', year: 'numeric', month: '2-digit',
   }).format(new Date()));

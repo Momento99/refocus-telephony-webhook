@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
+import { formatPayrollAmount } from '@/lib/payrollAmountFormat';
 import { Clock, LogOut, Trash2, Plus, Save, ChevronRight, X, AlertCircle, Calendar, History, CheckCircle2, DoorOpen, RefreshCw, Timer } from 'lucide-react';
 import AppFocusBlock from './AppFocusBlock';
 
@@ -191,7 +192,7 @@ function PenaltyModal({
             {activePenalties.length > 0 && (
               <div className="mt-0.5 text-[12px] text-slate-500">
                 Активных штрафов: <span className="font-semibold text-rose-600">{activePenalties.length}</span>
-                {' · '}итого <span className="font-semibold text-rose-600">{total.toLocaleString('ru-RU')} сом</span>
+                {' · '}итого <span className="font-semibold text-rose-600">{formatPayrollAmount(total)} сом</span>
               </div>
             )}
           </div>
@@ -269,7 +270,7 @@ function PenaltyModal({
 
                             {/* amount */}
                             <span className={`ml-auto text-[13px] font-bold tabular-nums shrink-0 ${p.is_cancelled ? 'line-through text-slate-400' : 'text-rose-600'}`}>
-                              {p.amount.toLocaleString('ru-RU')} сом
+                              {formatPayrollAmount(p.amount)} сом
                             </span>
 
                             {/* cancel */}
@@ -369,7 +370,7 @@ export default function PenaltiesTab({ onChanged }: { onChanged?: () => void } =
         p_reason: closeReason || 'user',
       });
       if (error) throw error;
-      alert(`Смена закрыта. Начислено штрафов: ${data?.penalty_total ?? 0} сом`);
+      alert(`Смена закрыта. Начислено штрафов: ${formatPayrollAmount(data?.penalty_total)} сом`);
       void loadAttendance();
     } catch (e: any) {
       alert(e?.message || 'Ошибка закрытия смены');
@@ -711,7 +712,7 @@ export default function PenaltiesTab({ onChanged }: { onChanged?: () => void } =
                 &gt; <span className="font-semibold tabular-nums text-slate-900">{r.threshold_m} мин</span>
               </span>
               <span className="text-[12px] font-semibold tabular-nums text-cyan-700">
-                {r.amount} сом
+                {formatPayrollAmount(r.amount)} сом
               </span>
               <button
                 onClick={() => deleteRule(r.id)}
@@ -901,7 +902,7 @@ export default function PenaltiesTab({ onChanged }: { onChanged?: () => void } =
                           {emp.active_count} шт
                         </span>
                         <span className="text-[13px] font-bold tabular-nums text-rose-600">
-                          {emp.active_total.toLocaleString('ru-RU')} сом
+                          {formatPayrollAmount(emp.active_total)} сом
                         </span>
                       </>
                     ) : (
@@ -1060,7 +1061,7 @@ export default function PenaltiesTab({ onChanged }: { onChanged?: () => void } =
                                 {r.early_leave_minutes > 0 ? `${r.early_leave_minutes} мин` : '—'}
                               </td>
                               <td className="px-3 py-2 text-right tabular-nums text-[12px] font-semibold text-rose-600">
-                                {r.penalty_total > 0 ? `${r.penalty_total} сом` : '—'}
+                                {r.penalty_total > 0 ? `${formatPayrollAmount(r.penalty_total)} сом` : '—'}
                               </td>
                               <td className="px-3 py-2 text-center">
                                 <div className="flex flex-wrap justify-center gap-1">

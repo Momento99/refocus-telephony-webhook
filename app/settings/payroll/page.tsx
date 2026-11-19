@@ -13,6 +13,7 @@ import DisciplinesTab from "./DisciplinesTab";
 import ManagementTab from "./ManagementTab";
 import { getBrowserSupabase } from "@/lib/supabaseBrowser";
 import toast from "react-hot-toast";
+import { formatPayrollAmount as fmt } from "@/lib/payrollAmountFormat";
 import { addDatedBonusesToPeriod, allocateDatedBonuses, datedPayrollBonuses, unallocatedMonthlyAdjustments,
   type PayrollBonusAdjustment } from "@/lib/payrollDailyBonus";
 
@@ -35,9 +36,6 @@ type CredRow = {
 /* ---------- утилы ---------- */
 function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
-}
-function fmt(n?: number) {
-  return (n ?? 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
 function fmtHM(hours?: number) {
   const totalMin = Math.max(0, Math.round((hours ?? 0) * 60));
@@ -400,7 +398,7 @@ function NumberCell({
           className
         )}
       >
-        {fmt(value)}
+        {value.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}
         {suffix ? ` ${suffix}` : ""}
       </div>
     );

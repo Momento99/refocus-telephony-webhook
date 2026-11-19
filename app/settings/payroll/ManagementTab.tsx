@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import ManagerCompensation from '@/components/ManagerCompensation';
+import { formatPayrollAmount } from '@/lib/payrollAmountFormat';
 
 type RoamingStaff = {
   employee_id: number;
@@ -39,7 +40,7 @@ export default function ManagementTab({ month, employees, branches }: {
   }, []);
 
   return <div className="space-y-7">
-    <ManagerCompensation month={month} />
+    <ManagerCompensation month={month} wholeSom />
     <section className="space-y-3">
       <h2 className="text-lg font-semibold text-slate-50">Работа в филиалах за месяц</h2>
       {error && <p role="alert" className="rounded-xl bg-rose-950/50 p-4 text-sm text-rose-200">{error}</p>}
@@ -58,7 +59,7 @@ export default function ManagementTab({ month, employees, branches }: {
             <div className="mt-2 text-xs leading-relaxed text-slate-500">{person.allowed_branch_ids.map(id => branches.find(branch => branch.id === Number(id))?.name || String(id)).join(' · ')}</div>
             <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
               <div><div className="text-xs text-slate-500">Часов за месяц</div><div className="mt-1 font-semibold tabular-nums">{Number(pay?.hours || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}</div></div>
-              <div><div className="text-xs text-slate-500">К выплате за смены</div><div className="mt-1 font-semibold tabular-nums">{Number(pay?.shiftNet || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} сом</div></div>
+              <div><div className="text-xs text-slate-500">К выплате за смены</div><div className="mt-1 font-semibold tabular-nums">{formatPayrollAmount(pay?.shiftNet)} сом</div></div>
             </div>
           </div>;
         })}
