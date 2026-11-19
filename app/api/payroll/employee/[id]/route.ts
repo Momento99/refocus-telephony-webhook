@@ -3,16 +3,17 @@ import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import type { RoleT } from "@/app/settings/payroll/usePayrollMonthly";
 import { requireOwner } from "@/app/api/admin/_requireOwner";
 
+type RouteContext = { params: Promise<{ id: string }> };
+
 // PATCH body: частичное обновление
-export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: Request, { params }: RouteContext) {
   const auth = await requireOwner();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const id = Number(params.id);
-  if (!id) return NextResponse.json({ error: "bad request" }, { status: 400 });
+  const id = Number((await params).id);
+  if (!Number.isSafeInteger(id) || id < 1) {
+    return NextResponse.json({ error: "Некорректный сотрудник" }, { status: 400 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const supa = getSupabaseAdmin();
@@ -61,20 +62,18 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_req: Request, { params }: RouteContext) {
   const auth = await requireOwner();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const id = Number(params.id);
-  const supa = getSupabaseAdmin();
-
-  // мягкое выключение
-  await supa.from("employee_payroll_profiles").update({ active: false }).eq("employee_id", id);
-  const { error } = await supa.from("employees").update({ is_active: false }).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const id = Number((await params).id);
+  if (!Number.isSafeInteger(id) || id < 1) {
+    return NextResponse.json({ error: "Некорректный сотрудник" }, { status: 400 });
+  }
+  const { error } = await getSupabaseAdmin().rpc("app_archive_employee", { p_employee_id: id });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: error.code === "P0002" ? 404 : 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }

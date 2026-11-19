@@ -7,7 +7,7 @@ import {
   uiRoleToDb,
   type RoleT,
 } from "./usePayrollMonthly";
-import { Wallet, Building2, KeyRound, User2, Plus, X, BarChart2, Copy, Settings2, ChevronDown } from "lucide-react";
+import { Archive, Wallet, Building2, KeyRound, User2, Plus, X, BarChart2, Copy, Settings2, ChevronDown } from "lucide-react";
 import PenaltiesTab from "./PenaltiesTab";
 import DisciplinesTab from "./DisciplinesTab";
 import ManagementTab from "./ManagementTab";
@@ -587,7 +587,7 @@ export default function Page() {
     removeBranch,
     addEmployee,
     updateEmployee,
-    removeEmployee,
+    archiveEmployee,
   } = usePayrollMonthly(month);
 
   const branches = data?.branches ?? [];
@@ -613,6 +613,10 @@ export default function Page() {
     () => employees.filter(isEmpActive),
     [employees]
   );
+  const archivedEmployees = useMemo(
+    () => employees.filter((employee) => !isEmpActive(employee)),
+    [employees]
+  );
 
   /* Сотрудники по филиалам */
   const byBranch = useMemo(() => {
@@ -634,7 +638,7 @@ export default function Page() {
   const [openCredEmpId, setOpenCredEmpId] = useState<number | null>(null);
   // форма создания логина: per-employee
   const [credForm, setCredForm] = useState<Record<number, { login: string; pin: string }>>({});
-  // подтверждение удаления (защита от случайного клика)
+  // Подтверждение удаления филиала или переноса сотрудника в архив.
   const [confirmDel, setConfirmDel] = useState<
     null | { kind: "branch" | "employee"; id: number; name: string }
   >(null);
@@ -994,11 +998,11 @@ export default function Page() {
   const branchTotals = useMemo(() => {
     const m = new Map<number, number>();
     for (const b of branches) m.set(b.id, 0);
-    for (const e of visibleEmployees) {
+    for (const e of employees) {
       m.set(e.branchId, (m.get(e.branchId) ?? 0) + getNet(e));
     }
     return m;
-  }, [branches, visibleEmployees, weekPeriodMap, monthPeriodMap, monthAdjMap, weekDebtMap, monthDebtMap, weekDeductMap, monthDeductMap, activeWeek]);
+  }, [branches, employees, weekPeriodMap, monthPeriodMap, monthAdjMap, weekDebtMap, monthDebtMap, weekDeductMap, monthDeductMap, activeWeek]);
 
   /* ===== Детализация по дням (модалка) ===== */
   const [dailyMeta, setDailyMeta] = useState<null | {
@@ -3190,11 +3194,13 @@ export default function Page() {
                                   <span>Детали</span>
                                 </button>
                                 <button
-                                  title={`Удалить ${e.fullName}`}
+                                  title={`В архив: ${e.fullName}`}
+                                  aria-label={`Перенести в архив: ${e.fullName}`}
                                   onClick={() => setConfirmDel({ kind: "employee", id: e.id, name: e.fullName })}
-                                  className="inline-flex items-center rounded-xl p-2 text-rose-400 bg-white ring-1 ring-rose-200 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                                  className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-medium text-slate-600 bg-white ring-1 ring-slate-200 hover:bg-slate-50 transition"
                                 >
-                                  <X className="h-3.5 w-3.5" />
+                                  <Archive className="h-3.5 w-3.5" />
+                                  <span>В архив</span>
                                 </button>
                               </div>
                             </td>
@@ -3210,7 +3216,7 @@ export default function Page() {
                     Итого по филиалу
                   </span>
                   <span className="text-lg font-bold tabular-nums text-cyan-700">
-                    {fmt((byBranch.get(b.id) ?? []).reduce((s, e: any) => s + getNet(e), 0))}{" "}
+                    {fmt(branchTotals.get(b.id))}{" "}
                     <span className="text-sm font-semibold text-slate-400">сом</span>
                   </span>
                 </div>
@@ -3219,7 +3225,40 @@ export default function Page() {
           })
         )}
 
-        {/* Подтверждение удаления (защита от случайного клика) */}
+        {!isLoading && archivedEmployees.length > 0 && (
+          <details className="group mt-5 rounded-2xl bg-white ring-1 ring-slate-200">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-slate-700 [&::-webkit-details-marker]:hidden">
+              <Archive className="h-4 w-4" />
+              Архив сотрудников
+              <span className="font-normal text-slate-500">{archivedEmployees.length}</span>
+              <ChevronDown className="ml-auto h-4 w-4 transition-transform group-open:rotate-180" />
+            </summary>
+            <ul className="divide-y divide-slate-100 border-t border-slate-100">
+              {archivedEmployees.map((employee) => {
+                const netPeriod = getNet(employee);
+                return (
+                  <li key={employee.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                    <div>
+                      <p className="font-medium text-slate-900">{employee.fullName}</p>
+                      <p className="text-xs text-slate-500">{branches.find((branch) => branch.id === employee.branchId)?.name ?? "Без филиала"}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="tabular-nums text-slate-700">{fmt(netPeriod)} сом</span>
+                      <button
+                        type="button"
+                        onClick={() => openDaily({ ...employee, netPeriod, netMonth: getMonthNet(employee), managementTotal: employee.managementTotal ?? 0 })}
+                        className="rounded-xl bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+                      >
+                        Детали
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+        )}
+
         {confirmDel && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
@@ -3231,14 +3270,16 @@ export default function Page() {
             >
               <div className="mb-5 flex items-start gap-3">
                 <div className="grid h-10 w-10 place-items-center rounded-2xl bg-rose-500 shadow-[0_4px_16px_rgba(244,63,94,0.3)]">
-                  <X className="h-5 w-5 text-white" />
+                  {confirmDel.kind === "branch" ? <X className="h-5 w-5 text-white" /> : <Archive className="h-5 w-5 text-white" />}
                 </div>
                 <div>
                   <div className="text-lg font-bold tracking-tight text-slate-900">
-                    {confirmDel.kind === "branch" ? "Удалить филиал?" : "Удалить сотрудника?"}
+                    {confirmDel.kind === "branch" ? "Удалить филиал?" : "Перенести сотрудника в архив?"}
                   </div>
                   <div className="text-[12px] text-slate-500">
-                    «{confirmDel.name}» — действие необратимо
+                    {confirmDel.kind === "branch"
+                      ? `«${confirmDel.name}» — действие необратимо`
+                      : `«${confirmDel.name}» исчезнет из рабочего списка. Доступ к сменам закроется, открытая смена завершится. Продажи, смены и начисления сохранятся.`}
                   </div>
                 </div>
               </div>
@@ -3256,18 +3297,28 @@ export default function Page() {
                   onClick={async () => {
                     setDelBusy(true);
                     try {
-                      if (confirmDel.kind === "branch") await removeBranch(confirmDel.id);
-                      else await removeEmployee(confirmDel.id);
+                      if (confirmDel.kind === "branch") {
+                        await removeBranch(confirmDel.id);
+                      } else {
+                        const id = confirmDel.id;
+                        await archiveEmployee(id);
+                        setCreds((rows) => rows.filter((row) => row.employee_id !== id));
+                        setOpenCredEmpId((openId) => openId === id ? null : openId);
+                        toast.success("Сотрудник перенесён в архив");
+                      }
                       await mutate();
                       setConfirmDel(null);
                     } catch (err: any) {
-                      alert(`Не удалось удалить: ${err?.message || err?.error_description || String(err)}`);
+                      const action = confirmDel.kind === "branch" ? "удалить филиал" : "перенести сотрудника в архив";
+                      alert(`Не удалось ${action}: ${err?.message || err?.error_description || String(err)}`);
                     } finally {
                       setDelBusy(false);
                     }
                   }}
                 >
-                  {delBusy ? "Удаляю…" : "Удалить"}
+                  {confirmDel.kind === "branch"
+                    ? (delBusy ? "Удаляю…" : "Удалить")
+                    : (delBusy ? "Переношу…" : "В архив")}
                 </button>
               </div>
             </div>

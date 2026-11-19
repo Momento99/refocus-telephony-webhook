@@ -344,13 +344,9 @@ export function usePayrollMonthly(month: string) {
     [sb]
   );
 
-  const removeEmployee = useCallback(
+  const archiveEmployee = useCallback(
     async (id: number) => {
       if (!sb) throw new Error("supabase not ready");
-      // Мягкое удаление. Сотрудника с историей (смены, платежи, focus-события,
-      // зарплата) жёстко удалить нельзя — на employees ссылается ~20 таблиц с
-      // ON DELETE NO ACTION/RESTRICT, БД заблокирует DELETE. RPC прячет
-      // сотрудника (is_active=false) и освобождает логин, история сохраняется.
       const { error } = await sb.rpc("app_archive_employee", {
         p_employee_id: id,
       });
@@ -397,7 +393,7 @@ export function usePayrollMonthly(month: string) {
     removeBranch,
     addEmployee,
     updateEmployee,
-    removeEmployee,
+    archiveEmployee,
     addAdjustment,
     // если нужно где-то в UI:
     isMonthlyPlanMode,
