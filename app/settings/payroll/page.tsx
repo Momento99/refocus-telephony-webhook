@@ -2751,7 +2751,7 @@ export default function Page() {
 
         {/* ===== Вкладка «Дисциплинарные взыскания» ===== */}
         {tab === "disciplines" && <DisciplinesTab />}
-        {tab === "management" && <ManagementTab month={month} branches={branches} employees={employees.map(employee => ({
+        {tab === "management" && <ManagementTab month={month} branches={branches} onPromoterSaved={mutate} employees={employees.map(employee => ({
           id: employee.id, hours: employee.hoursWorked || 0,
           shiftNet: getMonthNet(employee) - (employee.managementTotal || 0),
         }))} />}
