@@ -464,7 +464,7 @@ export default function AdminStatsPage() {
   const [err, setErr] = React.useState<string | null>(null);
 
   // Реальные зарплаты из v_payroll_daily + средние чеки из fn_finance_summary_todate_v2
-  const [realPayroll, setRealPayroll] = React.useState(0);
+  const [realPayroll, setRealPayroll] = React.useState<number | null>(null);
   const [avgFrameCheck, setAvgFrameCheck] = React.useState(0);
   const [avgLensCheck, setAvgLensCheck] = React.useState(0);
   // Динамика среднего чека оправ/линз по бакетам времени
@@ -559,7 +559,7 @@ export default function AdminStatsPage() {
       setErr(null);
 
       // Сбрасываем финансовые данные чтобы не мелькали старые цифры
-      setRealPayroll(0);
+      setRealPayroll(null);
       setAvgFrameCheck(0);
       setAvgLensCheck(0);
       setAvgCheckTrend([]);
@@ -695,13 +695,13 @@ export default function AdminStatsPage() {
         // Загружаем реальную ЗП по дням и патчим net_profit в np
         // (RPC admin_net_profit_by_day возвращает payroll_total=0, поэтому график без патча
         // показывает "прибыль" БЕЗ учёта ЗП — не сходится с KPI).
+        if (isStale()) return;
+        const payrollRows = await fetchPayrollFinancialSummary(from, to, branchIds);
         let npPatched = np;
-        let totalPayroll = 0;
         {
-          const rows = await fetchPayrollFinancialSummary(from, to, branchIds);
           // Карта day → сумма net_day (по всем сотрудникам выбранных филиалов)
           const payByDay = new Map<string, number>();
-          for (const r of rows) {
+          for (const r of payrollRows) {
             const d = String(r.day).slice(0, 10);
             payByDay.set(d, (payByDay.get(d) || 0) + (Number(r.net_day) || 0));
           }
@@ -726,12 +726,10 @@ export default function AdminStatsPage() {
               net_profit: income - refunds - opex - cogs - p,
             };
           });
-          // Сумма ЗП за весь период, включая воскресенья — симметрично воскресной аренде
-          // в OPEX (в выходные бывают бонусы/корректировки net_day).
-          totalPayroll = rows.reduce((s: number, r: any) => s + (Number(r.net_day) || 0), 0);
         }
         if (isStale()) return;
-        setRealPayroll(totalPayroll);
+        // Включая воскресенья, как и аренду в OPEX.
+        setRealPayroll(payrollRows.reduce((total, row) => total + (Number(row.net_day) || 0), 0));
 
         // КЛЭМП: поступления не могут превышать выручку за день
         // (защита от платежей за удалённые/чужие заказы — отрицательного долга не бывает).
@@ -969,10 +967,9 @@ export default function AdminStatsPage() {
         // === SPLH (выручка/час) + ФОТ/выручка (LCR, брутто) по филиалам ===
         try {
           const sb = getSupabase();
-          // Часы и брутто-ФОТ по филиалам за период (постранично — обход лимита 1000)
-          const spRows = await fetchPayrollFinancialSummary(from, to, branchIds);
+          // Используем те же расходы на персонал, что и для чистой прибыли.
           const payByBr = new Map<number, { hours: number; gross: number }>();
-          for (const r of spRows) {
+          for (const r of payrollRows) {
             const bid = Number(r.branch_id);
             const prev = payByBr.get(bid) ?? { hours: 0, gross: 0 };
             prev.hours += Number(r.hours) || 0;
@@ -1041,6 +1038,11 @@ export default function AdminStatsPage() {
         else setErr(null);
 
         pushFiltersToURL(from, to, br);
+      } catch (error) {
+        if (!isStale()) {
+          setRealPayroll(null);
+          setErr(error instanceof Error ? error.message : 'Не удалось загрузить статистику');
+        }
       } finally {
         // спиннер гасит только актуальный запрос (устаревший — молчит)
         if (!isStale()) setLoading(false);
@@ -1179,13 +1181,15 @@ export default function AdminStatsPage() {
     // Реальная прибыль = доходы − возвраты − расходы (opex+cogs) − реальные зарплаты.
     // Та же формула, что в дневном ряду net_profit, поэтому верхний KPI «Чистая прибыль»
     // и график «Чистая прибыль по дням» сходятся (с точностью до воскресной аренды).
-    const realNet = income - refunds - opex - cogs - realPayroll;
+    const payroll = realPayroll ?? 0;
+    const realNet = income - refunds - opex - cogs - payroll;
     const margin = income > 0 ? Math.round((realNet / income) * 100) : 0;
     // Чистая прибыль в среднем за день. Делим на число рабочих дней с данными в периоде.
     const workDays = netProfit.length;
     const profitPerDay = workDays > 0 ? Math.round(realNet / workDays) : 0;
-    return { income, opex, cogs, payroll: realPayroll, netProfit: realNet, margin, profitPerDay, workDays, frameAvg: avgFrameCheck, lensAvg: avgLensCheck };
+    return { income, opex, cogs, payroll, netProfit: realNet, margin, profitPerDay, workDays, frameAvg: avgFrameCheck, lensAvg: avgLensCheck };
   }, [netProfit, realPayroll, avgFrameCheck, avgLensCheck, sundayOpex]);
+  const financeValue = (value: string) => loading ? '…' : realPayroll === null ? '—' : value;
 
   const paymentsTotals = React.useMemo(
     () => ({
@@ -2321,18 +2325,18 @@ export default function AdminStatsPage() {
 
             {/* Finance KPIs */}
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-5">
-              <KPI label="Доходы" value={loading ? '…' : nf(financeTotals.income)} icon={HandCoins} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
-              <KPI label="OPEX" value={loading ? '…' : nf(financeTotals.opex)} icon={CreditCard} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-slate-200/40" />
-              <KPI label="Себестоимость" value={loading ? '…' : nf(financeTotals.cogs)} icon={CreditCard} iconTone="money" accent="from-slate-200/55 via-sky-200/45 to-cyan-200/40" />
-              <KPI label="Зарплаты" value={loading ? '…' : nf(financeTotals.payroll)} icon={CreditCard} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
-              <KPI label="Чистая прибыль" value={loading ? '…' : nf(financeTotals.netProfit)} icon={TrendingUp} iconTone="money" accent="from-cyan-200/55 via-sky-200/45 to-teal-200/40" />
+              <KPI label="Доходы" value={financeValue(nf(financeTotals.income))} icon={HandCoins} iconTone="money" accent="from-cyan-200/55 via-teal-200/45 to-sky-200/40" />
+              <KPI label="OPEX" value={financeValue(nf(financeTotals.opex))} icon={CreditCard} iconTone="money" accent="from-sky-200/55 via-cyan-200/45 to-slate-200/40" />
+              <KPI label="Себестоимость" value={financeValue(nf(financeTotals.cogs))} icon={CreditCard} iconTone="money" accent="from-slate-200/55 via-sky-200/45 to-cyan-200/40" />
+              <KPI label="Зарплаты" value={financeValue(nf(financeTotals.payroll))} icon={CreditCard} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
+              <KPI label="Чистая прибыль" value={financeValue(nf(financeTotals.netProfit))} icon={TrendingUp} iconTone="money" accent="from-cyan-200/55 via-sky-200/45 to-teal-200/40" />
             </div>
 
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-4">
-              <KPI label="Маржа" value={loading ? '…' : `${financeTotals.margin}%`} icon={Percent} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
+              <KPI label="Маржа" value={financeValue(`${financeTotals.margin}%`)} icon={Percent} iconTone="money" accent="from-teal-200/55 via-cyan-200/45 to-sky-200/40" />
               <KPI
                 label="Чистая прибыль / день"
-                value={loading ? '…' : `${nf(financeTotals.profitPerDay)} сом`}
+                value={financeValue(`${nf(financeTotals.profitPerDay)} сом`)}
                 icon={TrendingUp}
                 iconTone="money"
                 accent="from-emerald-200/55 via-teal-200/45 to-cyan-200/40"
