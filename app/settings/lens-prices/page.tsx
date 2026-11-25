@@ -388,19 +388,19 @@ export default function LensPricesSettingsPage() {
 
   const loadCosts = useCallback(async () => {
     const { data, error } = await sb()
-      .from('lens_catalog')
-      .select('id, name, category, sort_order, cost_price_from, cost_price_to, cost_price_updated_at, price_from, price_to')
-      .eq('is_active', true)
+      .from('lens_catalog_localized')
+      .select('lens_id, lens_name, category, sort_order, cost_price_from, cost_price_to, cost_price_updated_at, price_from, price_to')
+      .eq('country_id', 'kg')
       .order('sort_order', { ascending: true });
     if (error) { toast.error('Ошибка загрузки себестоимости: ' + error.message); return; }
     const rows = ((data as Array<{
-      id: string; name: string; category: string; sort_order: number;
+      lens_id: string; lens_name: string; category: string; sort_order: number;
       cost_price_from: number | null; cost_price_to: number | null;
       cost_price_updated_at: string | null;
       price_from: number; price_to: number;
     }>) || []).map((r) => ({
-      lens_id: r.id,
-      lens_name: r.name,
+      lens_id: r.lens_id,
+      lens_name: r.lens_name,
       category: r.category,
       sort_order: r.sort_order,
       cost_price_from: r.cost_price_from,
@@ -550,18 +550,13 @@ export default function LensPricesSettingsPage() {
     }
     setSavingIds(s => new Set(s).add(lensId));
     try {
-      if (activeCountry === 'kg') {
-        const { error } = await sb().from('lens_catalog')
-          .update({ price_from: fromVal, price_to: toVal }).eq('id', lensId);
-        if (error) throw error;
-      } else {
-        const { error } = await sb().from('lens_catalog_prices')
-          .upsert({ country_id: activeCountry, lens_id: lensId, price_from: fromVal, price_to: toVal },
-            { onConflict: 'country_id,lens_id' });
-        if (error) throw error;
-      }
+      const { error } = await sb().from('lens_catalog_prices')
+        .upsert({ country_id: activeCountry, lens_id: lensId, price_from: fromVal, price_to: toVal },
+          { onConflict: 'country_id,lens_id' });
+      if (error) throw error;
       toast.success('Цена сохранена');
       await loadLenses(activeCountry);
+      if (activeCountry === 'kg') await loadCosts();
     } catch (e: any) {
       toast.error('Ошибка: ' + e.message);
     } finally {
@@ -967,6 +962,7 @@ export default function LensPricesSettingsPage() {
                     <tbody>
                       {branchStatuses.map(b => {
                         const cityInFormula = b.city && CITY_INDEX[b.city];
+                        const usesUnifiedPrice = cityInFormula && cityInFormula.country === 'KG';
                         const cityUnknown = Boolean(b.city && !cityInFormula);
                         return (
                           <tr key={b.branch_id} className="border-t border-slate-100 hover:bg-slate-50/40 transition">
@@ -999,7 +995,8 @@ export default function LensPricesSettingsPage() {
                                     Город «{b.city}» не в CITY_INDEX
                                   </span>
                                 )}
-                                {cityInFormula && (
+                                {usesUnifiedPrice && <span className="text-xs font-semibold text-slate-500">Единый прайс</span>}
+                                {cityInFormula && !usesUnifiedPrice && (
                                   <button
                                     type="button"
                                     onClick={() => applyFormulaToBranch(b.branch_id, b.city!)}

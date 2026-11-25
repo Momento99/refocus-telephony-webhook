@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import type { EChartsOption } from 'echarts';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 import Link from 'next/link';
+import LensSupplierQuotes from './LensSupplierQuotes';
 import LensOnDemandCard from './LensOnDemandCard';
 import LensCostCard from './LensCostCard';
 import LensAutoArrivalSettings from './LensAutoArrivalSettings';
@@ -3966,6 +3967,7 @@ export default function LensProcurementPage() {
         </LightCard>
 
         {/* Под заказ — линзы из клиентских заказов, которых нет в наличии */}
+        <LensSupplierQuotes />
         <LensOnDemandCard onExportGroup={exportOnDemandGroup} onExportAll={exportOnDemandAll} />
 
         {/* Себестоимость линз по видам */}

@@ -288,6 +288,10 @@ const LENS_CATEGORIES: string[] = [
 function lensTypeToCategory(lensType: string | null | undefined): string {
   const tok = String(lensType ?? '').trim().split(/\s+/)[0].toUpperCase();
   if (!tok) return 'Прочее';
+  if (/^AST_AR_167(?:_|$)/.test(tok)) return 'Антиблик 1,67 при астигматизме';
+  if (/^AST_AR_174(?:_|$)/.test(tok)) return 'Антиблик 1,74 при астигматизме';
+  if (/^AR_(?:(?:PLUS|MINUS)_)?174$/.test(tok)) return 'Антиблик 1,74';
+  if (tok.startsWith('CHAME_SCREEN')) return 'Хамелеон + защита от экранов';
   // Астигматика (AST_*) — отдельная ветка
   if (tok.startsWith('AST_')) {
     if (tok.startsWith('AST_CHAME')) return 'Астигматика хамелеон';
@@ -344,6 +348,10 @@ function buildHistogram(values: number[], bucket: number): DistBin[] {
 function lensTypeToCatalogId(lensType: string | null | undefined): string | null {
   const tok = String(lensType ?? '').trim().split(/\s+/)[0].toUpperCase();
   if (!tok) return null;
+  if (/^AST_AR_167(?:_|$)/.test(tok)) return 'thin-ast-antiglare';
+  if (/^AST_AR_174(?:_|$)/.test(tok)) return 'thin-174-ast-antiglare';
+  if (/^AR_(?:(?:PLUS|MINUS)_)?174$/.test(tok)) return 'thin-174-antiglare';
+  if (tok.startsWith('CHAME_SCREEN')) return 'chameleon-screen';
   if (tok.startsWith('AST_')) {
     if (tok.startsWith('AST_CHAME')) return 'ast-chameleon';
     if (tok.startsWith('AST_BBX')) return 'ast-screen';   // прокси

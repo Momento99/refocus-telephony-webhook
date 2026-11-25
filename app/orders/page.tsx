@@ -210,6 +210,11 @@ function frameKindLabel(typeCode?: string | null, gender?: string | null): strin
 // Виды линз: lens_code приходит в «кодовом» виде (AR, BB, CHAME_BLACK, AST_CHAME_BROWN…)
 const LENS_BASE_LABEL: Record<string, string> = {
   WHITE: 'Белый',
+  AST_AR_167: 'Утончённая 1,67 · антиблик при астигматизме',
+  AR_174: 'Утончённая 1,74 · антиблик',
+  AST_AR_174: 'Утончённая 1,74 · антиблик при астигматизме',
+  CHAME_SCREEN_BLACK: 'Хамелеон + защита от экранов · чёрный',
+  CHAME_SCREEN_BROWN: 'Хамелеон + защита от экранов · коричневый',
   AR: 'Антибликовый',
   BB: 'Защита от синего',
   BBX: 'Защита от синего',

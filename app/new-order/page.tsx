@@ -12,6 +12,7 @@ import React, {
 import { IMaskInput } from 'react-imask';
 import toast from 'react-hot-toast';
 import getSupabase from '@/lib/supabaseClient';
+import { branchLensOptions, emptyEyeLens, quoteEyeLens, type EyeLensDraft, type BranchLensOption, type BranchLensPrice } from '@/lib/branchLensCatalog';
 import {
   Calendar,
   User2,
@@ -77,7 +78,6 @@ function cryptoRandomId() {
   try { return (crypto as any).randomUUID(); }
   catch { return Math.random().toString(36).slice(2); }
 }
-const toInt = (v: unknown) => Number(v) || 0;
 
 /* валидность возраста (ISO yyyy-mm-dd) */
 function isValidBirthDate(s: string): boolean {
@@ -104,161 +104,61 @@ type Frame = {
 type PayMethod = 'cash' | 'card' | 'qr';
 type Gender = 'M' | 'F';
 
-/* ───────────────── Матрица цен линз ───────────────── */
-type Range = { min: number; max: number | null; price: number };
-type PriceKey =
-  | 'WHITE'
-  | 'WHITE_167'
-  | 'AR_PLUS'
-  | 'AR_MINUS'
-  | 'AR_PLUS_167'
-  | 'AR_MINUS_167'
-  | 'BB'
-  | 'BB_167'
-  | 'CHAME_PLUS'
-  | 'CHAME_MINUS'
-  | 'BBX'
-  | 'AST_WHITE'
-  | 'AST_AR'
-  | 'AST_AR_174_MINUS'
-  | 'AST_BB'
-  | 'AST_CHAME_MINUS'
-  | 'AST_BBX_MINUS';
+async function fetchBranchLenses(branchId: number) {
+  const { data, error } = await getSupabase()
+    .from('v_lens_prices_resolved')
+    .select('lens_id,lens_name,price_from,price_to')
+    .eq('branch_id', branchId)
+    .eq('is_active', true)
+    .order('sort_order');
+  if (error) throw error;
+  return branchLensOptions((data ?? []) as BranchLensPrice[]);
+}
 
-const PRICE_MATRIX: Record<PriceKey, Range[]> = {
-  WHITE: [
-    { min: 0, max: 2.75, price: 300 },
-    { min: 3, max: 5.5, price: 350 },
-    { min: 6, max: 8.5, price: 500 },
-    { min: 9, max: null, price: 750 },
-  ],
-  WHITE_167: [
-    { min: 3, max: 5.5, price: 1100 },
-    { min: 6, max: 8.5, price: 1850 },
-    { min: 9, max: null, price: 1950 },
-  ],
-  AR_PLUS: [
-    { min: 0, max: 2.75, price: 550 },
-    { min: 3, max: 5.5, price: 700 },
-    { min: 6, max: 8.5, price: 950 },
-    { min: 9, max: null, price: 1350 },
-  ],
-  AR_MINUS: [
-    { min: 0, max: 2.75, price: 550 },
-    { min: 3, max: 5.5, price: 700 },
-    { min: 6, max: 8.5, price: 950 },
-    { min: 9, max: null, price: 1350 },
-  ],
-  AR_PLUS_167: [
-    { min: 3, max: 5.5, price: 1800 },
-    { min: 6, max: 8.5, price: 2800 },
-    { min: 9, max: null, price: 3500 },
-  ],
-  AR_MINUS_167: [
-    { min: 3, max: 5.5, price: 1800 },
-    { min: 6, max: 8.5, price: 2800 },
-    { min: 9, max: null, price: 3500 },
-  ],
-  BB: [
-    { min: 0, max: 2.75, price: 750 },
-    { min: 3, max: 5.5, price: 850 },
-    { min: 6, max: 8.5, price: 1350 },
-    { min: 9, max: null, price: 1650 },
-  ],
-  BB_167: [
-    { min: 3, max: 5.5, price: 3300 },
-    { min: 6, max: 8.5, price: 4100 },
-    { min: 9, max: null, price: 5100 },
-  ],
-  CHAME_PLUS: [
-    { min: 0, max: 2.75, price: 750 },
-    { min: 3, max: 5.5, price: 950 },
-    { min: 6, max: 8.5, price: 1300 },
-    { min: 9, max: null, price: 1700 },
-  ],
-  CHAME_MINUS: [
-    { min: 0, max: 2.75, price: 750 },
-    { min: 3, max: 5.5, price: 950 },
-    { min: 6, max: 8.5, price: 1300 },
-    { min: 9, max: null, price: 1700 },
-  ],
-  BBX: [
-    { min: 0, max: 2.75, price: 1400 },
-    { min: 3, max: 5.5, price: 1800 },
-    { min: 6, max: 8.5, price: 2350 },
-    { min: 9, max: null, price: 3000 },
-  ],
-  AST_WHITE: [
-    { min: 0, max: 1.75, price: 400 },
-    { min: 2, max: 3.75, price: 500 },
-    { min: 4, max: 5.5, price: 750 },
-    { min: 6, max: null, price: 900 },
-  ],
-  AST_AR: [
-    { min: 0, max: 1.75, price: 700 },
-    { min: 2, max: 3.75, price: 900 },
-    { min: 4, max: 5.5, price: 1250 },
-    { min: 6, max: null, price: 1450 },
-  ],
-  AST_AR_174_MINUS: [
-    { min: 2, max: 3.75, price: 2800 },
-    { min: 4, max: 5.5, price: 3800 },
-    { min: 6, max: null, price: 4600 },
-  ],
-  AST_BB: [
-    { min: 0, max: 1.75, price: 900 },
-    { min: 2, max: 3.75, price: 1150 },
-    { min: 4, max: 5.5, price: 1400 },
-    { min: 6, max: null, price: 1600 },
-  ],
-  AST_CHAME_MINUS: [
-    { min: 0, max: 1.75, price: 1050 },
-    { min: 2, max: 3.75, price: 1250 },
-    { min: 4, max: 5.5, price: 1600 },
-    { min: 6, max: null, price: 1850 },
-  ],
-  AST_BBX_MINUS: [
-    { min: 0, max: 1.75, price: 1800 },
-    { min: 2, max: 3.75, price: 1950 },
-    { min: 4, max: 5.5, price: 2200 },
-  ],
-};
-
-type LensOption = { id: string; label: string; astig?: boolean; map: PriceKey };
-const LENS_OPTIONS: LensOption[] = [
-  { id: 'WHITE', label: 'Белый (+/−)', map: 'WHITE' },
-  { id: 'WHITE_167', label: '1.67 Белый (+/−)', map: 'WHITE_167' },
-  { id: 'AR_PLUS', label: 'AR (+)', map: 'AR_PLUS' },
-  { id: 'AR_MINUS', label: 'AR (−)', map: 'AR_MINUS' },
-  { id: 'AR_PLUS_167', label: '1.67 AR (+)', map: 'AR_PLUS_167' },
-  { id: 'AR_MINUS_167', label: '1.67 AR (−)', map: 'AR_MINUS_167' },
-  { id: 'BB', label: 'BB (+/−)', map: 'BB' },
-  { id: 'BB_167', label: '1.67 BB (+/−)', map: 'BB_167' },
-  { id: 'CHAME_PLUS', label: 'Хамелеон (+)', map: 'CHAME_PLUS' },
-  { id: 'CHAME_MINUS', label: 'Хамелеон (−)', map: 'CHAME_MINUS' },
-  { id: 'BBX', label: 'BBX (+/−)', map: 'BBX' },
-  { id: 'AST_WHITE', label: 'Аст Белый (+/−)', astig: true, map: 'AST_WHITE' },
-  { id: 'AST_AR', label: 'Аст AR (+/−)', astig: true, map: 'AST_AR' },
-  {
-    id: 'AST_AR_174_MINUS',
-    label: 'Аст 1.74 AR (−)',
-    astig: true,
-    map: 'AST_AR_174_MINUS',
-  },
-  { id: 'AST_BB', label: 'Аст BB (+/−)', astig: true, map: 'AST_BB' },
-  {
-    id: 'AST_CHAME_MINUS',
-    label: 'Аст Хамелеон (−)',
-    astig: true,
-    map: 'AST_CHAME_MINUS',
-  },
-  {
-    id: 'AST_BBX_MINUS',
-    label: 'Аст BBX (−)',
-    astig: true,
-    map: 'AST_BBX_MINUS',
-  },
-];
+function EyeLensFields({
+  label, value, onChange, options, price,
+}: {
+  label: string;
+  value: EyeLensDraft;
+  onChange: (value: EyeLensDraft) => void;
+  options: BranchLensOption[];
+  price: number;
+}) {
+  const option = options.find(lens => lens.code === value.code);
+  const fieldClass = baseInput + " px-3 py-2";
+  return (
+    <fieldset className="space-y-2 rounded-xl border border-slate-200 p-3">
+      <legend className="px-2 text-sm font-semibold">{label}</legend>
+      <label className="block text-sm">
+        Вид линзы
+        <select className={fieldClass} value={value.code} disabled={!options.length}
+          onChange={e => onChange({ ...value, code: e.target.value, cyl: '', axis: '' })}>
+          <option value="">Без линзы</option>
+          {options.map(lens => <option key={lens.code} value={lens.code}>{lens.label}</option>)}
+        </select>
+      </label>
+      {option && (
+        <div className="grid grid-cols-3 gap-2">
+          <label className="text-sm">Сфера
+            <input className={fieldClass} inputMode="decimal" placeholder="−2,75" value={value.sph}
+              onChange={e => onChange({ ...value, sph: e.target.value })} />
+          </label>
+          {option.astigmatic && <>
+            <label className="text-sm">Цилиндр
+              <input className={fieldClass} inputMode="decimal" placeholder="−0,75" value={value.cyl}
+                onChange={e => onChange({ ...value, cyl: e.target.value })} />
+            </label>
+            <label className="text-sm">Ось
+              <input className={fieldClass} inputMode="numeric" placeholder="0–180°" value={value.axis}
+                onChange={e => onChange({ ...value, axis: e.target.value })} />
+            </label>
+          </>}
+        </div>
+      )}
+      {price > 0 && <p className="text-sm font-semibold">{fmt.format(price)} сом</p>}
+    </fieldset>
+  );
+}
 
 /* ───────────────── Поля ───────────────── */
 const PhoneField = React.memo(function PhoneField({
@@ -353,7 +253,7 @@ const DobField = React.memo(function DobField({
 
 /* ───────────── Страница ───────────── */
 
-export default function NewOrderPage(): JSX.Element {
+export default function NewOrderPage(): React.JSX.Element {
   const card = useCardClass();
   const input = `${baseInput} px-3 py-2`;
 
@@ -391,10 +291,29 @@ export default function NewOrderPage(): JSX.Element {
   // в order_items для item_type='frame', иначе exception при INSERT.
   const [frameBarcodeId, setFrameBarcodeId] = useState<string | null>(null);
 
-  // линзы
-  const [lensId, setLensId] = useState<string>('');
-  const [odRangeIdx, setOdRangeIdx] = useState<number | ''>('');
-  const [osRangeIdx, setOsRangeIdx] = useState<number | ''>('');
+  const [od, setOd] = useState<EyeLensDraft>(emptyEyeLens);
+  const [os, setOs] = useState<EyeLensDraft>(emptyEyeLens);
+  const [lensCatalog, setLensCatalog] = useState<{ branchId: number; options: BranchLensOption[] } | null>(null);
+  const [lensCatalogError, setLensCatalogError] = useState(false);
+  const [lensCatalogRetry, setLensCatalogRetry] = useState(0);
+
+  useEffect(() => {
+    if (!branchId) return;
+    let current = true;
+    setLensCatalogError(false);
+    fetchBranchLenses(branchId).then(options => {
+      if (current) setLensCatalog({ branchId, options });
+    }).catch(() => {
+      if (current) setLensCatalogError(true);
+    });
+    return () => { current = false; };
+  }, [branchId, lensCatalogRetry]);
+
+  const lensOptions = lensCatalog && lensCatalog.branchId === branchId ? lensCatalog.options : [];
+  const quoteOD = quoteEyeLens(od, lensOptions);
+  const quoteOS = quoteEyeLens(os, lensOptions);
+  const priceOD = quoteOD?.price ?? 0;
+  const priceOS = quoteOS?.price ?? 0;
 
   type PaymentRow = { id: string; method: PayMethod; amount: string };
   const [pays, setPays] = useState<PaymentRow[]>([
@@ -407,56 +326,7 @@ export default function NewOrderPage(): JSX.Element {
 
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1);
 
-  // выпадашки “Диапазон”
-  const ranges = useMemo(
-    () =>
-      lensId
-        ? PRICE_MATRIX[LENS_OPTIONS.find((l) => l.id === lensId)!.map]
-        : [],
-    [lensId],
-  );
-
-  const signPrefix = useMemo(() => {
-    if (!lensId) return '(+/−)';
-    if (lensId.includes('_PLUS') || lensId.endsWith('PLUS')) return '(+)';
-    if (
-      lensId.includes('_MINUS') ||
-      lensId.endsWith('MINUS') ||
-      /MINUS$/.test(lensId)
-    )
-      return '(−)';
-    if (lensId.startsWith('AR_PLUS') || lensId === 'CHAME_PLUS') return '(+)';
-    if (
-      lensId.startsWith('AR_MINUS') ||
-      lensId.includes('CHAME_MINUS') ||
-      lensId.includes('BBX_MINUS')
-    )
-      return '(−)';
-    return '(+/−)';
-  }, [lensId]);
-
-  const rToStr = (r: Range) =>
-    r.max === null ? `${r.min}+` : `${r.min}–${r.max}`;
-  const priceOD = useMemo(
-    () =>
-      odRangeIdx === '' ? 0 : ranges[toInt(odRangeIdx)]?.price || 0,
-    [odRangeIdx, ranges],
-  );
-  const priceOS = useMemo(
-    () =>
-      osRangeIdx === '' ? 0 : ranges[toInt(osRangeIdx)]?.price || 0,
-    [osRangeIdx, ranges],
-  );
-
-  const lensTotal = useMemo(() => {
-    let s = 0;
-    if (lensId) {
-      if (odRangeIdx !== '') s += priceOD;
-      if (osRangeIdx !== '') s += priceOS;
-    }
-    return s;
-  }, [lensId, odRangeIdx, osRangeIdx, priceOD, priceOS]);
-
+  const lensTotal = priceOD + priceOS;
   const subtotalRaw = (framePrice || 0) + lensTotal;
 
   // Лояльность (привязка к телефону)
@@ -813,9 +683,11 @@ export default function NewOrderPage(): JSX.Element {
     }
 
     const haveFrame = !!framePrice;
-    const haveLensOD = !!(lensId && odRangeIdx !== '');
-    const haveLensOS = !!(lensId && osRangeIdx !== '');
-    const haveAnyLens = haveLensOD || haveLensOS;
+    const haveAnyLens = Boolean(quoteOD || quoteOS);
+    if ((od.code && !quoteOD) || (os.code && !quoteOS)) {
+      toast.error('Проверьте линзы и параметры рецепта в заказе');
+      return;
+    }
     if (!haveFrame && !haveAnyLens) {
       toast.error('Добавьте оправу или линзы');
       return;
@@ -824,6 +696,21 @@ export default function NewOrderPage(): JSX.Element {
     try {
       setLoading(true);
       const sb = getSupabase();
+      if (haveAnyLens) {
+        const current = await fetchBranchLenses(branchId);
+        const newOD = quoteEyeLens(od, current);
+        const newOS = quoteEyeLens(os, current);
+        if (newOD?.price !== quoteOD?.price || newOS?.price !== quoteOS?.price) {
+          setLensCatalog({ branchId, options: current });
+          toast.error('Прайс обновился. Проверьте заказ и подтвердите сумму ещё раз.');
+          return;
+        }
+        const { error: quoteError } = await sb.rpc('validate_kg_lens_quote', {
+          p_branch_id: branchId,
+          p_items: [quoteOD, quoteOS].flatMap(quote => quote ? [{ item_type: 'lens', ...quote }] : []),
+        });
+        if (quoteError) throw quoteError;
+      }
       const normalizedPhone = normalizePhone(phone);
 
       const { data: exist, error: eC1 } = await sb
@@ -923,37 +810,8 @@ export default function NewOrderPage(): JSX.Element {
           price: framePrice,
         });
       }
-      if (haveLensOD) {
-        const r = ranges[toInt(odRangeIdx as number)];
-        items.push({
-          order_id: orderId,
-          item_type: 'lens',
-          product_id: null,
-          eye: 'OD',
-          lens_type: `${lensId} [${rToStr(r)}]`,
-          sph: null,
-          cyl: null,
-          ax: null,
-          pd_snapshot: null,
-          qty: 1,
-          price: priceOD,
-        });
-      }
-      if (haveLensOS) {
-        const r = ranges[toInt(osRangeIdx as number)];
-        items.push({
-          order_id: orderId,
-          item_type: 'lens',
-          product_id: null,
-          eye: 'OS',
-          lens_type: `${lensId} [${rToStr(r)}]`,
-          sph: null,
-          cyl: null,
-          ax: null,
-          pd_snapshot: null,
-          qty: 1,
-          price: priceOS,
-        });
+      for (const [eye, quote] of [['OD', quoteOD], ['OS', quoteOS]] as const) {
+        if (quote) items.push({ order_id: orderId, item_type: 'lens', product_id: null, eye, ...quote, pd_snapshot: null, qty: 1 });
       }
       if (items.length) {
         const { error: eI } = await sb.from('order_items').insert(items);
@@ -1016,9 +874,10 @@ export default function NewOrderPage(): JSX.Element {
     gender,
     birthDate,
     frameSku,
-    lensId,
-    odRangeIdx,
-    osRangeIdx,
+    od,
+    os,
+    quoteOD,
+    quoteOS,
     frameId,
     frameBarcodeId,
     framePrice,
@@ -1027,11 +886,8 @@ export default function NewOrderPage(): JSX.Element {
     benefits.type,
     benefits.percent,
     discountAmount,
-    priceOD,
-    priceOS,
     totalDue,
     pays,
-    ranges,
   ]);
 
   const resetForm = useCallback(() => {
@@ -1044,9 +900,8 @@ export default function NewOrderPage(): JSX.Element {
     setFrameId('');
     setFrameBarcode('');
     setFrameBarcodeId(null);
-    setLensId('');
-    setOdRangeIdx('');
-    setOsRangeIdx('');
+    setOd(emptyEyeLens);
+    setOs(emptyEyeLens);
     setPays([{ id: cryptoRandomId(), method: 'cash', amount: '' }]);
     setPurchaseCount(null);
     setAllowSilentLookup(true);
@@ -1099,7 +954,7 @@ export default function NewOrderPage(): JSX.Element {
       phone ||
       birthDate ||
       frameSku ||
-      lensId ||
+      od.code || os.code ||
       pays.some((p) => p.amount) ||
       priceOD ||
       priceOS ||
@@ -1117,7 +972,8 @@ export default function NewOrderPage(): JSX.Element {
     phone,
     birthDate,
     frameSku,
-    lensId,
+    od.code,
+    os.code,
     pays,
     priceOD,
     priceOS,
@@ -1401,84 +1257,21 @@ export default function NewOrderPage(): JSX.Element {
               />
               {activeStep === 3 && (
                 <div className="p-4 grid md:grid-cols-12 gap-3 items-end">
-                  <div className="md:col-span-4">
-                    <label className="hint">Линейка</label>
-                    <SelectShell>
-                      <select
-                        className={`${input} appearance-none pr-9`}
-                        value={lensId}
-                        onChange={(e) => {
-                          setLensId(e.target.value);
-                          setOdRangeIdx('');
-                          setOsRangeIdx('');
-                        }}
-                      >
-                        <option value="">— выбрать —</option>
-                        <optgroup label="Обычные">
-                          {LENS_OPTIONS.filter((o) => !o.astig).map((o) => (
-                            <option key={o.id} value={o.id}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="Астигматические">
-                          {LENS_OPTIONS.filter((o) => o.astig).map((o) => (
-                            <option key={o.id} value={o.id}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
-                    </SelectShell>
+                  <div className="md:col-span-6">
+                    <EyeLensFields label="Правый глаз (OD)" value={od} onChange={setOd} options={lensOptions} price={priceOD} />
                   </div>
-                  <div className="md:col-span-4">
-                    <label className="hint">Диапазон OD</label>
-                    <SelectShell>
-                      <select
-                        className={`${input} appearance-none pr-9`}
-                        value={odRangeIdx}
-                        onChange={(e) =>
-                          setOdRangeIdx(
-                            e.target.value === ''
-                              ? ''
-                              : Number(e.target.value),
-                          )
-                        }
-                        disabled={!lensId}
-                      >
-                        <option value="">— выбрать —</option>
-                        {ranges.map((r, i) => (
-                          <option key={i} value={i}>
-                            {`${signPrefix} ${rToStr(r)}`}
-                          </option>
-                        ))}
-                      </select>
-                    </SelectShell>
+                  <div className="md:col-span-6">
+                    <EyeLensFields label="Левый глаз (OS)" value={os} onChange={setOs} options={lensOptions} price={priceOS} />
                   </div>
-                  <div className="md:col-span-4">
-                    <label className="hint">Диапазон OS</label>
-                    <SelectShell>
-                      <select
-                        className={`${input} appearance-none pr-9`}
-                        value={osRangeIdx}
-                        onChange={(e) =>
-                          setOsRangeIdx(
-                            e.target.value === ''
-                              ? ''
-                              : Number(e.target.value),
-                          )
-                        }
-                        disabled={!lensId}
-                      >
-                        <option value="">— выбрать —</option>
-                        {ranges.map((r, i) => (
-                          <option key={i} value={i}>
-                            {`${signPrefix} ${rToStr(r)}`}
-                          </option>
-                        ))}
-                      </select>
-                    </SelectShell>
-                  </div>
+                  {!lensOptions.length && (
+                    <div className="md:col-span-12 text-sm text-slate-600">
+                      {lensCatalogError ? (
+                        <button type="button" className="underline" onClick={() => setLensCatalogRetry(n => n + 1)}>
+                          Прайс недоступен. Повторить загрузку
+                        </button>
+                      ) : branchId ? 'Загружается прайс филиала…' : 'Выберите филиал, чтобы загрузить прайс.'}
+                    </div>
+                  )}
                   <div className="md:col-span-12 flex gap-2">
                     <button
                       className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50"
@@ -1629,7 +1422,7 @@ export default function NewOrderPage(): JSX.Element {
                 <Row
                   label="Линза OD"
                   value={
-                    lensId && odRangeIdx !== ''
+                    quoteOD
                       ? fmt.format(priceOD) + ' с'
                       : '—'
                   }
@@ -1637,7 +1430,7 @@ export default function NewOrderPage(): JSX.Element {
                 <Row
                   label="Линза OS"
                   value={
-                    lensId && osRangeIdx !== ''
+                    quoteOS
                       ? fmt.format(priceOS) + ' с'
                       : '—'
                   }

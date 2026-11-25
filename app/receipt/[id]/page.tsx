@@ -1,5 +1,6 @@
 'use client';
 
+import { formatLensDescription } from '@/lib/branchLensCatalog';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import getSupabase from '@/lib/supabaseClient';
@@ -159,7 +160,7 @@ export default function ReceiptPage() {
                     : it.eye === 'OD'
                     ? 'Линза OD'
                     : 'Линза OS'}
-                  {it.lens_type ? ` ${it.lens_type}` : ''}
+                  {it.lens_type ? ` ${formatLensDescription(it.lens_type)}` : ''}
                 </td>
                 <td className="text-right whitespace-nowrap">
                   {fmt.format(it.price)} с

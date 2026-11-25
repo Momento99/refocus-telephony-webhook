@@ -1,5 +1,6 @@
 'use client';
 
+import { formatLensDescription } from '@/lib/branchLensCatalog';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
@@ -249,7 +250,7 @@ export default function CustomerScreen() {
     const parts: string[] = [];
     if (r.item_type) parts.push(labelByType(r.item_type));
     if (r.eye) parts.push(labelByEye(r.eye));
-    if (r.lens_type) parts.push(r.lens_type);
+    if (r.lens_type) parts.push(formatLensDescription(r.lens_type));
     const power: string[] = [];
     if (isNum(r.sph)) power.push(`SPH ${trimZero(r.sph!)}`);
     if (isNum(r.cyl)) power.push(`CYL ${trimZero(r.cyl!)}`);
