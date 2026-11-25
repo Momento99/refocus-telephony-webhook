@@ -396,7 +396,14 @@ function lensTypeIsHighTier(lensType: string | null | undefined): boolean {
 }
 
 // Маржа по видам линз (вычисляется на клиенте из order_items + lens_catalog.cost_price_*)
-type LensMarginRow = { name: string; units: number; revenue: number; cost: number };
+type LensMarginRow = {
+  name: string;
+  units: number;
+  revenue: number;
+  cost: number;
+  costUnavailable: boolean;
+  estimated: boolean;
+};
 
 // Выручка на трудочас + ФОТ/выручка по филиалам
 type SplhRow = { branch: string; revenue: number; hours: number; gross: number; splh: number; lcr: number };
@@ -842,9 +849,12 @@ export default function AdminStatsPage() {
           if (validIds.length > 0) {
             // Себестоимость линз из каталога (для маржи по видам)
             const { data: catRows } = await sb.from('lens_catalog').select('id, cost_price_from, cost_price_to');
-            const costMap = new Map<string, { from: number; to: number }>();
+            const costMap = new Map<string, { from: number | null; to: number | null }>();
             for (const c of (catRows || [])) {
-              costMap.set(String(c.id), { from: Number(c.cost_price_from) || 0, to: Number(c.cost_price_to) || 0 });
+              costMap.set(String(c.id), {
+                from: c.cost_price_from == null ? null : Number(c.cost_price_from),
+                to: c.cost_price_to == null ? null : Number(c.cost_price_to),
+              });
             }
 
             const oiRows = await fetchByIdChunks<any>(validIds, (chunk, a, bb) =>
@@ -854,7 +864,7 @@ export default function AdminStatsPage() {
             );
             const byOrder = new Map<number, { frame: number; lens: number }>();
             const catMap = new Map<string, number>(); // вид линзы → кол-во проданных линз
-            const marginMap = new Map<string, { units: number; revenue: number; cost: number }>();
+            const marginMap = new Map<string, Omit<LensMarginRow, 'name'>>();
             for (const r of (oiRows || [])) {
               const oid = r.order_id;
               const prev = byOrder.get(oid) ?? { frame: 0, lens: 0 };
@@ -867,12 +877,17 @@ export default function AdminStatsPage() {
                 // Маржа: выручка = факт. price, себестоимость = каталожная по тиру (за линзу)
                 const catId = lensTypeToCatalogId(r.lens_type);
                 const c = catId ? costMap.get(catId) : undefined;
-                const unitCost = c ? (lensTypeIsHighTier(r.lens_type) ? c.to : c.from) : 0;
+                const unitCost = c ? (lensTypeIsHighTier(r.lens_type) ? c.to : c.from) : null;
                 const qn = Number(r.qty) || 1;
-                const mm = marginMap.get(cat) ?? { units: 0, revenue: 0, cost: 0 };
+                const mm = marginMap.get(cat) ?? { units: 0, revenue: 0, cost: 0, costUnavailable: false, estimated: false };
                 mm.units += qn;
                 mm.revenue += amt;
-                mm.cost += unitCost * qn;
+                if (unitCost === null || !Number.isFinite(unitCost)) {
+                  mm.costUnavailable = true;
+                } else {
+                  mm.cost += unitCost * qn;
+                }
+                mm.estimated ||= /^AST_AR_174_MINUS(?:\s|$)/i.test(r.lens_type?.trim() ?? '');
                 marginMap.set(cat, mm);
               }
               byOrder.set(oid, prev);
@@ -897,7 +912,7 @@ export default function AdminStatsPage() {
             // Маржа по видам линз (только проданные виды)
             setLensMargin(
               [...marginMap.entries()]
-                .map(([name, m]) => ({ name, units: m.units, revenue: Math.round(m.revenue), cost: Math.round(m.cost) }))
+                .map(([name, m]) => ({ ...m, name, revenue: Math.round(m.revenue), cost: Math.round(m.cost) }))
                 .filter((r) => r.units > 0),
             );
 
@@ -2026,20 +2041,22 @@ export default function AdminStatsPage() {
   const lensMarginView = React.useMemo(() => {
     const base = lensMargin
       .map((r) => {
-        const margin = r.revenue - r.cost;
+        const margin = r.costUnavailable ? 0 : r.revenue - r.cost;
         return {
           name: r.name,
           units: r.units,
           revenue: r.revenue,
           cost: r.cost,
+          costUnavailable: r.costUnavailable,
           margin,
           marginPct: r.revenue > 0 ? (margin / r.revenue) * 100 : 0,
-          proxy: LENS_PROXY_COST.has(r.name),
+          proxy: r.estimated || LENS_PROXY_COST.has(r.name),
         };
       })
-      .sort((a, b) => b.margin - a.margin);
+      .sort((a, b) => Number(a.costUnavailable) - Number(b.costUnavailable) || b.margin - a.margin);
     const totalMargin = base.reduce((s, r) => s + r.margin, 0);
     const totalRevenue = base.reduce((s, r) => s + r.revenue, 0);
+    const costedRevenue = base.reduce((s, r) => r.costUnavailable ? s : s + r.revenue, 0);
     let cum = 0;
     const rows = base.map((r) => {
       const share = totalMargin > 0 ? (r.margin / totalMargin) * 100 : 0;
@@ -2050,12 +2067,14 @@ export default function AdminStatsPage() {
       rows,
       totalMargin,
       totalRevenue,
-      avgMarginPct: totalRevenue > 0 ? (totalMargin / totalRevenue) * 100 : 0,
+      hasMissingCosts: base.some(r => r.costUnavailable),
+      hasCompleteCosts: base.some(r => !r.costUnavailable),
+      avgMarginPct: costedRevenue > 0 ? (totalMargin / costedRevenue) * 100 : 0,
     };
   }, [lensMargin]);
 
   const optionLensMargin: EChartsOption = React.useMemo(() => {
-    const rows = lensMarginView.rows;
+    const rows = lensMarginView.rows.filter(r => !r.costUnavailable);
     if (!rows.length) {
       return { backgroundColor: 'transparent', xAxis: { type: 'category', data: [] }, yAxis: { type: 'value' }, series: [{ type: 'bar', data: [] }] };
     }
@@ -2708,8 +2727,8 @@ export default function AdminStatsPage() {
             >
               <div className="mb-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
                 <StatBox label="Выручка по линзам" value={nf(lensMarginView.totalRevenue)} icon={HandCoins} tone="neutral" />
-                <StatBox label="Маржа по линзам" value={nf(lensMarginView.totalMargin)} icon={TrendingUp} tone="ok" />
-                <StatBox label="Средняя маржа" value={`${Math.round(lensMarginView.avgMarginPct)}%`} icon={Percent} tone="neutral" />
+                <StatBox label={lensMarginView.hasMissingCosts ? 'Маржа по видам с себестоимостью' : 'Маржа по линзам'} value={lensMarginView.hasMissingCosts && !lensMarginView.hasCompleteCosts ? '—' : nf(lensMarginView.totalMargin)} icon={TrendingUp} tone="ok" />
+                <StatBox label="Средняя маржа" value={lensMarginView.hasMissingCosts && !lensMarginView.hasCompleteCosts ? '—' : `${Math.round(lensMarginView.avgMarginPct)}%`} icon={Percent} tone="neutral" />
               </div>
               <ChartFrame height={380}>
                 <ReactECharts option={optionLensMargin} opts={{ renderer: 'svg' }} style={{ height: '100%', width: '100%' }} />
@@ -2736,9 +2755,9 @@ export default function AdminStatsPage() {
                           </td>
                           <td className="px-3 py-2 text-right">{nf(r.units)}</td>
                           <td className="px-3 py-2 text-right">{nf(r.revenue)}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-slate-900">{nf(Math.round(r.margin))}</td>
-                          <td className="px-3 py-2 text-right">{Math.round(r.marginPct)}%</td>
-                          <td className="px-3 py-2 text-right">{r.share.toFixed(1)}%</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900">{r.costUnavailable ? 'Нет себестоимости' : nf(Math.round(r.margin))}</td>
+                          <td className="px-3 py-2 text-right">{r.costUnavailable ? '—' : `${Math.round(r.marginPct)}%`}</td>
+                          <td className="px-3 py-2 text-right">{r.costUnavailable ? '—' : `${r.share.toFixed(1)}%`}</td>
                         </tr>
                       ))}
                       {lensMarginView.rows.length === 0 && (
