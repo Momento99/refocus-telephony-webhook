@@ -348,6 +348,7 @@ function buildHistogram(values: number[], bucket: number): DistBin[] {
 function lensTypeToCatalogId(lensType: string | null | undefined): string | null {
   const tok = String(lensType ?? '').trim().split(/\s+/)[0].toUpperCase();
   if (!tok) return null;
+  if (tok === 'AST_AR_174_MINUS') return 'ast-antiglare'; // Historical cost estimate.
   if (/^AST_AR_167(?:_|$)/.test(tok)) return 'thin-ast-antiglare';
   if (/^AST_AR_174(?:_|$)/.test(tok)) return 'thin-174-ast-antiglare';
   if (/^AR_(?:(?:PLUS|MINUS)_)?174$/.test(tok)) return 'thin-174-antiglare';

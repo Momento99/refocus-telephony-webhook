@@ -179,7 +179,7 @@ function som(n: number) {
 // Порядок видов в левом блоке: стандартные → хамелеоны → асферика → поликарбонат → миопия.
 // Используется отдельно внутри групп "постоянно закупаем" и "под заказ".
 const FAMILY_ORDER: string[] = [
-  'white', 'ar', 'bb',
+  'white', 'ar', 'bb', 'ar_167',
   'chame_black', 'chame_brown', 'chame_green', 'chame_blue', 'chame_purple',
   'asph_standard', 'asph_ar', 'asph_bb',
   'pc_159_hmc', 'myopia_control',
@@ -380,6 +380,7 @@ function shouldHideFamily(family: string) {
 const VENDOR_FAMILY_LABELS: Record<string, string> = {
   white: 'UC', // Uncoated
   ar: 'HMC', // AR = HMC
+  ar_167: 'HMC 1.67',
   bb: 'BlueCut HMC', // BlueBlock = BlueCut HMC
 
   // ✅ новые
@@ -424,6 +425,9 @@ function vendorFamilyLabel(famRaw: string) {
   // WHITE -> UC
   if (k.includes('white')) return VENDOR_FAMILY_LABELS.white;
 
+  // Keep the thinned coating separate from the ordinary HMC order.
+  if (k === 'ar_167') return VENDOR_FAMILY_LABELS.ar_167;
+
   // AR -> HMC
   if (k === 'ar' || k.includes(' ar')) return VENDOR_FAMILY_LABELS.ar;
 
@@ -456,6 +460,7 @@ function normalizeFamilyKey(raw: string) {
   if (!s0) return '';
   const noBracket = s0.replace(/\s*\[.*$/g, '').trim();
   const collapsed = noBracket.replace(/\s+/g, ' ').trim();
+  if (/^AR_(?:(?:PLUS|MINUS)_)?167$/i.test(collapsed)) return 'AR_167';
   const noSuffix = collapsed.replace(/_(PLUS|MINUS)$/i, '').trim();
   return noSuffix;
 }
@@ -488,6 +493,7 @@ function locationKindLabel(l: LocationRow) {
 const ALLOWED_FAMILY_KEYS = new Set([
   'bb',
   'ar',
+  'ar_167',
   'white',
   'pc_159_hmc',
   'myopia_control',
@@ -3952,7 +3958,7 @@ export default function LensProcurementPage() {
                 </div>
 
                 <div className="mt-3 text-[11px] text-slate-600">
-                  Семейства на этой странице: <b>BB, AR, WHITE, CHAME*</b> + <b>PC 1.59 HMC</b> + <b>Myopia Control</b>.
+                  Семейства на этой странице: <b>BB, AR, AR_167, WHITE, CHAME*</b> + <b>PC 1.59 HMC</b> + <b>Myopia Control</b>.
                 </div>
               </div>
             )}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { getBrowserSupabase } from '@/lib/supabaseBrowser';
 import { Sparkles, RotateCcw, Clock, Layers, Star, Crown, Calculator, ChevronDown, ChevronUp, Wand2, MapPin } from 'lucide-react';
@@ -296,6 +296,8 @@ export default function LensPricesSettingsPage() {
   const [countries, setCountries]           = useState<Country[]>([]);
   const [lenses, setLenses]                 = useState<LocalizedLens[]>([]);
   const [activeCountry, setActiveCountry]   = useState<string>('kg');
+  const activeCountryRef = useRef('kg');
+  const priceLoadSequence = useRef(0);
   const [loading, setLoading]               = useState(false);
 
   const [editPrices, setEditPrices]         = useState<Record<string, { from: string; to: string }>>({});
@@ -364,6 +366,9 @@ export default function LensPricesSettingsPage() {
   }
 
   const loadLenses = useCallback(async (countryId: string) => {
+    if (activeCountryRef.current !== countryId) return;
+    const sequence = ++priceLoadSequence.current;
+    const isCurrent = () => activeCountryRef.current === countryId && priceLoadSequence.current === sequence;
     setLoading(true);
     try {
       const { data, error } = await sb()
@@ -372,6 +377,7 @@ export default function LensPricesSettingsPage() {
         .eq('country_id', countryId)
         .order('sort_order', { ascending: true });
       if (error) throw error;
+      if (!isCurrent()) return;
       const rows = (data as LocalizedLens[]) || [];
       setLenses(rows);
       const ep: Record<string, { from: string; to: string }> = {};
@@ -380,11 +386,20 @@ export default function LensPricesSettingsPage() {
       }
       setEditPrices(ep);
     } catch (e: any) {
-      toast.error('Ошибка загрузки линз: ' + e.message);
+      if (isCurrent()) toast.error('Ошибка загрузки линз: ' + e.message);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
+
+  function selectCountry(countryId: string) {
+    if (countryId === activeCountryRef.current) return;
+    activeCountryRef.current = countryId;
+    setLenses([]);
+    setEditPrices({});
+    setLoading(true);
+    setActiveCountry(countryId);
+  }
 
   const loadCosts = useCallback(async () => {
     const { data, error } = await sb()
@@ -542,10 +557,10 @@ export default function LensPricesSettingsPage() {
 
   async function savePrice(lensId: string) {
     const ep = editPrices[lensId];
-    if (!ep) return;
-    const fromVal = parseInt(ep.from, 10);
-    const toVal   = parseInt(ep.to, 10);
-    if (isNaN(fromVal) || isNaN(toVal) || fromVal < 0 || toVal < 0) {
+    if (!ep || loading || activeCountry !== activeCountryRef.current) return;
+    const values = [ep.from.trim(), ep.to.trim()];
+    const [fromVal, toVal] = values.map(Number);
+    if (values.some(value => !/^\d+$/.test(value)) || fromVal > 2147483647 || toVal > 2147483647) {
       toast.error('Некорректная цена'); return;
     }
     setSavingIds(s => new Set(s).add(lensId));
@@ -962,7 +977,7 @@ export default function LensPricesSettingsPage() {
                     <tbody>
                       {branchStatuses.map(b => {
                         const cityInFormula = b.city && CITY_INDEX[b.city];
-                        const usesUnifiedPrice = cityInFormula && cityInFormula.country === 'KG';
+                        const usesUnifiedPrice = b.country_id === 'kg';
                         const cityUnknown = Boolean(b.city && !cityInFormula);
                         return (
                           <tr key={b.branch_id} className="border-t border-slate-100 hover:bg-slate-50/40 transition">
@@ -1042,7 +1057,7 @@ export default function LensPricesSettingsPage() {
             {countries.map(c => (
               <button
                 key={c.id}
-                onClick={() => setActiveCountry(c.id)}
+                onClick={() => selectCountry(c.id)}
                 className={cx(
                   'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition',
                   activeCountry === c.id
